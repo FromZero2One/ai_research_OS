@@ -1,0 +1,1 @@
+"""Knowledge Center — Hybrid RAG: dense + sparse retrieval."""

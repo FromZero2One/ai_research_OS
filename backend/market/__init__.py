@@ -1,0 +1,1 @@
+"""Market Center — structured financial data ingestion and storage."""

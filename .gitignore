@@ -1,0 +1,27 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.db
+data/uploads/*
+data/processed/*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Node / Frontend
+node_modules/
+.next/
+frontend/out/
+
+# OS
+.DS_Store
+Thumbs.db

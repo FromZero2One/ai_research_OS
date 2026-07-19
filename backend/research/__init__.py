@@ -1,0 +1,1 @@
+"""Research Center — the core user workflow: question → evidence → report → decision."""
