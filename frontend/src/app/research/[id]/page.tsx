@@ -15,7 +15,7 @@ export default function ResearchDetailPage() {
     <div className="max-w-4xl mx-auto space-y-8">
       {/* Header */}
       <div>
-        <Link href="/research" className="text-sm text-[#4f8cff] hover:underline">← Research</Link>
+        <Link href="/research" className="text-sm text-[#4f8cff] hover:underline">← 研究中心</Link>
         <h1 className="text-2xl font-bold text-[#e8eaed] mt-2">{session.title}</h1>
         <div className="flex items-center gap-3 mt-2">
           <span className={`px-2 py-0.5 rounded text-xs font-medium ${
@@ -35,31 +35,31 @@ export default function ResearchDetailPage() {
             </span>
           )}
           {session.confidence && (
-            <span className="text-sm text-[#9aa0a6]">Confidence: {Math.round(session.confidence * 100)}%</span>
+            <span className="text-sm text-[#9aa0a6]">置信度: {Math.round(session.confidence * 100)}%</span>
           )}
         </div>
       </div>
 
       {/* Question */}
       <div className="p-5 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
-        <div className="text-sm text-[#9aa0a6] mb-2">Research Question</div>
+        <div className="text-sm text-[#9aa0a6] mb-2">研究问题</div>
         <p className="text-[#e8eaed] text-lg leading-relaxed">{session.question}</p>
       </div>
 
       {/* Context */}
       {session.context && (
         <div className="p-5 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
-          <div className="text-sm text-[#9aa0a6] mb-2">Context</div>
+          <div className="text-sm text-[#9aa0a6] mb-2">背景信息</div>
           <p className="text-[#e8eaed] leading-relaxed">{session.context}</p>
         </div>
       )}
 
       {/* Evidences */}
       <div>
-        <h2 className="text-lg font-semibold text-[#e8eaed] mb-3">Evidence ({session.evidences?.length || 0})</h2>
+        <h2 className="text-lg font-semibold text-[#e8eaed] mb-3">证据 ({session.evidences?.length || 0})</h2>
         {session.evidences?.length === 0 ? (
           <div className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140] text-sm text-[#9aa0a6]">
-            No evidence collected yet.
+            尚未收集证据。
           </div>
         ) : (
           <div className="space-y-3">
@@ -88,7 +88,7 @@ export default function ResearchDetailPage() {
       {/* Thesis */}
       {session.thesis && (
         <div className="p-5 rounded-xl bg-[#1a1d28] border-l-4 border-[#4f8cff]">
-          <div className="text-sm text-[#9aa0a6] mb-2">Investment Thesis</div>
+          <div className="text-sm text-[#9aa0a6] mb-2">投资论点</div>
           <p className="text-[#e8eaed] leading-relaxed">{session.thesis}</p>
         </div>
       )}
@@ -96,12 +96,12 @@ export default function ResearchDetailPage() {
       {/* Reports */}
       {session.reports?.length > 0 && (
         <div>
-          <h2 className="text-lg font-semibold text-[#e8eaed] mb-3">Reports</h2>
+          <h2 className="text-lg font-semibold text-[#e8eaed] mb-3">研究报告</h2>
           <div className="space-y-2">
             {session.reports.map((r: any) => (
               <div key={r.id} className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
                 <div className="font-medium text-[#e8eaed]">{r.title}</div>
-                <div className="text-xs text-[#9aa0a6] mt-1">v{r.version} · {r.format}{r.is_final && " · Final"}</div>
+                <div className="text-xs text-[#9aa0a6] mt-1">v{r.version} · {r.format}{r.is_final && " · 终稿"}</div>
               </div>
             ))}
           </div>

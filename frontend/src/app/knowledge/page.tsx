@@ -26,9 +26,9 @@ export default function KnowledgePage() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-[#e8eaed]">🧠 Knowledge Center</h1>
+        <h1 className="text-2xl font-bold text-[#e8eaed]">🧠 知识库</h1>
         <p className="text-[#9aa0a6] text-sm mt-1">
-          Hybrid RAG — Dense (Vector) + Sparse (BM25) Reciprocal Rank Fusion
+          混合检索 RAG — 稠密向量 + 稀疏 BM25 倒数排序融合
         </p>
       </div>
 
@@ -36,7 +36,7 @@ export default function KnowledgePage() {
       <div className="flex gap-2">
         <input
           type="text"
-          placeholder="Search your knowledge base..."
+          placeholder="搜索知识库..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSearch()}
@@ -47,16 +47,16 @@ export default function KnowledgePage() {
           disabled={loading || !query.trim()}
           className="px-6 py-3 rounded-xl bg-[#4f8cff] text-white font-medium hover:bg-[#3a7bf5] disabled:opacity-50 transition-colors"
         >
-          {loading ? "Searching..." : "Search"}
+          {loading ? "搜索中..." : "搜索"}
         </button>
       </div>
 
       {/* Results */}
       {loading ? (
-        <div className="text-center text-[#9aa0a6] py-12">Hybrid search in progress...</div>
+        <div className="text-center text-[#9aa0a6] py-12">混合检索中...</div>
       ) : results.length > 0 ? (
         <div className="space-y-3">
-          <div className="text-sm text-[#9aa0a6]">{results.length} results found</div>
+          <div className="text-sm text-[#9aa0a6]">找到 {results.length} 条结果</div>
           {results.map((r, i) => (
             <div
               key={i}
@@ -70,7 +70,7 @@ export default function KnowledgePage() {
                   <span className="text-sm font-medium text-[#e8eaed]">{r.title}</span>
                 </div>
                 <span className="text-xs text-[#4f8cff]">
-                  Score: {r.score.toFixed(3)}
+                  得分: {r.score.toFixed(3)}
                 </span>
               </div>
               <p className="text-sm text-[#9aa0a6] leading-relaxed">{r.content}</p>
@@ -80,14 +80,14 @@ export default function KnowledgePage() {
       ) : searched ? (
         <div className="p-12 rounded-xl bg-[#1a1d28] border border-[#2d3140] text-center">
           <div className="text-3xl mb-3">🔍</div>
-          <div className="text-[#e8eaed] font-medium">No results found</div>
-          <div className="text-[#9aa0a6] text-sm mt-1">Try a different search term</div>
+          <div className="text-[#e8eaed] font-medium">未找到结果</div>
+          <div className="text-[#9aa0a6] text-sm mt-1">换个关键词试试</div>
         </div>
       ) : (
         <div className="p-12 rounded-xl bg-[#1a1d28] border border-[#2d3140] text-center">
           <div className="text-3xl mb-3">🧠</div>
-          <div className="text-[#e8eaed] font-medium">Search across all indexed documents</div>
-          <div className="text-[#9aa0a6] text-sm mt-1">Dense + Sparse hybrid retrieval with RRF fusion</div>
+          <div className="text-[#e8eaed] font-medium">搜索全部已索引文档</div>
+          <div className="text-[#9aa0a6] text-sm mt-1">稠密 + 稀疏混合检索，RRF 融合排序</div>
         </div>
       )}
     </div>

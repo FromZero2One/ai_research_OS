@@ -16,17 +16,17 @@ export default function MarketPage() {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-[#e8eaed]">📊 Market Center</h1>
-        <p className="text-[#9aa0a6] text-sm mt-1">Structured financial data — prices, financials, macros (not analysis)</p>
+        <h1 className="text-2xl font-bold text-[#e8eaed]">📊 行情中心</h1>
+        <p className="text-[#9aa0a6] text-sm mt-1">结构化金融数据 — 行情、财务指标、宏观数据（非分析）</p>
       </div>
 
       {/* Data Ingestion */}
       <div className="p-5 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
-        <h2 className="text-lg font-semibold text-[#e8eaed] mb-3">Data Ingestion</h2>
+        <h2 className="text-lg font-semibold text-[#e8eaed] mb-3">数据采集</h2>
         <div className="flex gap-2">
           <input
             type="text"
-            placeholder="Enter ticker (e.g., AAPL)"
+            placeholder="输入股票代码 (如 600519)"
             value={ticker}
             onChange={(e) => setTicker(e.target.value)}
             className="flex-1 p-2.5 rounded-lg bg-[#232736] border border-[#2d3140] text-[#e8eaed] placeholder-[#9aa0a6] focus:outline-none focus:border-[#4f8cff]"
@@ -36,34 +36,34 @@ export default function MarketPage() {
             disabled={!ticker.trim()}
             className="px-5 py-2.5 rounded-lg bg-[#4f8cff] text-white text-sm font-medium hover:bg-[#3a7bf5] disabled:opacity-50"
           >
-            Ingest Prices
+            采集数据
           </button>
         </div>
-        <p className="text-xs text-[#9aa0a6] mt-2">Sources: Yahoo Finance (US) · AKShare (CN) — 1 year of daily data</p>
+        <p className="text-xs text-[#9aa0a6] mt-2">数据源: MySQL (A股) · Yahoo Finance (美股) — 日线数据</p>
       </div>
 
       {/* Data Sources */}
       <div className="grid grid-cols-3 gap-4">
         <div className="p-5 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
           <div className="text-2xl mb-2">💹</div>
-          <div className="font-medium text-[#e8eaed]">Stock Prices</div>
-          <div className="text-sm text-[#9aa0a6] mt-1">Daily OHLCV · Yahoo Finance / AKShare</div>
+          <div className="font-medium text-[#e8eaed]">股票行情</div>
+          <div className="text-sm text-[#9aa0a6] mt-1">日线 OHLCV · MySQL 腾讯数据源 / Yahoo Finance</div>
         </div>
         <div className="p-5 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
           <div className="text-2xl mb-2">📋</div>
-          <div className="font-medium text-[#e8eaed]">Financial Metrics</div>
-          <div className="text-sm text-[#9aa0a6] mt-1">Revenue, EPS, margins, ratios</div>
+          <div className="font-medium text-[#e8eaed]">财务指标</div>
+          <div className="text-sm text-[#9aa0a6] mt-1">营收、EPS、利润率、ROE 等</div>
         </div>
         <div className="p-5 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
           <div className="text-2xl mb-2">🌍</div>
-          <div className="font-medium text-[#e8eaed]">Macro Indicators</div>
-          <div className="text-sm text-[#9aa0a6] mt-1">Interest rates, GDP, CPI</div>
+          <div className="font-medium text-[#e8eaed]">宏观指标</div>
+          <div className="text-sm text-[#9aa0a6] mt-1">利率、GDP、CPI 等</div>
         </div>
       </div>
 
       {/* API References */}
       <div className="p-5 rounded-xl bg-[#1a1d28] border border-[#2d3140] text-sm">
-        <h3 className="text-[#e8eaed] font-medium mb-2">API Endpoints</h3>
+        <h3 className="text-[#e8eaed] font-medium mb-2">API 接口</h3>
         <div className="space-y-1 text-[#9aa0a6] font-mono">
           <div>GET  /api/v1/market/prices/{`{ticker}`}</div>
           <div>POST /api/v1/market/prices/{`{ticker}`}/ingest</div>

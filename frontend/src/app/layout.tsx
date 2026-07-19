@@ -20,7 +20,7 @@ export default function RootLayout({
   );
 
   return (
-    <html lang="en">
+    <html lang="zh-CN">
       <body>
         <QueryClientProvider client={queryClient}>
           <div className="flex min-h-screen">

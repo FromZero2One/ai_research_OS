@@ -12,8 +12,8 @@ export default function CompaniesPage() {
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[#e8eaed]">🏢 Company Center</h1>
-          <p className="text-[#9aa0a6] text-sm mt-1">Company profiles, industry classification, and research targets</p>
+          <h1 className="text-2xl font-bold text-[#e8eaed]">🏢 公司中心</h1>
+          <p className="text-[#9aa0a6] text-sm mt-1">公司档案、行业分类与研究对象</p>
         </div>
       </div>
 
@@ -21,7 +21,7 @@ export default function CompaniesPage() {
       <div className="relative">
         <input
           type="text"
-          placeholder="Search by name or ticker..."
+          placeholder="搜索公司名称或股票代码..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           className="w-full p-3 pl-10 rounded-xl bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] placeholder-[#9aa0a6] focus:outline-none focus:border-[#4f8cff]"
@@ -31,7 +31,7 @@ export default function CompaniesPage() {
 
       {/* Companies Grid */}
       {isLoading ? (
-        <div className="text-center text-[#9aa0a6] py-12">Loading...</div>
+        <div className="text-center text-[#9aa0a6] py-12">加载中...</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {data?.items.map((company) => (

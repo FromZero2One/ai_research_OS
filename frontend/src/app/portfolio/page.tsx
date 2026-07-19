@@ -9,17 +9,17 @@ export default function PortfolioPage() {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-[#e8eaed]">💼 Portfolio Center</h1>
-        <p className="text-[#9aa0a6] text-sm mt-1">Watchlists · Holdings · Research Journal</p>
+        <h1 className="text-2xl font-bold text-[#e8eaed]">💼 投资组合</h1>
+        <p className="text-[#9aa0a6] text-sm mt-1">自选列表 · 持仓 · 研究日志</p>
       </div>
 
       <div className="grid grid-cols-2 gap-6">
         {/* Watchlists */}
         <div>
-          <h2 className="text-lg font-semibold text-[#e8eaed] mb-3">Watchlists</h2>
+          <h2 className="text-lg font-semibold text-[#e8eaed] mb-3">自选列表</h2>
           {!watchlists || watchlists.length === 0 ? (
             <div className="p-6 rounded-xl bg-[#1a1d28] border border-[#2d3140] text-center text-sm text-[#9aa0a6]">
-              No watchlists yet. Create one via the API.
+              暂无自选列表，通过 API 创建。
             </div>
           ) : (
             <div className="space-y-3">
@@ -46,10 +46,10 @@ export default function PortfolioPage() {
 
         {/* Holdings */}
         <div>
-          <h2 className="text-lg font-semibold text-[#e8eaed] mb-3">Holdings</h2>
+          <h2 className="text-lg font-semibold text-[#e8eaed] mb-3">持仓</h2>
           {!holdings || holdings.length === 0 ? (
             <div className="p-6 rounded-xl bg-[#1a1d28] border border-[#2d3140] text-center text-sm text-[#9aa0a6]">
-              No holdings yet.
+              暂无持仓。
             </div>
           ) : (
             <div className="space-y-3">
@@ -57,11 +57,11 @@ export default function PortfolioPage() {
                 <div key={h.id} className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-lg text-[#e8eaed]">{h.ticker}</span>
-                    <span className="text-sm text-[#9aa0a6]">{h.shares} shares</span>
+                    <span className="text-sm text-[#9aa0a6]">{h.shares} 股</span>
                   </div>
                   {h.avg_cost_basis && (
                     <div className="text-sm text-[#9aa0a6] mt-1">
-                      Avg Cost: ${h.avg_cost_basis.toFixed(2)}
+                      平均成本: ¥{h.avg_cost_basis.toFixed(2)}
                     </div>
                   )}
                 </div>
@@ -73,15 +73,15 @@ export default function PortfolioPage() {
 
       {/* Journal */}
       <div>
-        <h2 className="text-lg font-semibold text-[#e8eaed] mb-3">Investment Journal</h2>
+        <h2 className="text-lg font-semibold text-[#e8eaed] mb-3">研究日志</h2>
         <div className="p-6 rounded-xl bg-[#1a1d28] border border-[#2d3140] text-center text-sm text-[#9aa0a6]">
-          Journal entries will appear here. POST /api/v1/portfolio/journal to create entries.
+          日志将显示在此处。调用 POST /api/v1/portfolio/journal 创建。
         </div>
       </div>
 
       {/* API Reference */}
       <div className="p-5 rounded-xl bg-[#1a1d28] border border-[#2d3140] text-sm">
-        <h3 className="text-[#e8eaed] font-medium mb-2">API Endpoints</h3>
+        <h3 className="text-[#e8eaed] font-medium mb-2">API 接口</h3>
         <div className="space-y-1 text-[#9aa0a6] font-mono">
           <div>GET/POST  /api/v1/portfolio/watchlists</div>
           <div>GET/POST  /api/v1/portfolio/holdings</div>

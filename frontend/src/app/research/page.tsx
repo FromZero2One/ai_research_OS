@@ -27,14 +27,14 @@ export default function ResearchPage() {
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[#e8eaed]">🔬 Research Center</h1>
-          <p className="text-[#9aa0a6] text-sm mt-1">Question → Evidence → Report → Decision</p>
+          <h1 className="text-2xl font-bold text-[#e8eaed]">🔬 研究中心</h1>
+          <p className="text-[#9aa0a6] text-sm mt-1">问题 → 证据 → 报告 → 决策</p>
         </div>
         <button
           onClick={() => setShowNew(!showNew)}
           className="px-4 py-2 rounded-lg bg-[#4f8cff] text-white text-sm font-medium hover:bg-[#3a7bf5] transition-colors"
         >
-          + New Research
+          + 新建研究
         </button>
       </div>
 
@@ -43,13 +43,13 @@ export default function ResearchPage() {
         <div className="p-5 rounded-xl bg-[#1a1d28] border border-[#2d3140] space-y-3">
           <input
             type="text"
-            placeholder="Research title..."
+            placeholder="研究标题..."
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             className="w-full p-2.5 rounded-lg bg-[#232736] border border-[#2d3140] text-[#e8eaed] placeholder-[#9aa0a6] focus:outline-none focus:border-[#4f8cff]"
           />
           <textarea
-            placeholder="What question are you researching?..."
+            placeholder="你要研究什么问题？..."
             value={newQuestion}
             onChange={(e) => setNewQuestion(e.target.value)}
             rows={3}
@@ -61,10 +61,10 @@ export default function ResearchPage() {
               disabled={!newTitle.trim() || !newQuestion.trim() || createResearch.isPending}
               className="px-4 py-2 rounded-lg bg-[#4f8cff] text-white text-sm font-medium hover:bg-[#3a7bf5] disabled:opacity-50"
             >
-              {createResearch.isPending ? "Creating..." : "Start Research"}
+              {createResearch.isPending ? "创建中..." : "开始研究"}
             </button>
             <button onClick={() => setShowNew(false)} className="px-4 py-2 rounded-lg text-sm text-[#9aa0a6] hover:text-[#e8eaed]">
-              Cancel
+              取消
             </button>
           </div>
         </div>
@@ -89,12 +89,12 @@ export default function ResearchPage() {
 
       {/* Sessions List */}
       {isLoading ? (
-        <div className="text-center text-[#9aa0a6] py-12">Loading...</div>
+        <div className="text-center text-[#9aa0a6] py-12">加载中...</div>
       ) : !sessions || sessions.length === 0 ? (
         <div className="p-12 rounded-xl bg-[#1a1d28] border border-[#2d3140] text-center">
           <div className="text-3xl mb-3">🔬</div>
-          <div className="text-[#e8eaed] font-medium">No research sessions yet</div>
-          <div className="text-[#9aa0a6] text-sm mt-1">Start by asking a research question</div>
+          <div className="text-[#e8eaed] font-medium">还没有研究会话</div>
+          <div className="text-[#9aa0a6] text-sm mt-1">提出一个研究问题开始分析</div>
         </div>
       ) : (
         <div className="space-y-3">
@@ -109,7 +109,7 @@ export default function ResearchPage() {
                   <div className="font-medium text-[#e8eaed] text-lg">{session.title}</div>
                   <div className="text-sm text-[#9aa0a6] mt-1 line-clamp-2">{session.question}</div>
                   {session.thesis && (
-                    <div className="text-sm text-[#9aa0a6] mt-2 italic line-clamp-1">Thesis: {session.thesis}</div>
+                    <div className="text-sm text-[#9aa0a6] mt-2 italic line-clamp-1">论点: {session.thesis}</div>
                   )}
                 </div>
                 <div className="flex items-center gap-3 ml-4">

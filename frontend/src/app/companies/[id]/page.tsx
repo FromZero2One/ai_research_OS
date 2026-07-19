@@ -18,7 +18,7 @@ export default function CompanyDetailPage() {
     <div className="max-w-4xl mx-auto space-y-8">
       {/* Header */}
       <div>
-        <Link href="/companies" className="text-sm text-[#4f8cff] hover:underline">← Companies</Link>
+        <Link href="/companies" className="text-sm text-[#4f8cff] hover:underline">← 公司列表</Link>
         <div className="flex items-center gap-4 mt-3">
           <h1 className="text-3xl font-bold text-[#e8eaed]">{company.ticker}</h1>
           <span className="text-xl text-[#9aa0a6]">· {company.name}</span>
@@ -29,25 +29,25 @@ export default function CompanyDetailPage() {
       <div className="grid grid-cols-2 gap-4">
         {company.sector && (
           <div className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
-            <div className="text-sm text-[#9aa0a6]">Sector</div>
+            <div className="text-sm text-[#9aa0a6]">行业板块</div>
             <div className="text-[#e8eaed] font-medium mt-1">{company.sector}</div>
           </div>
         )}
         {company.industry && (
           <div className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
-            <div className="text-sm text-[#9aa0a6]">Industry</div>
+            <div className="text-sm text-[#9aa0a6]">细分行业</div>
             <div className="text-[#e8eaed] font-medium mt-1">{company.industry}</div>
           </div>
         )}
         {company.headquarters && (
           <div className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
-            <div className="text-sm text-[#9aa0a6]">Headquarters</div>
+            <div className="text-sm text-[#9aa0a6]">总部</div>
             <div className="text-[#e8eaed] font-medium mt-1">{company.headquarters}</div>
           </div>
         )}
         {company.website && (
           <div className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
-            <div className="text-sm text-[#9aa0a6]">Website</div>
+            <div className="text-sm text-[#9aa0a6]">网站</div>
             <div className="text-[#4f8cff] font-medium mt-1">
               <a href={`https://${company.website}`} target="_blank" rel="noopener noreferrer">{company.website}</a>
             </div>
@@ -58,7 +58,7 @@ export default function CompanyDetailPage() {
       {/* Description */}
       {company.description && (
         <div className="p-5 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
-          <div className="text-sm text-[#9aa0a6] mb-2">Description</div>
+          <div className="text-sm text-[#9aa0a6] mb-2">公司简介</div>
           <p className="text-[#e8eaed] leading-relaxed">{company.description}</p>
         </div>
       )}
@@ -66,7 +66,7 @@ export default function CompanyDetailPage() {
       {/* Tags */}
       {company.tags.length > 0 && (
         <div>
-          <div className="text-sm text-[#9aa0a6] mb-2">Tags</div>
+          <div className="text-sm text-[#9aa0a6] mb-2">标签</div>
           <div className="flex gap-2 flex-wrap">
             {company.tags.map((t) => (
               <span key={t.id} className="px-3 py-1 rounded-lg text-sm bg-[#232736] text-[#9aa0a6] border border-[#2d3140]">
@@ -79,10 +79,10 @@ export default function CompanyDetailPage() {
 
       {/* Related Research */}
       <div>
-        <h2 className="text-lg font-semibold text-[#e8eaed] mb-3">Related Research</h2>
+        <h2 className="text-lg font-semibold text-[#e8eaed] mb-3">相关研究</h2>
         {relatedSessions.length === 0 ? (
           <div className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140] text-sm text-[#9aa0a6]">
-            No research sessions for this company yet.
+            暂无此公司的研究会话。
           </div>
         ) : (
           <div className="space-y-2">

@@ -6,37 +6,37 @@ import { clsx } from "clsx";
 
 const NAV_ITEMS = [
   {
-    label: "Research",
+    label: "研究中心",
     href: "/research",
     icon: "🔬",
   },
   {
-    label: "Companies",
+    label: "公司",
     href: "/companies",
     icon: "🏢",
   },
   {
-    label: "Documents",
+    label: "文档",
     href: "/documents",
     icon: "📄",
   },
   {
-    label: "Knowledge",
+    label: "知识库",
     href: "/knowledge",
     icon: "🧠",
   },
   {
-    label: "Market",
+    label: "行情",
     href: "/market",
     icon: "📊",
   },
   {
-    label: "AI Center",
+    label: "AI 中心",
     href: "/ai",
     icon: "⚡",
   },
   {
-    label: "Portfolio",
+    label: "投资组合",
     href: "/portfolio",
     icon: "💼",
   },
@@ -50,7 +50,7 @@ export default function Sidebar() {
       <div className="p-5 border-b border-[#2d3140]">
         <Link href="/" className="flex items-center gap-2">
           <span className="text-xl">🧠</span>
-          <span className="font-semibold text-[#e8eaed] text-lg">AI Research OS</span>
+          <span className="font-semibold text-[#e8eaed] text-lg">AI 投研系统</span>
         </Link>
       </div>
 
@@ -76,7 +76,7 @@ export default function Sidebar() {
       </nav>
 
       <div className="p-4 border-t border-[#2d3140]">
-        <div className="text-xs text-[#9aa0a6]">v0.1.0 · Research First</div>
+        <div className="text-xs text-[#9aa0a6]">v0.1.0 · 研究优先</div>
       </div>
     </aside>
   );

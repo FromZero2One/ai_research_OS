@@ -12,17 +12,17 @@ export default function DocumentsPage() {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-[#e8eaed]">📄 Document Center</h1>
+        <h1 className="text-2xl font-bold text-[#e8eaed]">📄 文档中心</h1>
         <p className="text-[#9aa0a6] text-sm mt-1">
-          Ingest → Parse → Chunk → Embed → Index — the entire knowledge pipeline
+          导入 → 解析 → 分块 → 嵌入 → 索引 — 完整知识处理管道
         </p>
       </div>
 
       {/* Upload zone placeholder */}
       <div className="p-8 rounded-xl bg-[#1a1d28] border-2 border-dashed border-[#2d3140] text-center hover:border-[#4f8cff]/30 transition-colors cursor-pointer">
         <div className="text-3xl mb-2">📤</div>
-        <div className="text-[#e8eaed] font-medium">Upload Document</div>
-        <div className="text-sm text-[#9aa0a6] mt-1">PDF, Markdown, TXT, HTML — max 50MB</div>
+        <div className="text-[#e8eaed] font-medium">上传文档</div>
+        <div className="text-sm text-[#9aa0a6] mt-1">PDF、Markdown、TXT、HTML — 最大 50MB</div>
         <p className="text-xs text-[#9aa0a6] mt-2">API: POST /api/v1/documents/upload</p>
       </div>
 
@@ -45,12 +45,12 @@ export default function DocumentsPage() {
 
       {/* Documents List */}
       {isLoading ? (
-        <div className="text-center text-[#9aa0a6] py-12">Loading...</div>
+        <div className="text-center text-[#9aa0a6] py-12">加载中...</div>
       ) : !data || data.items.length === 0 ? (
         <div className="p-12 rounded-xl bg-[#1a1d28] border border-[#2d3140] text-center">
           <div className="text-3xl mb-3">📄</div>
-          <div className="text-[#e8eaed] font-medium">No documents yet</div>
-          <div className="text-[#9aa0a6] text-sm mt-1">Upload your first PDF or research report</div>
+          <div className="text-[#e8eaed] font-medium">暂无文档</div>
+          <div className="text-[#9aa0a6] text-sm mt-1">上传第一个 PDF 或研究报告</div>
         </div>
       ) : (
         <div className="space-y-2">
@@ -70,7 +70,7 @@ export default function DocumentsPage() {
                   ? "bg-[#34d399]/10 text-[#34d399]"
                   : "bg-[#fbbf24]/10 text-[#fbbf24]"
               }`}>
-                {doc.is_indexed ? "Indexed" : "Pending"}
+                {doc.is_indexed ? "已索引" : "待处理"}
               </span>
             </div>
           ))}
