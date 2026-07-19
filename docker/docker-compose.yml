@@ -26,10 +26,11 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:6333/healthz > /dev/null 2>&1 || curl -sf http://localhost:6333/ > /dev/null 2>&1"]
+      test: ["CMD", "/qdrant/qdrant", "--version"]
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 5s
 
   redis:
     image: redis:7-alpine
