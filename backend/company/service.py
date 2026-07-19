@@ -42,7 +42,7 @@ class CompanyService:
 
         self.session.add(company)
         await self.session.flush()
-        await self.session.refresh(company)
+        await self.session.refresh(company, attribute_names=["tags"])
 
         await self.events.record(
             source="company",

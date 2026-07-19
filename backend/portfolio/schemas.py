@@ -15,6 +15,7 @@ class WatchlistCreate(BaseModel):
 
 class WatchlistResponse(WatchlistCreate):
     id: UUID
+    items: list[WatchlistItemResponse] = []
     created_at: datetime
     updated_at: datetime | None
 
@@ -42,6 +43,14 @@ class HoldingCreate(BaseModel):
     avg_cost_basis: float | None = None
     sector: str | None = None
     notes: str | None = None
+
+
+class HoldingUpdate(BaseModel):
+    shares: float | None = Field(None, gt=0)
+    avg_cost_basis: float | None = None
+    sector: str | None = None
+    notes: str | None = None
+    is_active: bool | None = None
 
 
 class HoldingResponse(HoldingCreate):

@@ -26,7 +26,7 @@ async def create_company(
 ) -> CompanyResponse:
     svc = CompanyService(db)
     company = await svc.create(**data.model_dump())
-    return company
+    return CompanyResponse.model_validate(company)
 
 
 @router.get("", response_model=CompanyListResponse)
@@ -57,7 +57,7 @@ async def get_company(
 ) -> CompanyResponse:
     svc = CompanyService(db)
     company = await svc.get(company_id)
-    return company
+    return CompanyResponse.model_validate(company)
 
 
 @router.patch("/{company_id}", response_model=CompanyResponse)
@@ -68,7 +68,7 @@ async def update_company(
 ) -> CompanyResponse:
     svc = CompanyService(db)
     company = await svc.update(company_id, data.model_dump(exclude_unset=True))
-    return company
+    return CompanyResponse.model_validate(company)
 
 
 @router.delete("/{company_id}", status_code=204)

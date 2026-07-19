@@ -34,11 +34,14 @@ class AIService:
 
     async def get_template(self, template_id: str) -> PromptTemplate:
         # Try UUID first, then name
+        import uuid
+        try:
+            uuid.UUID(template_id)
+            conditions = (PromptTemplate.id == template_id) | (PromptTemplate.name == template_id)
+        except ValueError:
+            conditions = PromptTemplate.name == template_id
         result = await self.session.execute(
-            select(PromptTemplate).where(
-                (PromptTemplate.id == template_id)
-                | (PromptTemplate.name == template_id)
-            )
+            select(PromptTemplate).where(conditions)
         )
         template = result.scalar_one_or_none()
         if not template:

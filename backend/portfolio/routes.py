@@ -11,6 +11,7 @@ from core.database import get_db
 from portfolio.schemas import (
     HoldingCreate,
     HoldingResponse,
+    HoldingUpdate,
     JournalEntryCreate,
     JournalEntryResponse,
     WatchlistCreate,
@@ -28,19 +29,22 @@ router = APIRouter(prefix="/portfolio", tags=["Portfolio Center"])
 @router.post("/watchlists", response_model=WatchlistResponse, status_code=201)
 async def create_watchlist(data: WatchlistCreate, db: AsyncSession = Depends(get_db)):
     svc = PortfolioService(db)
-    return await svc.create_watchlist(**data.model_dump())
+    wl = await svc.create_watchlist(**data.model_dump())
+    return WatchlistResponse.model_validate(wl)
 
 
 @router.get("/watchlists", response_model=list[WatchlistResponse])
 async def list_watchlists(db: AsyncSession = Depends(get_db)):
     svc = PortfolioService(db)
-    return await svc.list_watchlists()
+    watchlists = await svc.list_watchlists()
+    return [WatchlistResponse.model_validate(wl) for wl in watchlists]
 
 
 @router.get("/watchlists/{watchlist_id}", response_model=WatchlistResponse)
 async def get_watchlist(watchlist_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     svc = PortfolioService(db)
-    return await svc.get_watchlist(watchlist_id)
+    wl = await svc.get_watchlist(watchlist_id)
+    return WatchlistResponse.model_validate(wl)
 
 
 @router.delete("/watchlists/{watchlist_id}", status_code=204)
@@ -83,7 +87,7 @@ async def list_holdings(
 @router.patch("/holdings/{holding_id}", response_model=HoldingResponse)
 async def update_holding(
     holding_id: uuid.UUID,
-    data: HoldingCreate,
+    data: HoldingUpdate,
     db: AsyncSession = Depends(get_db),
 ):
     svc = PortfolioService(db)

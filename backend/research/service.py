@@ -155,6 +155,8 @@ class ResearchService:
         await self.session.refresh(evidence)
 
         await self.events.record(
+            source="research",
+            event_type="evidence.added",
             entity_type="research_evidence",
             entity_id=str(evidence.id),
             payload={
@@ -223,6 +225,8 @@ class ResearchService:
         await self.session.refresh(report)
 
         await self.events.record(
+            source="research",
+            event_type="report.created",
             entity_type="research_report",
             entity_id=str(report.id),
             payload={

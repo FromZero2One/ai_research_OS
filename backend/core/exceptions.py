@@ -39,10 +39,19 @@ class DocumentParsingError(AIResearchOSError):
 class AuthenticationError(AIResearchOSError):
     """Authentication failed."""
 
+    def __init__(self, detail: str = "Not authenticated") -> None:
+        super().__init__(detail)
+
 
 class AuthorizationError(AIResearchOSError):
     """Insufficient permissions."""
 
+    def __init__(self, detail: str = "Insufficient permissions") -> None:
+        super().__init__(detail)
+
 
 class DuplicateError(AIResearchOSError):
     """Resource already exists."""
+
+    def __init__(self, resource: str, key: str) -> None:
+        super().__init__(f"{resource} already exists: {key}")

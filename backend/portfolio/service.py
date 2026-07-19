@@ -26,7 +26,7 @@ class PortfolioService:
         wl = Watchlist(name=name, description=description)
         self.session.add(wl)
         await self.session.flush()
-        await self.session.refresh(wl)
+        await self.session.refresh(wl, attribute_names=["items"])
         return wl
 
     async def get_watchlist(self, watchlist_id: uuid.UUID) -> Watchlist:
