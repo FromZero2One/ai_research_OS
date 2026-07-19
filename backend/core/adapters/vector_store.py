@@ -58,21 +58,21 @@ class QdrantVectorStore:
             ]
             qdrant_filter = QdrantFilter(must=conditions)
 
-        hits = await self._client.search(
+        result = await self._client.query_points(
             collection_name=collection,
-            query_vector=vector,
+            query=vector,
             limit=top_k,
             score_threshold=score_threshold,
             query_filter=qdrant_filter,
         )
         return [
             VectorRecord(
-                id=str(hit.id),
+                id=str(p.id),
                 vector=[],
-                payload=hit.payload or {},
-                score=hit.score,
+                payload=p.payload or {},
+                score=p.score,
             )
-            for hit in hits
+            for p in result.points
         ]
 
     async def delete(self, collection: str, ids: list[str]) -> None:

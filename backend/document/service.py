@@ -35,6 +35,8 @@ class DocumentService:
         await self.session.flush()
         await self.session.refresh(doc)
         await self.events.record(
+            source="document",
+            event_type="document.created",
             entity_type="document",
             entity_id=str(doc.id),
             payload={"title": doc.title, "doc_type": doc.doc_type},
@@ -240,7 +242,7 @@ class DocumentService:
 
     def _chunk_text(self, text: str) -> list[str]:
         """Split text into overlapping chunks."""
-        from core.document.chunker import chunk_text
+        from document.chunker import chunk_text
 
         return chunk_text(
             text,
@@ -273,7 +275,9 @@ class DocumentService:
 
         records = []
         for chunk, vector in zip(chunks, vectors):
-            embedding_id = f"{doc.id}_{chunk.chunk_index}"
+            embedding_id = str(uuid.uuid5(
+                doc.id, f"chunk_{chunk.chunk_index}"
+            ))
             chunk.embedding_id = embedding_id
             records.append(
                 VectorRecord(

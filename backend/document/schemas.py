@@ -13,7 +13,7 @@ class DocumentCreate(BaseModel):
     doc_type: str = Field(..., max_length=64)
     source: str | None = None
     company_id: UUID | None = None
-    metadata: dict | None = None
+    extra_metadata: dict | None = Field(default=None, alias="extra_metadata")
 
 
 class DocumentResponse(BaseModel):
@@ -27,11 +27,11 @@ class DocumentResponse(BaseModel):
     mime_type: str | None
     chunk_count: int | None
     is_indexed: bool
-    metadata: dict | None
+    extra_metadata: dict | None = None
     created_at: datetime
     updated_at: datetime | None
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True, "populate_by_name": True}
 
 
 class DocumentChunkResponse(BaseModel):
