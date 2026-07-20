@@ -25,6 +25,7 @@ from core.logging import configure_logging, logger
 
 from ai.routes import router as ai_router
 from company.routes import router as company_router
+from core.scheduler_routes import router as scheduler_router
 from document.routes import router as document_router
 from knowledge.routes import router as knowledge_router
 from market.routes import router as market_router
@@ -64,10 +65,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     except Exception as e:
         logger.warning("Embedding model not loaded: %s", e)
 
+    # Start scheduler
+    if settings.SCHEDULER_ENABLED:
+        from core.scheduler import start_scheduler
+        from core.scheduler_jobs import market_data_update, morning_brief
+        from core.scheduler import register_job
+
+        register_job("market_data_update", market_data_update)
+        register_job("morning_brief", morning_brief)
+        start_scheduler()
+        logger.info("Scheduler started (enabled=%s)", settings.SCHEDULER_ENABLED)
+    else:
+        logger.info("Scheduler disabled via config")
+
     yield
 
     # Shutdown
     logger.info("Shutting down %s", settings.APP_NAME)
+    from core.scheduler import stop_scheduler
+    stop_scheduler()
     await engine.dispose()
 
 
@@ -177,6 +193,7 @@ def create_app() -> FastAPI:
     app.include_router(ai_router, prefix="/api/v1")
     app.include_router(research_router, prefix="/api/v1")
     app.include_router(portfolio_router, prefix="/api/v1")
+    app.include_router(scheduler_router, prefix="/api/v1")
 
     return app
 
