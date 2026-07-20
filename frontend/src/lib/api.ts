@@ -267,11 +267,12 @@ export interface SearchResult {
 
 export async function searchKnowledge(
   query: string,
-  topK: number = 10
+  topK: number = 10,
+  docType?: string
 ): Promise<{ query: string; count: number; results: SearchResult[] }> {
-  return fetchApi(
-    `/knowledge/search?query=${encodeURIComponent(query)}&top_k=${topK}`
-  );
+  let url = `/knowledge/search?query=${encodeURIComponent(query)}&top_k=${topK}`;
+  if (docType) url += `&doc_type=${encodeURIComponent(docType)}`;
+  return fetchApi(url);
 }
 
 // ── Portfolio ──────────────────────────────────────────────────────

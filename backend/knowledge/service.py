@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.adapters.embedding import create_embedding
+from core.adapters.reranker import create_reranker
 from core.adapters.vector_store import create_vector_store
 from core.event_service import EventLogger
 from document.models import Document, DocumentChunk
@@ -33,12 +34,13 @@ class SearchResult:
 class KnowledgeService:
     """Hybrid RAG retrieval — dense (vector) + sparse (BM25)."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, use_reranker: bool = True) -> None:
         self.session = session
         self.events = EventLogger(session)
         self.embedder = create_embedding()
         self.vector_store = create_vector_store()
         self._bm25_index: dict[str, "BM25Index"] = {}  # lazy per-collection
+        self._reranker = create_reranker() if use_reranker else None
 
     async def search(
         self,
@@ -71,6 +73,33 @@ class KnowledgeService:
 
         # 4. Enrich with DB content
         enriched = await self._enrich_results(fused)
+
+        # 5. Cross-encoder re-ranking (if available)
+        if self._reranker and enriched:
+            try:
+                docs_for_rerank = [
+                    (r.content, r.title, {
+                        "document_id": r.document_id,
+                        "chunk_index": r.chunk_index,
+                        "title": r.title,
+                        "doc_type": r.doc_type,
+                    })
+                    for r in enriched[:top_k * 3]  # re-rank top 3x
+                ]
+                reranked = await self._reranker.rerank(query, docs_for_rerank, top_k=top_k)
+                enriched = [
+                    SearchResult(
+                        content=content,
+                        score=score,
+                        document_id=meta["document_id"],
+                        chunk_index=meta["chunk_index"],
+                        title=meta["title"],
+                        doc_type=meta["doc_type"],
+                    )
+                    for score, content, meta in reranked
+                ]
+            except Exception:
+                pass  # Fall back to RRF results if reranker fails
 
         # Log query
         await self.events.record(
