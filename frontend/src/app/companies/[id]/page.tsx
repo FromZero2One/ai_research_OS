@@ -1,104 +1,191 @@
 "use client";
 
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useCompany, useResearchSessions } from "@/lib/api";
+import { useCompany, useDocuments, useResearchSessions } from "@/lib/api";
+
+function TabBar({ tabs, active, onChange }: { tabs: string[]; active: string; onChange: (t: string) => void }) {
+  return (
+    <div className="flex gap-1 border-b border-[#2d3140] mb-4">
+      {tabs.map((tab) => (
+        <button
+          key={tab}
+          onClick={() => onChange(tab)}
+          className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-[1px] ${
+            active === tab
+              ? "text-[#4f8cff] border-[#4f8cff]"
+              : "text-[#9aa0a6] border-transparent hover:text-[#e8eaed]"
+          }`}
+        >
+          {tab}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function StatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
+      <div className="text-xs text-[#9aa0a6] mb-1">{label}</div>
+      <div className="text-[#e8eaed] font-medium truncate">{value || "—"}</div>
+    </div>
+  );
+}
 
 export default function CompanyDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data: company, isLoading } = useCompany(id);
+  const { data: docsData } = useDocuments();
   const { data: sessions } = useResearchSessions();
+  const [activeTab, setActiveTab] = useState("概览");
 
-  if (isLoading) return <div className="text-[#9aa0a6] py-12 text-center">Loading...</div>;
-  if (!company) return <div className="text-[#f87171] py-12 text-center">Company not found</div>;
+  if (isLoading) return <div className="text-[#9aa0a6] py-12 text-center">加载中...</div>;
+  if (!company) return <div className="text-[#f87171] py-12 text-center">公司未找到</div>;
 
   const relatedSessions = sessions?.filter((s) => s.company_id === id) || [];
+  const relatedDocs = docsData?.items?.filter((d: any) => d.company_id === id) || [];
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
-      {/* Header */}
+    <div className="max-w-5xl mx-auto space-y-6">
+      {/* ── Header ── */}
       <div>
         <Link href="/companies" className="text-sm text-[#4f8cff] hover:underline">← 公司列表</Link>
         <div className="flex items-center gap-4 mt-3">
-          <h1 className="text-3xl font-bold text-[#e8eaed]">{company.ticker}</h1>
-          <span className="text-xl text-[#9aa0a6]">· {company.name}</span>
+          <div>
+            <h1 className="text-3xl font-bold text-[#e8eaed]">{company.ticker}</h1>
+            <p className="text-lg text-[#9aa0a6] mt-0.5">{company.name}</p>
+          </div>
+          <Link
+            href={`/research?new=1&company=${company.id}`}
+            className="ml-auto px-4 py-2 rounded-lg bg-[#4f8cff] text-white text-sm font-medium hover:bg-[#3a7bf5] transition-colors shrink-0"
+          >
+            + 研究此公司
+          </Link>
         </div>
       </div>
 
-      {/* Info Grid */}
-      <div className="grid grid-cols-2 gap-4">
-        {company.sector && (
-          <div className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
-            <div className="text-sm text-[#9aa0a6]">行业板块</div>
-            <div className="text-[#e8eaed] font-medium mt-1">{company.sector}</div>
-          </div>
-        )}
-        {company.industry && (
-          <div className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
-            <div className="text-sm text-[#9aa0a6]">细分行业</div>
-            <div className="text-[#e8eaed] font-medium mt-1">{company.industry}</div>
-          </div>
-        )}
-        {company.headquarters && (
-          <div className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
-            <div className="text-sm text-[#9aa0a6]">总部</div>
-            <div className="text-[#e8eaed] font-medium mt-1">{company.headquarters}</div>
-          </div>
-        )}
-        {company.website && (
-          <div className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
-            <div className="text-sm text-[#9aa0a6]">网站</div>
-            <div className="text-[#4f8cff] font-medium mt-1">
-              <a href={`https://${company.website}`} target="_blank" rel="noopener noreferrer">{company.website}</a>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Description */}
-      {company.description && (
-        <div className="p-5 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
-          <div className="text-sm text-[#9aa0a6] mb-2">公司简介</div>
-          <p className="text-[#e8eaed] leading-relaxed">{company.description}</p>
-        </div>
-      )}
-
-      {/* Tags */}
+      {/* ── Tags ── */}
       {company.tags.length > 0 && (
-        <div>
-          <div className="text-sm text-[#9aa0a6] mb-2">标签</div>
-          <div className="flex gap-2 flex-wrap">
-            {company.tags.map((t) => (
-              <span key={t.id} className="px-3 py-1 rounded-lg text-sm bg-[#232736] text-[#9aa0a6] border border-[#2d3140]">
-                {t.tag}
-              </span>
-            ))}
+        <div className="flex gap-1.5 flex-wrap">
+          {company.tags.map((t: { id: string; tag: string }) => (
+            <span key={t.id} className="px-2.5 py-1 rounded-lg text-xs bg-[#232736] text-[#9aa0a6] border border-[#2d3140]">
+              {t.tag}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* ── Tabs ── */}
+      <TabBar tabs={["概览", "财务数据", "研究", "文档"]} active={activeTab} onChange={setActiveTab} />
+
+      {/* ══════ Overview Tab ══════ */}
+      {activeTab === "概览" && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <StatCard label="行业板块" value={company.sector} />
+            <StatCard label="细分行业" value={company.industry} />
+            <StatCard label="总部" value={company.headquarters} />
+            <StatCard label="网站" value={company.website || "—"} />
+          </div>
+
+          {company.description && (
+            <div className="p-5 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
+              <div className="text-sm text-[#9aa0a6] mb-2">公司简介</div>
+              <p className="text-[#e8eaed] leading-relaxed text-sm">{company.description}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══════ Financials Tab ══════ */}
+      {activeTab === "财务数据" && (
+        <div className="p-8 rounded-xl bg-[#1a1d28] border border-[#2d3140] text-center">
+          <div className="text-3xl mb-3">📊</div>
+          <div className="text-[#e8eaed] font-medium">财务图表</div>
+          <div className="text-sm text-[#9aa0a6] mt-1">
+            需要接入 ECharts 展示营收/利润/K 线趋势
           </div>
         </div>
       )}
 
-      {/* Related Research */}
-      <div>
-        <h2 className="text-lg font-semibold text-[#e8eaed] mb-3">相关研究</h2>
-        {relatedSessions.length === 0 ? (
-          <div className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140] text-sm text-[#9aa0a6]">
-            暂无此公司的研究会话。
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {relatedSessions.map((s) => (
+      {/* ══════ Research Tab ══════ */}
+      {activeTab === "研究" && (
+        <div>
+          {relatedSessions.length === 0 ? (
+            <div className="p-8 rounded-xl bg-[#1a1d28] border border-[#2d3140] text-center">
+              <div className="text-3xl mb-3">🔬</div>
+              <div className="text-[#e8eaed] font-medium">暂无研究</div>
+              <div className="text-sm text-[#9aa0a6] mt-1">创建第一个研究会话</div>
               <Link
-                key={s.id}
-                href={`/research/${s.id}`}
-                className="block p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140] hover:border-[#4f8cff]/30 transition-colors"
+                href={`/research?new=1&company=${company.id}`}
+                className="inline-block mt-3 px-4 py-2 rounded-lg bg-[#4f8cff] text-white text-sm font-medium hover:bg-[#3a7bf5]"
               >
-                <div className="font-medium text-[#e8eaed]">{s.title}</div>
-                <div className="text-sm text-[#9aa0a6] mt-1">{s.question.slice(0, 200)}...</div>
+                + 开始研究
               </Link>
-            ))}
-          </div>
-        )}
-      </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {relatedSessions.map((s: any) => (
+                <Link
+                  key={s.id}
+                  href={`/research/${s.id}`}
+                  className="block p-5 rounded-xl bg-[#1a1d28] border border-[#2d3140] hover:border-[#4f8cff]/30 transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-medium text-[#e8eaed]">{s.title}</div>
+                      <div className="text-sm text-[#9aa0a6] mt-1 line-clamp-1">{s.question}</div>
+                    </div>
+                    <div className="flex items-center gap-2 ml-3">
+                      {s.decision && (
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                          s.decision === "buy" ? "bg-[#34d399]/10 text-[#34d399]" :
+                          s.decision === "sell" ? "bg-[#f87171]/10 text-[#f87171]" :
+                          "bg-[#fbbf24]/10 text-[#fbbf24]"
+                        }`}>{s.decision.toUpperCase()}</span>
+                      )}
+                      <span className="px-2 py-0.5 rounded text-xs bg-[#9aa0a6]/10 text-[#9aa0a6]">{s.status}</span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══════ Documents Tab ══════ */}
+      {activeTab === "文档" && (
+        <div>
+          {relatedDocs.length === 0 ? (
+            <div className="p-8 rounded-xl bg-[#1a1d28] border border-[#2d3140] text-center">
+              <div className="text-3xl mb-3">📄</div>
+              <div className="text-[#e8eaed] font-medium">暂无文档</div>
+              <div className="text-sm text-[#9aa0a6] mt-1">上传相关财报或报告</div>
+              <Link
+                href="/documents"
+                className="inline-block mt-3 px-4 py-2 rounded-lg bg-[#4f8cff] text-white text-sm font-medium hover:bg-[#3a7bf5]"
+              >
+                + 上传文档
+              </Link>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {relatedDocs.map((doc: any) => (
+                <div key={doc.id} className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
+                  <div className="font-medium text-[#e8eaed]">{doc.title}</div>
+                  <div className="text-xs text-[#9aa0a6] mt-1">
+                    {doc.doc_type} · {doc.is_indexed ? "已索引" : "未索引"}
+                    {doc.chunk_count != null && ` · ${doc.chunk_count} 切片`}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
