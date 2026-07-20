@@ -255,6 +255,44 @@ export function useUploadDocument() {
   });
 }
 
+// ── Market ─────────────────────────────────────────────────────────
+
+export interface PricePoint {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface MarketPricesResponse {
+  ticker: string;
+  count: number;
+  prices: PricePoint[];
+}
+
+export function useMarketPrices(ticker: string, limit: number = 120) {
+  return useGet<MarketPricesResponse>(
+    ["market", ticker],
+    ticker ? `/market/prices/${ticker}?limit=${limit}` : "",
+  );
+}
+
+export interface FinancialMetricPoint {
+  fiscal_year: number;
+  fiscal_period: string;
+  metric_name: string;
+  metric_value: number;
+}
+
+export function useFinancialMetrics(ticker: string) {
+  return useGet<{ ticker: string; count: number; metrics: FinancialMetricPoint[] }>(
+    ["financials", ticker],
+    ticker ? `/market/financials/${ticker}` : "",
+  );
+}
+
 // ── Knowledge (Search) ─────────────────────────────────────────────
 
 export interface SearchResult {

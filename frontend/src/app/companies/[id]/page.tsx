@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useCompany, useDocuments, useResearchSessions } from "@/lib/api";
+import { useCompany, useDocuments, useResearchSessions, useMarketPrices, useFinancialMetrics } from "@/lib/api";
+import StockChart from "@/components/StockChart";
 
 function TabBar({ tabs, active, onChange }: { tabs: string[]; active: string; onChange: (t: string) => void }) {
   return (
@@ -40,6 +41,17 @@ export default function CompanyDetailPage() {
   const { data: docsData } = useDocuments();
   const { data: sessions } = useResearchSessions();
   const [activeTab, setActiveTab] = useState("概览");
+  const [chartTicker, setChartTicker] = useState<string | null>(null);
+  const { data: priceData } = useMarketPrices(chartTicker || "", 260);
+  const { data: finData } = useFinancialMetrics(chartTicker || "");
+
+  // Set chart ticker when company loads
+  if (company && !chartTicker) setChartTicker(company.ticker);
+
+  const prices = priceData?.prices || [];
+  const financials = finData?.metrics || [];
+  const revenueData = financials.filter((m) => m.metric_name === "revenue").reverse();
+  const incomeData = financials.filter((m) => m.metric_name === "net_income").reverse();
 
   if (isLoading) return <div className="text-[#9aa0a6] py-12 text-center">加载中...</div>;
   if (!company) return <div className="text-[#f87171] py-12 text-center">公司未找到</div>;
@@ -101,11 +113,24 @@ export default function CompanyDetailPage() {
 
       {/* ══════ Financials Tab ══════ */}
       {activeTab === "财务数据" && (
-        <div className="p-8 rounded-xl bg-[#1a1d28] border border-[#2d3140] text-center">
-          <div className="text-3xl mb-3">📊</div>
-          <div className="text-[#e8eaed] font-medium">财务图表</div>
-          <div className="text-sm text-[#9aa0a6] mt-1">
-            需要接入 ECharts 展示营收/利润/K 线趋势
+        <div className="space-y-6">
+          <div className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
+            <div className="text-sm text-[#9aa0a6] mb-3">{company.ticker} · 股价走势</div>
+            <StockChart prices={prices} height={350} />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {revenueData.length > 0 && (
+              <div className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
+                <div className="text-sm text-[#9aa0a6] mb-3">营收趋势</div>
+                <MiniBar data={revenueData} color="#4f8cff" />
+              </div>
+            )}
+            {incomeData.length > 0 && (
+              <div className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
+                <div className="text-sm text-[#9aa0a6] mb-3">净利润趋势</div>
+                <MiniBar data={incomeData} color="#34d399" />
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -186,6 +211,34 @@ export default function CompanyDetailPage() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function MiniBar({
+  data,
+  color,
+}: {
+  data: { fiscal_year: number; fiscal_period: string; metric_value: number }[];
+  color: string;
+}) {
+  const maxVal = Math.max(...data.map((d) => d.metric_value));
+  const num = (v: number) => {
+    if (v > 1e9) return `$${(v / 1e9).toFixed(1)}B`;
+    if (v > 1e6) return `$${(v / 1e6).toFixed(1)}M`;
+    return `$${v.toFixed(0)}`;
+  };
+  return (
+    <div className="space-y-1.5">
+      {data.slice(-8).map((d, i) => (
+        <div key={i} className="flex items-center gap-2 text-xs">
+          <span className="text-[#9aa0a6] w-14 shrink-0">{d.fiscal_period}</span>
+          <div className="flex-1 h-4 rounded bg-[#232736] overflow-hidden">
+            <div className="h-full rounded" style={{ width: `${(d.metric_value / maxVal) * 100}%`, backgroundColor: color }} />
+          </div>
+          <span className="text-[#e8eaed] w-20 text-right font-mono">{num(d.metric_value)}</span>
+        </div>
+      ))}
     </div>
   );
 }
