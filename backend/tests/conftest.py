@@ -58,6 +58,12 @@ ALL_TABLES = [
 
 
 @pytest.fixture(autouse=True)
+def clean_env(monkeypatch: pytest.MonkeyPatch):
+    """Clear proxy env vars that break httpx/TestClient."""
+    for var in ("ALL_PROXY", "all_proxy", "HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"):
+        monkeypatch.delenv(var, raising=False)
+
+@pytest.fixture(autouse=True)
 def clean_tables():
     """Truncate all project tables after each test."""
     yield
@@ -78,12 +84,13 @@ def client() -> TestClient:
 
 @pytest.fixture
 async def async_client() -> httpx.AsyncClient:
-    """Async ASGI client for endpoints that need async event loop (e.g. Qdrant)."""
+    """Async ASGI client — ignores proxy env vars (ALL_PROXY breaks httpx)."""
     app = create_app()
     app.dependency_overrides[get_db] = _get_test_db
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",
+        trust_env=False,
     ) as ac:
         yield ac
 
