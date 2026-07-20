@@ -8,16 +8,18 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
+from research.models import ResearchSession
 from research.schemas import (
     EvidenceCreate,
     EvidenceResponse,
     ReportResponse,
+    ResearchPlan,
     ResearchSessionCreate,
     ResearchSessionDetail,
     ResearchSessionResponse,
     ResearchSessionUpdate,
 )
-from research.service import ResearchService
+from research.service import ResearchPlanner, ResearchService
 
 router = APIRouter(prefix="/research", tags=["Research Center"])
 
@@ -142,6 +144,54 @@ async def list_reports(
     return await svc.get_reports(session_id)
 
 
+# ── Research Plan ────────────────────────────────────────────────────
+
+@router.post("/sessions/{session_id}/plan", response_model=ResearchPlan)
+async def generate_research_plan(
+    session_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate (or regenerate) an AI research plan for a session."""
+    svc = ResearchService(db)
+    plan = await svc.generate_plan(session_id)
+    return plan
+
+
+@router.get("/sessions/{session_id}/plan", response_model=ResearchPlan | None)
+async def get_research_plan(
+    session_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the current research plan for a session."""
+    from sqlalchemy import select
+    result = await db.execute(
+        select(ResearchSession).where(ResearchSession.id == session_id)
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        from core.exceptions import NotFoundError
+        raise NotFoundError("ResearchSession", str(session_id))
+
+    plan = (session.extra_metadata or {}).get(ResearchPlanner.PLAN_KEY)
+    if not plan:
+        return None
+    return plan
+
+
+# ── AI Report Generation ────────────────────────────────────────────
+
+@router.post("/sessions/{session_id}/generate-report", response_model=ReportResponse)
+async def generate_report(
+    session_id: uuid.UUID,
+    is_final: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """Auto-generate a research report from collected evidence using AI."""
+    svc = ResearchService(db)
+    report = await svc.auto_generate_report(session_id, is_final=is_final)
+    return report
+
+
 # ── Thesis / Finalize ──────────────────────────────────────────────
 
 @router.post("/sessions/{session_id}/finalize", response_model=ResearchSessionResponse)
@@ -161,9 +211,14 @@ async def finalize_research(
 @router.post("/sessions/{session_id}/auto-gather")
 async def auto_gather(
     session_id: uuid.UUID,
+    use_plan: bool = True,
     db: AsyncSession = Depends(get_db),
 ):
-    """Auto-search knowledge base and market data for evidence."""
+    """Auto-search knowledge base and market data for evidence.
+
+    When use_plan=True (default), uses research plan sub-questions
+    for targeted searches across multiple dimensions.
+    """
     svc = ResearchService(db)
-    count = await svc.auto_gather_evidence(session_id, db)
-    return {"session_id": str(session_id), "evidences_added": count}
+    result = await svc.auto_gather_evidence(session_id, db, use_plan=use_plan)
+    return result

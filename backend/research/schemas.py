@@ -5,7 +5,17 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+class ResearchPlan(BaseModel):
+    """AI-generated research plan stored in session.extra_metadata."""
+
+    research_goal: str = Field(..., description="Restated research goal")
+    sub_questions: list[str] = Field(..., description="Sub-questions to answer", max_length=10)
+    analysis_dimensions: list[str] = Field(..., description="Analysis dimensions (financial, industry, etc.)")
+    data_requirements: list[str] = Field(default=[], description="Data to collect")
+    suggested_sources: list[str] = Field(default=[], description="Types of sources to search")
 
 
 class ResearchSessionCreate(BaseModel):
@@ -14,6 +24,7 @@ class ResearchSessionCreate(BaseModel):
     context: str | None = None
     company_id: UUID | None = None
     tags: list[str] | None = None
+    auto_plan: bool = Field(default=False, description="Auto-generate research plan on create")
 
 
 class ResearchSessionUpdate(BaseModel):
@@ -58,6 +69,22 @@ class ResearchSessionResponse(BaseModel):
 class ResearchSessionDetail(ResearchSessionResponse):
     evidences: list["EvidenceResponse"] = []
     reports: list["ReportResponse"] = []
+    plan: ResearchPlan | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def extract_plan(cls, data: any) -> any:
+        """Extract research plan from session.extra_metadata."""
+        if isinstance(data, dict):
+            extra = data.get("extra_metadata") or {}
+        else:
+            extra = getattr(data, "extra_metadata", None) or {}
+        plan_data = extra.get("research_plan") if isinstance(extra, dict) else None
+        if isinstance(data, dict):
+            data["plan"] = plan_data
+        else:
+            data.plan = plan_data if plan_data else None
+        return data
 
 
 class EvidenceResponse(BaseModel):

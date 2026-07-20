@@ -121,6 +121,14 @@ export function useCreateCompany() {
 
 // ── Research ───────────────────────────────────────────────────────
 
+export interface ResearchPlan {
+  research_goal: string;
+  sub_questions: string[];
+  analysis_dimensions: string[];
+  data_requirements: string[];
+  suggested_sources: string[];
+}
+
 export interface ResearchSession {
   id: string;
   title: string;
@@ -131,7 +139,13 @@ export interface ResearchSession {
   thesis: string | null;
   decision: string | null;
   confidence: number | null;
+  plan: ResearchPlan | null;
   created_at: string;
+}
+
+export interface ResearchSessionDetail extends ResearchSession {
+  evidences: any[];
+  reports: any[];
 }
 
 export function useResearchSessions(status?: string) {
@@ -143,7 +157,7 @@ export function useResearchSessions(status?: string) {
 }
 
 export function useResearchSession(id: string) {
-  return useGet<ResearchSession & { evidences: any[]; reports: any[] }>(
+  return useGet<ResearchSessionDetail>(
     ["research", id],
     `/research/sessions/${id}`
   );
@@ -151,6 +165,50 @@ export function useResearchSession(id: string) {
 
 export function useCreateResearch() {
   return useCreate<ResearchSession>("/research/sessions", [["research"]]);
+}
+
+export function useGeneratePlan() {
+  const qc = useQueryClient();
+  return useMutation<any, Error, string>({
+    mutationFn: (sessionId) =>
+      fetchApi(`/research/sessions/${sessionId}/plan`, { method: "POST" }),
+    onSuccess: (_, sessionId) => {
+      qc.invalidateQueries({ queryKey: ["research", sessionId] });
+    },
+  });
+}
+
+export function useAutoGatherEvidence() {
+  const qc = useQueryClient();
+  return useMutation<any, Error, string>({
+    mutationFn: (sessionId) =>
+      fetchApi(`/research/sessions/${sessionId}/auto-gather?use_plan=true`, { method: "POST" }),
+    onSuccess: (_, sessionId) => {
+      qc.invalidateQueries({ queryKey: ["research", sessionId] });
+    },
+  });
+}
+
+export function useGenerateReport() {
+  const qc = useQueryClient();
+  return useMutation<any, Error, { sessionId: string; isFinal: boolean }>({
+    mutationFn: ({ sessionId, isFinal }) =>
+      fetchApi(`/research/sessions/${sessionId}/generate-report?is_final=${isFinal}`, { method: "POST" }),
+    onSuccess: (_, { sessionId }) => {
+      qc.invalidateQueries({ queryKey: ["research", sessionId] });
+    },
+  });
+}
+
+export function useFinalizeResearch() {
+  const qc = useQueryClient();
+  return useMutation<any, Error, { sessionId: string; thesis: string; decision: string; confidence: number }>({
+    mutationFn: ({ sessionId, thesis, decision, confidence }) =>
+      fetchApi(`/research/sessions/${sessionId}/finalize?thesis=${encodeURIComponent(thesis)}&decision=${decision}&confidence=${confidence}`, { method: "POST" }),
+    onSuccess: (_, { sessionId }) => {
+      qc.invalidateQueries({ queryKey: ["research", sessionId] });
+    },
+  });
 }
 
 // ── Documents ──────────────────────────────────────────────────────

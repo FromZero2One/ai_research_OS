@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import httpx
+from httpx import AsyncHTTPTransport
 
 from core.config import settings
 from core.interfaces import LLM, LLMMessage, LLMResponse
@@ -38,7 +39,14 @@ class OllamaLLM:
             "options": {"temperature": temperature, "num_predict": max_tokens},
             "stream": stream,
         }
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(
+            timeout=120.0,
+            # Bypass SOCKS proxy for local Ollama connection
+            transport=httpx.AsyncHTTPTransport(
+                proxy=None,
+                trust_env=False,
+            ),
+        ) as client:
             resp = await client.post(f"{self._base_url}/api/chat", json=payload)
             resp.raise_for_status()
             data = resp.json()

@@ -107,6 +107,7 @@ SAMPLE_RESEARCH = {
     "title": "Test Research Session",
     "question": "Is this a good test?",
     "context": "Testing the research workflow",
+    "auto_plan": False,
 }
 
 SAMPLE_PROMPT_TEMPLATE = {
