@@ -232,6 +232,29 @@ export function useDocuments(docType?: string) {
   );
 }
 
+export function useUploadDocument() {
+  const qc = useQueryClient();
+  return useMutation<any, Error, File>({
+    mutationFn: async (file) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("title", file.name.replace(/\.[^/.]+$/, ""));
+      const res = await fetch(`${API_BASE}/documents/upload`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || "Upload failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["documents"] });
+    },
+  });
+}
+
 // ── Knowledge (Search) ─────────────────────────────────────────────
 
 export interface SearchResult {
