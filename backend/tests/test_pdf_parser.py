@@ -44,6 +44,7 @@ class TestPDFParser:
 
         assert "Single page document" in result.text
         assert result.metadata["pages"] == 1
+        assert result.metadata["total_text_length"] > 0
         assert "[Page 1]" in result.text
         # Single page: chunks should be None (not worth splitting)
         assert result.chunks is None
@@ -76,11 +77,11 @@ class TestPDFParserErrors:
         with pytest.raises(PDFEncryptedError, match="password-protected"):
             await parser.parse(content, "encrypted.pdf")
 
-    async def test_empty_page_raises_scanned_error(self, parser: PyMuPDFParser):
-        """A page with no text should raise PDFScannedError."""
-        content = (TEST_DATA / "empty_page.pdf").read_bytes()
+    async def test_empty_pages_raises_scanned_error(self, parser: PyMuPDFParser):
+        """A multi-page PDF with no text should raise PDFScannedError."""
+        content = (TEST_DATA / "empty_pages.pdf").read_bytes()
         with pytest.raises(PDFScannedError, match="scanned"):
-            await parser.parse(content, "empty_page.pdf")
+            await parser.parse(content, "empty_pages.pdf")
 
     async def test_invalid_content(self, parser: PyMuPDFParser):
         with pytest.raises(PDFParserError, match="Invalid|corrupted"):

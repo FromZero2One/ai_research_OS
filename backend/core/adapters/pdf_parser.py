@@ -121,13 +121,14 @@ class PyMuPDFParser(DocumentParser):
             })
             pages_text.append(page_text)
 
+        page_count = len(doc)
         doc.close()
 
-        # Check if this is a scanned PDF
-        if total_text_length < self.MIN_TEXT_LENGTH and len(doc) > 0:
+        # Check if this is a scanned PDF (only for multi-page docs)
+        if page_count > 1 and total_text_length < self.MIN_TEXT_LENGTH:
             raise PDFScannedError(
                 f"PDF appears to be scanned (only {total_text_length} chars extracted "
-                f"from {len(doc)} pages). OCR not supported in V1."
+                f"from {page_count} pages). OCR not supported in V1."
             )
 
         # Build full text with page markers

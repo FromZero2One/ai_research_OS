@@ -9,8 +9,15 @@ from typing import Any
 
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from core.adapters.embedding import create_embedding
+from core.adapters.pdf_parser import (
+    PDFEncryptedError,
+    PDFParserError,
+    PDFScannedError,
+    PyMuPDFParser,
+)
 from core.adapters.vector_store import create_vector_store
 from core.config import settings
 from core.event_service import EventLogger
@@ -26,6 +33,7 @@ class DocumentService:
         self.events = EventLogger(session)
         self.embedder = create_embedding()
         self.vector_store = create_vector_store()
+        self.pdf_parser = PyMuPDFParser()
 
     # ── CRUD ──────────────────────────────────────────────────────
 
@@ -45,7 +53,9 @@ class DocumentService:
 
     async def get(self, document_id: uuid.UUID) -> Document:
         result = await self.session.execute(
-            select(Document).where(Document.id == document_id)
+            select(Document)
+            .options(selectinload(Document.chunks))
+            .where(Document.id == document_id)
         )
         doc = result.scalar_one_or_none()
         if not doc:
@@ -180,7 +190,8 @@ class DocumentService:
 
         try:
             if ext == ".pdf":
-                return await self._parse_pdf(content)
+                result = await self.pdf_parser.parse(content, filename)
+                return result.text
             elif ext in (".md", ".markdown"):
                 return content.decode("utf-8", errors="replace")
             elif ext == ".txt":
@@ -190,26 +201,23 @@ class DocumentService:
             else:
                 # Fallback: try plain text
                 return content.decode("utf-8", errors="replace")
-        except Exception as e:
+        except PDFEncryptedError:
+            raise DocumentParsingError(
+                f"Cannot parse {filename}: PDF is password-protected"
+            )
+        except PDFScannedError:
+            raise DocumentParsingError(
+                f"Cannot parse {filename}: PDF appears to be a scanned document "
+                "(OCR not supported in V1)"
+            )
+        except PDFParserError as e:
+            raise DocumentParsingError(
+                f"Failed to parse PDF {filename}: {e}"
+            )
+        except (UnicodeDecodeError, ValueError) as e:
             raise DocumentParsingError(
                 f"Failed to parse {filename}: {e}"
             )
-
-    async def _parse_pdf(self, content: bytes) -> str:
-        """Parse PDF using PyMuPDF."""
-        import asyncio
-
-        def _sync_parse() -> str:
-            import fitz
-
-            doc = fitz.open(stream=content, filetype="pdf")
-            texts = []
-            for page in doc:
-                texts.append(page.get_text())
-            doc.close()
-            return "\n\n".join(texts)
-
-        return await asyncio.to_thread(_sync_parse)
 
     async def _parse_html(self, content: bytes) -> str:
         """Strip HTML tags to get plain text."""

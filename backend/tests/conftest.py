@@ -1,9 +1,10 @@
-"""Test fixtures — synchronous TestClient + per-test table cleanup."""
+"""Test fixtures — sync + async TestClient, per-test table cleanup."""
 
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
@@ -73,6 +74,18 @@ def client() -> TestClient:
     app = create_app()
     app.dependency_overrides[get_db] = _get_test_db
     return TestClient(app)
+
+
+@pytest.fixture
+async def async_client() -> httpx.AsyncClient:
+    """Async ASGI client for endpoints that need async event loop (e.g. Qdrant)."""
+    app = create_app()
+    app.dependency_overrides[get_db] = _get_test_db
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as ac:
+        yield ac
 
 
 # ── Sample data helpers ───────────────────────────────────────────────
