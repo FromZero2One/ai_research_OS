@@ -27,12 +27,14 @@ class WatchlistItemCreate(BaseModel):
     notes: str | None = None
     target_price: float | None = None
     reason: str | None = None
+    priority: int = Field(3, ge=1, le=5)
 
 
 class WatchlistItemResponse(WatchlistItemCreate):
     id: UUID
     watchlist_id: UUID
     created_at: datetime
+    priority: int = 3
 
     model_config = {"from_attributes": True}
 

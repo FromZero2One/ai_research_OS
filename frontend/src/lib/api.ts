@@ -14,8 +14,16 @@ async function fetchApi<T>(
   });
 
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(error.detail || `API error: ${res.status}`);
+    const errorBody = await res.json().catch(() => ({ detail: res.statusText }));
+    // Format validation errors (422) into readable message
+    if (res.status === 422 && Array.isArray(errorBody.detail)) {
+      const messages = errorBody.detail.map((e: any) => {
+        const field = e.loc?.filter((s: string) => s !== "body").join(".") || "";
+        return field ? `${field}: ${e.msg}` : e.msg;
+      });
+      throw new Error(messages.join("; "));
+    }
+    throw new Error(errorBody.detail || `API error: ${res.status}`);
   }
 
   if (res.status === 204) return undefined as T;
@@ -321,4 +329,257 @@ export function useWatchlists() {
 
 export function useHoldings() {
   return useList<any[]>(["holdings"], "/portfolio/holdings");
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────
+
+export interface DashboardBrief {
+  content: string;
+  generated_at: string | null;
+}
+
+export interface DashboardWatchlistItem {
+  id: string;
+  ticker: string;
+  company_name: string;
+  sector: string | null;
+  priority: number;
+  target_price: number | null;
+  reason: string | null;
+  latest_price: number | null;
+  price_date: string | null;
+  price_change: number | null;
+  status: "normal" | "attention" | "need_research";
+  thesis: string | null;
+  last_research_at: string | null;
+  days_since_research: number | null;
+}
+
+export interface DashboardWatchlist {
+  watchlist_id: string;
+  watchlist_name: string;
+  items: DashboardWatchlistItem[];
+}
+
+export interface DashboardReminder {
+  ticker: string;
+  company_name: string;
+  days_since_research: number;
+  reasons: string[];
+  priority: number;
+}
+
+export interface DashboardRecentResearch {
+  id: string;
+  title: string;
+  question: string;
+  status: string;
+  thesis: string | null;
+  created_at: string;
+}
+
+export interface DashboardData {
+  morning_brief: DashboardBrief | null;
+  watchlist: DashboardWatchlist[];
+  research_reminders: DashboardReminder[];
+  recent_research: DashboardRecentResearch[];
+}
+
+export function useDashboard() {
+  return useGet<DashboardData>(["dashboard"], "/dashboard");
+}
+
+// ── Quick Research ────────────────────────────────────────────────
+
+export interface QuickResearchRequest {
+  ticker: string;
+  question: string;
+  title?: string;
+}
+
+export interface QuickResearchResponse {
+  session_id: string;
+  status: string;
+}
+
+export interface ResearchProgress {
+  step: string;
+  message: string;
+  status: string;
+  session_id: string;
+  report_id?: string;
+  error?: string;
+}
+
+export function useQuickResearch() {
+  const qc = useQueryClient();
+  return useMutation<QuickResearchResponse, Error, QuickResearchRequest>({
+    mutationFn: (data) =>
+      fetchApi("/research/quick", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["research"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+export function subscribeResearchStream(
+  sessionId: string,
+  onProgress: (progress: ResearchProgress) => void,
+  onComplete: (progress: ResearchProgress) => void,
+  onError: (error: string) => void,
+): () => void {
+  const eventSource = new EventSource(`/api/research/quick/${sessionId}/stream`);
+
+  eventSource.addEventListener("progress", (event) => {
+    try {
+      const data = JSON.parse(event.data) as ResearchProgress;
+      onProgress(data);
+    } catch { /* ignore parse errors */ }
+  });
+
+  eventSource.addEventListener("complete", (event) => {
+    try {
+      const data = JSON.parse(event.data) as ResearchProgress;
+      onComplete(data);
+    } catch { /* ignore */ }
+    eventSource.close();
+  });
+
+  eventSource.addEventListener("error", (event) => {
+    onError("SSE connection error");
+    eventSource.close();
+  });
+
+  return () => eventSource.close();
+}
+
+// ── Research Timeline ───────────────────────────────────────────
+
+export interface TimelineEvent {
+  type: string;
+  date: string;
+  session_id?: string;
+  session_title?: string;
+  report_id?: string;
+  version?: number;
+  is_final?: boolean;
+  thesis?: string | null;
+  decision?: string | null;
+  confidence?: number | null;
+  detail: string;
+  status?: string;
+}
+
+export interface TimelineData {
+  ticker: string;
+  company_name: string | null;
+  events: TimelineEvent[];
+}
+
+export function useTimeline(ticker: string) {
+  return useGet<TimelineData>(
+    ["timeline", ticker],
+    ticker ? `/research/timeline?ticker=${encodeURIComponent(ticker)}` : "",
+  );
+}
+
+export interface DiffData {
+  report_id: string;
+  session_id: string;
+  from_version: number;
+  to_version: number;
+  diff: string;
+  stats: {
+    additions: number;
+    deletions: number;
+    context_lines: number;
+  };
+}
+
+export function useReportDiff(reportId: string, otherVersion: number) {
+  return useGet<DiffData>(
+    ["report-diff", reportId, String(otherVersion)],
+    reportId ? `/research/reports/${reportId}/diff?other_version=${otherVersion}` : "",
+  );
+}
+
+export interface SessionTimelineData {
+  session_id: string;
+  session_title: string;
+  status: string;
+  thesis: string | null;
+  decision: string | null;
+  events: TimelineEvent[];
+}
+
+export function useSessionTimeline(sessionId: string) {
+  return useGet<SessionTimelineData>(
+    ["session-timeline", sessionId],
+    sessionId ? `/research/sessions/${sessionId}/timeline` : "",
+  );
+}
+
+// ── Thesis Panel ─────────────────────────────────────────────────
+
+export interface ThesisData {
+  ticker: string;
+  company_name: string;
+  thesis: string | null;
+  decision: string | null;
+  confidence: number | null;
+  source_session_id: string | null;
+  updated_at: string | null;
+}
+
+export interface WorkspaceData {
+  ticker: string;
+  company_name: string;
+  company_id: string;
+  thesis: ThesisData | null;
+  recent_research: {
+    id: string;
+    title: string;
+    status: string;
+    decision: string | null;
+    thesis: string | null;
+    created_at: string | null;
+  }[];
+  evidence_summary: {
+    supporting: number;
+    opposing: number;
+    neutral: number;
+  };
+}
+
+export function useCompanyThesis(ticker: string) {
+  return useGet<ThesisData>(
+    ["thesis", ticker],
+    ticker ? `/companies/by-ticker/${encodeURIComponent(ticker)}/thesis` : "",
+  );
+}
+
+export function useUpdateThesis() {
+  const qc = useQueryClient();
+  return useMutation<any, Error, { ticker: string; thesis: string; decision?: string; confidence?: number }>({
+    mutationFn: ({ ticker, thesis, decision, confidence }) =>
+      fetchApi(`/companies/by-ticker/${encodeURIComponent(ticker)}/thesis`, {
+        method: "POST",
+        body: JSON.stringify({ thesis, decision, confidence }),
+      }),
+    onSuccess: (_, { ticker }) => {
+      qc.invalidateQueries({ queryKey: ["thesis", ticker] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+export function useCompanyWorkspace(ticker: string) {
+  return useGet<WorkspaceData>(
+    ["workspace", ticker],
+    ticker ? `/companies/by-ticker/${encodeURIComponent(ticker)}/workspace` : "",
+  );
 }

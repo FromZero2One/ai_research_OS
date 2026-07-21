@@ -42,8 +42,9 @@ class Settings(BaseSettings):
 
     # --- LLM ---
     LLM_PROVIDER: Literal["ollama", "openai"] = "ollama"
-    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
     OLLAMA_MODEL: str = "llama3.1:70b"
+    OLLAMA_EMBEDDING_MODEL: str = "nomic-embed-text"
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o"
 
@@ -69,6 +70,7 @@ class Settings(BaseSettings):
     SCHEDULER_ENABLED: bool = True
     MARKET_DATA_SCHEDULE: str = "0 2 * * 1-5"  # Weekdays 2am
     REPORT_SCHEDULE: str = "0 6 * * 1-5"  # Weekdays 6am
+    OBSERVATION_SCHEDULE: str = "30 5 * * 1-5"  # Weekdays 5:30am (before brief)
 
     # --- CORS ---
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]

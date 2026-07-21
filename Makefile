@@ -50,7 +50,7 @@ test-cov:
 # ── Data ─────────────────────────────────────────────────────────────
 
 ingest-sample:
-	cd backend && python scripts/ingest_sample_companies.py
+	cd backend && python scripts/seed_data.py
 
 # ── Docker ───────────────────────────────────────────────────────────
 

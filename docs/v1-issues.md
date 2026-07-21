@@ -10,7 +10,7 @@
 
 - [x] `backend/alembic/env.py` 已导入所有 model
 - [x] 初始迁移 `d199a3e17af8_init.py` 已生成
-- [x] `alembic upgrade head` 可创建所有 16 张表
+- [x] `alembic upgrade head` 可创建所有 17 张表
 - [x] `make reset-db` 可一键重建
 
 ### ISSUE-002：测试体系 ✅
@@ -25,7 +25,7 @@
 - [x] `test_portfolio.py` — 自选/持仓 CRUD
 - [x] `test_pdf_parser.py` — PDF 解析 11 项测试
 
-**结果**: 77 同步测试通过, 13 异步测试需要 bge-m3 模型下载
+**结果**: 88 同步测试通过, 10 异步测试需要 bge-m3 模型下载
 
 ---
 

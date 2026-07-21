@@ -6,9 +6,24 @@ import { clsx } from "clsx";
 
 const NAV_ITEMS = [
   {
+    label: "工作台",
+    href: "/",
+    icon: "🏠",
+  },
+  {
+    label: "快速研究",
+    href: "/research/quick",
+    icon: "⚡",
+  },
+  {
     label: "研究中心",
     href: "/research",
     icon: "🔬",
+  },
+  {
+    label: "研究时间线",
+    href: "/research/timeline",
+    icon: "📋",
   },
   {
     label: "公司",
@@ -39,6 +54,11 @@ const NAV_ITEMS = [
     label: "投资组合",
     href: "/portfolio",
     icon: "💼",
+  },
+  {
+    label: "系统状态",
+    href: "/system",
+    icon: "📡",
   },
 ];
 

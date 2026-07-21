@@ -26,11 +26,14 @@ from core.logging import configure_logging, logger
 from ai.routes import router as ai_router
 from company.routes import router as company_router
 from core.scheduler_routes import router as scheduler_router
+from dashboard.routes import router as dashboard_router
 from document.routes import router as document_router
 from knowledge.routes import router as knowledge_router
 from market.routes import router as market_router
 from portfolio.routes import router as portfolio_router
+from research.quick import router as quick_research_router
 from research.routes import router as research_router
+from research.timeline import router as research_timeline_router
 
 
 @asynccontextmanager
@@ -53,26 +56,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     except Exception as e:
         logger.warning("Database not available at startup: %s", e)
 
-    # Pre-warm embedding model (first call loads it)
+    # Pre-warm embedding model (lazy — runs in background, doesn't block startup)
     try:
         embedder = create_embedding()
         _ = embedder.dimension
-        logger.info(
-            "Embedding model loaded: %s (dim=%d)",
-            settings.EMBEDDING_MODEL,
-            embedder.dimension,
-        )
+        logger.info("Embedding model ready: dim=%d", embedder.dimension)
     except Exception as e:
-        logger.warning("Embedding model not loaded: %s", e)
+        logger.debug("Embedding model lazy-load deferred: %s", e)
 
     # Start scheduler
     if settings.SCHEDULER_ENABLED:
         from core.scheduler import start_scheduler
-        from core.scheduler_jobs import market_data_update, morning_brief
         from core.scheduler import register_job
+        from core.scheduler_jobs import market_data_update, morning_brief
+        from core.observation_engine import run_observation_cycle
 
         register_job("market_data_update", market_data_update)
         register_job("morning_brief", morning_brief)
+        register_job("observation_cycle", run_observation_cycle)
         start_scheduler()
         logger.info("Scheduler started (enabled=%s)", settings.SCHEDULER_ENABLED)
     else:
@@ -194,6 +195,9 @@ def create_app() -> FastAPI:
     app.include_router(research_router, prefix="/api/v1")
     app.include_router(portfolio_router, prefix="/api/v1")
     app.include_router(scheduler_router, prefix="/api/v1")
+    app.include_router(dashboard_router, prefix="/api/v1")
+    app.include_router(quick_research_router, prefix="/api/v1")
+    app.include_router(research_timeline_router, prefix="/api/v1")
 
     return app
 

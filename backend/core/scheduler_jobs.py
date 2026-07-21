@@ -114,7 +114,7 @@ async def morning_brief() -> dict:
             event_type="morning_brief.generated",
             entity_type="brief",
             entity_id="daily",
-            payload={"content": brief_content[:500], "char_count": len(brief_content)},
+            payload={"content": brief_content[:2000], "char_count": len(brief_content)},
         )
         await session.commit()
 

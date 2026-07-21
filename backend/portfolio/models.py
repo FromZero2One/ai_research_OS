@@ -37,6 +37,7 @@ class WatchlistItem(Base, UUIDMixin, TimestampMixin):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     target_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    priority: Mapped[int] = mapped_column(default=3, nullable=False)
 
     watchlist: Mapped[Watchlist] = relationship(back_populates="items")
 

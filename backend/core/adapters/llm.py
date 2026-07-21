@@ -3,6 +3,16 @@
 from __future__ import annotations
 
 import json
+import os
+
+# Strip proxy env vars that interfere with local Ollama connections.
+# Must run BEFORE any httpx client is created, as httpx caches proxy
+# config from env vars at import time.
+for _var in ("all_proxy", "ALL_PROXY", "http_proxy", "HTTP_PROXY",
+              "https_proxy", "HTTPS_PROXY", "ftp_proxy", "FTP_PROXY"):
+    os.environ.pop(_var, None)
+os.environ["no_proxy"] = "localhost,127.0.0.0/8,::1"
+os.environ["NO_PROXY"] = "localhost,127.0.0.0/8,::1"
 
 import httpx
 from httpx import AsyncHTTPTransport
@@ -33,25 +43,47 @@ class OllamaLLM:
         max_tokens: int = 4096,
         stream: bool = False,
     ) -> LLMResponse:
+        # Convert chat messages to prompt for Ollama /api/generate
+        system_msgs = [m.content for m in messages if m.role == "system"]
+        user_msgs = [m.content for m in messages if m.role == "user"]
+        prompt_parts = []
+        if system_msgs:
+            prompt_parts.append(system_msgs[0])
+        if user_msgs:
+            prompt_parts.append(user_msgs[0])
+        prompt = "\n\n".join(prompt_parts) + "\n\nGenerate your response now:"
+
         payload = {
             "model": self._model,
-            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "prompt": prompt,
             "options": {"temperature": temperature, "num_predict": max_tokens},
             "stream": stream,
         }
-        async with httpx.AsyncClient(
-            timeout=120.0,
-            # Bypass SOCKS proxy for local Ollama connection
-            transport=httpx.AsyncHTTPTransport(
-                proxy=None,
-                trust_env=False,
-            ),
-        ) as client:
-            resp = await client.post(f"{self._base_url}/api/chat", json=payload)
-            resp.raise_for_status()
-            data = resp.json()
+        # Use subprocess curl to bypass proxy issues + combine all streaming lines
+        import asyncio as _asyncio
+        import json as _json
+        import os as _os
+        _os.environ.pop("all_proxy", None)
+        _os.environ.pop("ALL_PROXY", None)
+        _cmd = [
+            "curl", "--noproxy", "*", "-s", "--max-time", "120",
+            "-H", "Content-Type: application/json",
+            "-d", _json.dumps({**payload, "stream": False}),
+            f"{self._base_url}/api/generate",
+        ]
+        _proc = await _asyncio.create_subprocess_exec(
+            *_cmd, stdout=_asyncio.subprocess.PIPE, stderr=_asyncio.subprocess.PIPE,
+        )
+        _stdout, _stderr = await _proc.communicate()
+        if _proc.returncode != 0:
+            raise RuntimeError(f"Ollama request failed (exit={_proc.returncode}): {_stderr.decode()[:200]}")
+        # Debug: write raw response to /tmp/llm_debug.log
+        with open("/tmp/llm_debug.log", "a") as _f:
+            _f.write(f"\n--- LLM Response ({len(_stdout)} bytes) ---\n{_stdout.decode()[:1000]}\n")
+        # The /api/generate endpoint with stream=false returns a single JSON object
+        data = _json.loads(_stdout.decode().strip())
         return LLMResponse(
-            content=data["message"]["content"],
+            content=data["response"],
             model=self._model,
             usage=data.get("usage"),
         )

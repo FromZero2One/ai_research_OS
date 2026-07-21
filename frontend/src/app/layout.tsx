@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import Sidebar from "@/components/Sidebar";
+import CommandPalette from "@/components/CommandPalette";
 import "./globals.css";
 
 export default function RootLayout({
@@ -25,8 +26,11 @@ export default function RootLayout({
         <QueryClientProvider client={queryClient}>
           <div className="flex min-h-screen">
             <Sidebar />
-            <main className="flex-1 p-8 overflow-auto">{children}</main>
+            <main className="flex-1 p-8 overflow-auto">
+              {children}
+            </main>
           </div>
+          <CommandPalette />
         </QueryClientProvider>
       </body>
     </html>

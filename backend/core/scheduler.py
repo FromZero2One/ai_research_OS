@@ -72,6 +72,13 @@ def start_scheduler() -> AsyncIOScheduler:
             settings.REPORT_SCHEDULE,
         )
 
+    # Register observation cycle job (before morning brief)
+    if hasattr(settings, "OBSERVATION_SCHEDULE") and settings.OBSERVATION_SCHEDULE:
+        _add_cron_job(
+            "observation_cycle",
+            settings.OBSERVATION_SCHEDULE,
+        )
+
     if _scheduler.get_jobs():
         _scheduler.start()
         logger.info(

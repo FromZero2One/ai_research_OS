@@ -100,7 +100,7 @@ Per-company page with:
 
 | 组件 | 状态 | 说明 |
 |------|------|------|
-| PostgreSQL | ✅ | 16 张表, Alembic 迁移 |
+| PostgreSQL | ✅ | 17 张表, Alembic 迁移 |
 | Qdrant | ✅ | 向量存储, 检索 |
 | LLM | ✅ | Ollama, Adapter 模式 |
 | Cache (Redis) | ✅ | 已部署 |
@@ -126,8 +126,8 @@ Per-company page with:
 
 ### Phase 1：基础工程完善 ✅
 
-- [x] Alembic Migration — 16 张表自迁移
-- [x] 测试体系 — 77 同步测试通过
+- [x] Alembic Migration — 17 张表自迁移
+- [x] 测试体系 — 88 同步测试通过
 
 ### Phase 2：知识库闭环 ✅
 
@@ -166,10 +166,10 @@ Per-company page with:
 | 维度 | 完成度 |
 |------|--------|
 | 后端代码 | ~7000 行 Python |
-| 前端代码 | ~1800 行 TSX/TS |
-| 测试 | 77 同步测试通过 |
-| 数据库 | 7 schema × 16 表 |
-| Git commits | 17 (本地) / 已推送 GitHub |
+| 前端代码 | ~2450 行 TSX/TS |
+| 测试 | 88 同步测试通过 |
+| 数据库 | 7 schema × 17 表 |
+| Git commits | 19 (本地) / 已推送 GitHub |
 | 核心功能闭环 | ✅ 全部可运行 |
 
 ---
