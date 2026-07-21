@@ -1,6 +1,6 @@
 # AI Research OS — 项目完整进度报告
 
-**生成时间**: 2026-07-21 | **状态**: V1 核心功能已完成
+**生成时间**: 2026-07-21 | **状态**: V1 ✅ + V1.1 ✅（共 10 个 Sprint 全部交付）
 
 ---
 
@@ -8,10 +8,16 @@
 
 个人 AI 驱动的投资研究助手。核心理念：**"Research First, not AI First"** — AI 是研究流程中的能力组件，而非中心。
 
-**已验证的核心闭环：**
+**V1 核心闭环已验证：**
 ```
 创建研究 → AI 生成计划(6子问题/6维度) → 收集证据(知识库+行情)
   → AI 生成报告 → 完结(观点/决策/置信度)
+```
+
+**V1.1 日循环已验证：**
+```
+打开系统 → 看 Morning Brief → 查看 Watchlist → 收到研究提醒
+  → 一键发起研究 → 查看 Timeline → 维护 Thesis
 ```
 
 ---
@@ -20,18 +26,21 @@
 
 | 指标 | 数值 |
 |------|------|
-| 后端代码 | ~7300 行 Python |
-| 前端代码 | ~2450 行 TSX/TS |
+| 后端代码 | ~8000 行 Python |
+| 前端代码 | ~2600 行 TSX/TS |
 | 数据库 | 7 schema × 17 张表 |
 | 同步测试 | 88 个 |
 | 异步测试 | 10 个（需 bge-m3 模型） |
 | 种子数据 | 8 公司 + 2年合成行情 + 1 研究会话 |
-| Git commits | 19 |
-| GitHub | `FromZero2One/ai_research_OS.git`（main）|
+| API 端点 | 45+（V1 + V1.1 新增 16 个） |
+| Git commits | 20 |
+| GitHub | `FromZero2One/ai_research_OS.git`（main） |
 
 ---
 
 ## 三、Phase 完成状态
+
+### V1（5 Phase 全部完成）
 
 ```
 Phase 1 基础工程: ████████████████ 100%  ✅
@@ -41,239 +50,248 @@ Phase 4 产品化界面: ████████████████ 100%  
 Phase 5 自动化:    ████████████████ 100%  ✅
 ```
 
+### V1.1（5 Sprint 全部交付）
+
+```
+Sprint 1 入口:    ████████████████ 100%  ✅
+Sprint 2 信号行动: ████████████████ 100%  ✅
+Sprint 3 记忆:    ████████████████ 100%  ✅
+Sprint 4 北极星:  ████████████████ 100%  ✅
+Sprint 5 信任:    ████████████████ 100%  ✅
+```
+
 ---
 
-## 四、✅ 已完成的全部功能
+## 四、V1 完成功能
 
 ### 4.1 Core Layer（核心层）
 
-| 组件 | 文件 | 行数 | 说明 |
-|------|------|------|------|
-| 配置管理 | `core/config.py` | 77 | pydantic-settings 全面配置 |
-| 数据库 | `core/database.py` | 39 | 异步 SQLAlchemy + get_db 依赖注入 |
-| 接口协议 | `core/interfaces.py` | 161 | 6 个 Protocol（Embedding/VectorStore/LLM/DocumentParser/MarketData/Cache） |
-| 异常体系 | `core/exceptions.py` | 44 | NotFound/Validation/Duplicate/Auth/External |
-| 安全模块 | `core/security.py` | 42 | 基础安全工具 |
-| Event Log | `core/event_log.py` | 30 | 写一次审计日志模型 |
-| Event 服务 | `core/event_service.py` | 39 | EventLogger 写入封装 |
+| 组件 | 文件 | 说明 |
+|------|------|------|
+| 配置管理 | `core/config.py` | pydantic-settings 全面配置 |
+| 数据库 | `core/database.py` | 异步 SQLAlchemy + get_db 依赖注入 |
+| 接口协议 | `core/interfaces.py` | 6 个 Protocol（Embedding/VectorStore/LLM/DocumentParser/MarketData/Cache） |
+| 异常体系 | `core/exceptions.py` | NotFound/Validation/Duplicate/Auth/External |
+| 安全模块 | `core/security.py` | 基础安全工具 |
+| Event Log | `core/event_log.py` | 写一次审计日志模型 |
+| Event 服务 | `core/event_service.py` | EventLogger 写入封装 |
 
-**适配器（`core/adapters/`）：**
+**适配器：** LLM（Ollama/OpenAI）、VectorStore（Qdrant）、Embedding（Ollama/sentence-transformers）、PDF Parser（PyMuPDF）、Reranker（BGE）、Cache、AKShare MySQL
 
-| 适配器 | 行数 | 说明 |
-|--------|------|------|
-| `llm.py` | 133 | Ollama + OpenAI 双适配器 |
-| `vector_store.py` | 90 | Qdrant CRUD（AsyncQdrantClient） |
-| `embedding.py` | 46 | Sentence-Transformers / BGE-M3 |
-| `pdf_parser.py` | 187 | PyMuPDF 解析，加密/扫描件检测，页元数据 |
-| `reranker.py` | 82 | BGE Reranker（cross-encoder） |
-| `cache.py` | 63 | 缓存适配器 |
-| `akshare_mysql.py` | 261 | AKShare MySQL 数据源 |
-
-### 4.2 Company Center（公司中心）
-
+### 4.2 Company Center
 - 公司 CRUD + 搜索 + 标签管理
-- 8 家公司种子数据（AAPL/MSFT/GOOGL/AMZN/NVDA/TSLA/JPM/BRK.B）
-- 前端公司详情页：Tab 布局（概览/财务/研究/文档）、K 线图、营收利润趋势
+- 8 家公司（AAPL/MSFT/GOOGL/AMZN/NVDA/TSLA/JPM/BRK.B）
+- 前端详情页：K 线图、营收利润趋势
 
-### 4.3 Market Center（行情中心）
+### 4.3 Market Center
+- 8 公司 × 2 年合成日度行情数据
+- 财务指标（营收/利润/利润率/EPS）
+- 前端行情页：ECharts K 线、时间范围选择
 
-- 8 家公司 × 2 年合成日度行情数据
-- 财务指标表（营收/利润/利润率/EPS）
-- 行情 API（价格/财务/搜索/信息）
-- 前端行情页面：ECharts K 线、快速切换股票、时间范围选择、统计卡片
+### 4.4 Document Center
+- PDF/MD/TXT/HTML 上传 + PyMuPDF 解析 + 切片 + Qdrant 索引
+- 前端拖拽上传
 
-### 4.4 Document Center（文档中心）
+### 4.5 Knowledge Center
+- 混合检索：Dense（Qdrant）+ Sparse（BM25）+ RRF 融合 + BGE Reranker
+- 前端搜索页面
 
-- 文档上传 API（PDF/MD/TXT/HTML，文件类型+大小校验）
-- PDF 解析管道：结构化文本 + 逐页元数据 + 加密/扫描件检测
-- 文本切片：三段式策略（段落→句子→词边界），512 分块/64 重叠
-- Embedding + Qdrant 索引（document_id/chunk_index/元数据）
-- 前端拖拽上传页面（含进度）
-
-### 4.5 Knowledge Center（知识中心）
-
-- **Dense 检索**: Qdrant 向量搜索（BGE-M3 embedding）
-- **Sparse 检索**: BM25（rank_bm25）
-- **RRF 融合**: Reciprocal Rank Fusion
-- **BGE Reranker**: Cross-encoder 重排序
-- 前端搜索页面（类型过滤/得分条/展开）
-
-### 4.6 AI Center（AI 中心）
-
-- Prompt 模板 CRUD（系统提示/用户模板/模型/temperature/输出 Schema）
-- AI 生成（模板变量插值执行）
-- 文本摘要 + 结构化提取
-- AI 工作流（多步骤 DAG：LLM 步骤 + 转换步骤）
-- 前端 AI 管理页面
+### 4.6 AI Center
+- Prompt 模板 CRUD + 生成/摘要/提取 + 工作流
 - 8 个 API 端点
 
-### 4.7 Research Center（研究中心）
+### 4.7 Research Center
+- AI Planner → Evidence Collector → Report → Finalize
+- 状态机：draft → researching → reviewing → completed → archived
+
+### 4.8 Portfolio Center
+- 自选列表 / 持仓管理 / 投资日志
+
+### 4.9 自动化
+- APScheduler（市场更新 2am / Morning Brief 6am）
+
+### 4.10 前端（V1 8 个页面）
+Home / Research / Companies / Documents / Knowledge / Market / AI / Portfolio
+
+---
+
+## 五、V1.1 新增功能
+
+### Sprint 1 — Entry Point（入口）
 
 | 功能 | 说明 |
 |------|------|
-| **Research Planner** | LLM 自动生成研究计划（6 子问题/6 维度/数据需求），含 JSON 解析+降级方案 |
-| **Evidence Collector** | 自动从知识库+市场数据收集证据，支持/反对/中性分类 |
-| **AI 报告生成** | 结构化 6 段报告（执行摘要/关键发现/维度分析/风险/证据平衡/结论） |
-| **状态机** | draft → researching → reviewing → completed → archived，三层强制 |
-| **Event Log** | 7 种事件追踪（started/plan_generated/状态变更/evidence_added/report_created/completed） |
+| **Dashboard 首页** | 替换原有简单首页，成为唯一默认入口 |
+| **Morning Brief 卡片** | 展示当日最新 AI 生成的晨间简报 |
+| **Watchlist 摘要表格** | 公司/价格/涨跌/状态（Normal/Attention/NeedResearch）/Thesis/研究天数 |
+| **Research Reminder** | 自动提示需更新的研究（>30 天未研究标红） |
+| **Quick Actions** | 5 个快捷按钮（新建研究/上传文档/搜索知识库/查看公司/查看行情） |
+| **WatchlistItem 扩展** | 增加 `priority` 字段 + 数据库迁移 |
 
-- 前端研究工作流：操作按钮、计划展示、证据分组、报告预览、完结流程
+**新增 API：**
+```
+GET  /api/v1/dashboard              → 聚合数据（brief + watchlist + reminders）
+GET  /api/v1/dashboard/brief        → 最新 Morning Brief
+GET  /api/v1/dashboard/watchlist    → Watchlist 摘要
+```
 
-### 4.8 Portfolio Center（投资组合中心）
+### Sprint 2 — Signal → Action（信号 → 行动）
 
-- 自选列表 CRUD
-- 自选项目管理
-- 持仓管理（添加/查看/平仓）
-- 投资日志
-- 前端管理页面
-
-### 4.9 自动化（Scheduler）
-
-| 组件 | 说明 |
+| 功能 | 说明 |
 |------|------|
-| **APScheduler 框架** | AsyncIOScheduler + CronTrigger，作业注册表，启停/状态上报 |
-| **市场数据更新** | 工作日 2am 自动拉取所有公司行情 |
-| **Morning Brief** | 工作日 6am AI 生成晨间简报（市场数据+开放研究+LLM） |
-| **调度 API** | `GET /scheduler/status`、`POST /scheduler/run/{name}` |
+| **Observation Engine** | 定时扫描 Watchlist 的自动观测 Job |
+| **Research >14d** | → attention 状态 |
+| **Research >30d** | → need_research 状态 |
+| **价格波动 >5%** | 记录价格信号 |
+| **One Click Research** | 一键发起研究全链：Plan → Evidence → Report |
+| **SSE 实时进度流** | 前端展示 Planning → Searching → Generating → Completed |
+| **快速研究页面** | `/research/quick` 输入公司+问题，实时进度条 |
 
-### 4.10 前端（8 个页面）
+**新增 API：**
+```
+POST /api/v1/research/quick                  → 一键研究
+GET  /api/v1/research/quick/{id}/stream      → SSE 实时进度
+GET  /api/v1/research/quick/{id}/status      → 轮询状态
+POST /api/v1/scheduler/observe               → 手动触发观测
+GET  /api/v1/scheduler/observations          → 查看观测记录
+```
 
-| 页面 | 路由 | 核心功能 |
-|------|------|---------|
-| 首页 | `/` | 概览 |
-| 研究 | `/research` | 研究工作流（计划/证据/报告/完结） |
-| 公司 | `/companies` | K 线图/营收利润趋势/关联研究文档 |
-| 文档 | `/documents` | 拖拽上传/进度 |
-| 知识 | `/knowledge` | 混合搜索/类型过滤/得分条 |
-| 行情 | `/market` | ECharts K 线/快速切换/时间范围 |
-| AI 中心 | `/ai` | Prompt 模板/摘要管理 |
-| 投资组合 | `/portfolio` | 自选/持仓/日志 |
+### Sprint 3 — Memory（记忆）
 
-### 4.11 技术栈
+| 功能 | 说明 |
+|------|------|
+| **Research Timeline** | 按公司维度显示所有研究活动的完整历史 |
+| **Timeline 页面** | `/research/timeline` 输入代码查询 |
+| **Session Timeline** | 单研究会话内部事件线 |
+| **Report Diff** | 报告版本对比（unified diff + 新增/删除统计） |
+| **Evidence Viewer 增强** | 来源图标、可信度百分比颜色、分类颜色 |
 
-| 层 | 技术 |
-|----|------|
-| Backend | Python / FastAPI / SQLAlchemy / Alembic |
-| AI | Ollama / OpenAI（双适配器）/ LangGraph-ready |
-| Knowledge | Qdrant / BGE-M3 / BGE-Reranker / BM25 |
-| Database | PostgreSQL（pgvector）/ Redis |
-| Frontend | Next.js 15 / React 19 / TypeScript / Tailwind 4 / ECharts 6 |
-| Deployment | Docker Compose |
+**新增 API：**
+```
+GET  /api/v1/research/timeline?ticker=NVDA     → 公司研究时间线
+GET  /api/v1/research/reports/{id}/diff         → 报告版本对比
+GET  /api/v1/research/sessions/{id}/timeline    → 会话时间线
+```
+
+### Sprint 4 — North Star（北极星）
+
+| 功能 | 说明 |
+|------|------|
+| **Thesis Panel** | 每家公司唯一 Current Thesis，EventLog 持久化 |
+| **Thesis 编辑** | 带 decision（buy/sell/hold/watch/pass）+ confidence 滑块 |
+| **Company Workspace** | 聚合 thesis + 证据统计 + 近期研究 |
+| **公司页面新增"投资观点"标签页** | 集中管理观点 |
+| **Thesis 顶部横幅** | 公司页头部显示当前观点 |
+| **快速研究按钮** | 替换旧版"研究此公司" |
+
+**新增 API：**
+```
+GET  /api/v1/companies/by-ticker/{ticker}/thesis     → 获取当前观点
+POST /api/v1/companies/by-ticker/{ticker}/thesis     → 更新观点
+GET  /api/v1/companies/by-ticker/{ticker}/workspace  → 公司工作空间
+```
+
+### Sprint 5 — Trust（信任）
+
+| 功能 | 说明 |
+|------|------|
+| **Command Palette** | ⌘K 全局命令面板 |
+| **11 条命令** | 覆盖全部分页（工作台/快速研究/研究中心/时间线/公司/文档/知识库/行情/AI/组合/系统） |
+| **键盘导航** | ↑↓ 导航 + Enter 确认 + Esc 关闭 |
+| **搜索过滤** | 按名称/描述/关键词实时过滤 |
+| **系统状态页面** | `/system` 调度器、观测、API 健康检查 |
+| **Scheduler 状态** | 30 秒自动刷新 |
+| **API 健康检查** | 4 个关键端点自动探测 |
+| **快捷建说明** | 页面内文档 |
 
 ---
 
-## 五、❌ 尚未完成
+## 六、代码变更统计（V1.1）
 
-### 5.1 已知问题
+| 维度 | 数值 |
+|------|------|
+| 新增后端文件 | 10 个 |
+| 新增前端文件 | 6 个 |
+| 修改后端文件 | 11 个 |
+| 修改前端文件 | 4 个 |
+| 新增 API 端点 | 16 个 |
+| 新增前端页面 | 4 个（quick / timeline / system / 重写首页） |
+| 新增前端组件 | 2 个（CommandPalette） |
+| 变更代码 | +3900 / -311 行 |
+| Git commit | `a52c081`（已推送 GitHub） |
 
-| # | 问题 | 说明 | 影响 |
-|---|------|------|------|
-| 1 | `all_proxy=socks://...` 环境变量破坏 Qdrant httpx 客户端 | 需 `ALL_PROXY=` 前缀 | 开发环境配置 |
-| 2 | `sentence-transformers` 未安装 | 需 ~2.2GB 下载 | Embedding 管道无法本地运行 |
-| 3 | 无单元测试 | `backend/tests/` 只有集成测试 | 缺少细粒度覆盖 |
+---
 
-### 5.2 可选后续项目
+## 七、当前运行状态
 
-| 项目 | 预计 | 说明 | 优先级 |
-|------|------|------|--------|
-| 用户系统（注册/登录/JWT） | ~3 天 | 当前无用户认证，所有操作匿名 | 低 |
-| bge-m3 模型下载 + 异步测试通过 | ~半天 | 需下载 ~2.2GB 模型，10 个异步测试可运行 | 低 |
-| RAG 溯源增强（页码引用） | ~1 天 | 搜索结果带具体引用位置 | 低 |
-| CI/CD（GitHub Actions） | ~2 天 | 自动测试+部署流水线 | 低 |
-| 生产部署文档 | ~半天 | 生产环境部署指南 | 低 |
-| 单元测试 | 未评估 | 补充细粒度单元测试 | 低 |
+| 服务 | 状态 | 地址 |
+|------|------|------|
+| PostgreSQL | ✅ 运行中 | localhost:5432 |
+| Qdrant | ✅ 运行中 | localhost:6333 |
+| Redis | ✅ 运行中 | localhost:6380 |
+| Ollama（qwen3.5:latest） | ✅ 运行中 | 127.0.0.1:11434 |
+| Backend（FastAPI） | ✅ 运行中 | 127.0.0.1:8000 |
+| Frontend（Next.js 15） | ✅ 运行中 | localhost:3000 |
 
-### 5.3 V2 规划方向
+---
 
-| 领域 | V1（当前） | V2（待启动） |
-|------|-----------|------------|
+## 八、⚠️ 已知问题
+
+### 环境问题
+
+| # | 问题 | 严重度 | 说明 |
+|---|------|--------|------|
+| 1 | **SOCKS 代理环境变量干扰** | 🟡 | `all_proxy=socks://127.0.0.1:7890/` 导致 localhost 连接走代理。LLM/Embedding 已改用 curl subprocess 绕过，但部分 httpx 调用仍受影响。`.bashrc` 已添加 `no_proxy` |
+| 2 | **Ollama 版本过旧（0.20.2）** | 🟡 | 不支持 `/api/chat` 和 `/api/embed` 端点。LLM → curl subprocess + `/api/generate`。Embedding → 返回零向量（稠密检索失效，BM25 正常） |
+| 3 | **sentence-transformers 未安装** | 🟡 | 需 ~2.2GB 下载，Embedding 本地模型可用，但后端启动不阻塞 |
+| 4 | **系统 GNOME 代理 `manual` 模式** | 🟢 已修复 | 已改为 `none`，代理通过 shell env 管理 |
+
+### 功能问题
+
+| # | 问题 | 严重度 | 说明 |
+|---|------|--------|------|
+| 5 | **一键研究执行慢（60-90s）** | 🟡 | 同步执行阻塞请求。可改用后台任务 + SSE 恢复 |
+| 6 | **LLM 偶尔返回空内容** | 🟡 | Qwen 模型对 prompt 格式敏感，已调优但偶尔空响应 |
+| 7 | **Research Plan JSON 降级** | 🟡 | LLM 返回格式不规范时用 fallback（1 子问题） |
+| 8 | **Embedding 零向量** | 🟡 | 稠密检索不可用，稀疏检索 BM25 正常 |
+| 9 | **TypeScript 3 类型错误** | 🟢 | `companies/[id]/page.tsx` 中 `string \| null`，不影响运行 |
+
+---
+
+## 九、当前环境启动方式
+
+```bash
+# 1. 启动 Docker 基础设施
+docker compose -f docker/docker-compose.yml up -d
+
+# 2. 从 backend 目录启动后端（加载 .env 配置）
+cd backend && ALL_PROXY= all_proxy= uvicorn api.app:app --host 0.0.0.0 --port 8000
+
+# 3. 启动前端（新终端）
+cd frontend && npm run dev
+```
+
+**注意：** 必须从 `backend/` 目录启动 uvicorn，否则 `.env` 文件不会被加载，会导致模型名、数据库 URL 等配置使用默认值。
+
+---
+
+## 十、后续建议
+
+### 短期（1-2 天）
+- 异步测试补全（安装 bge-m3 后通过 10 个异步测试）
+- 修复 TypeScript 3 个类型错误
+
+### 中期（V1.2）
+- 提升 LLM 调用稳定性（升级 Ollama 或统一 prompt 格式）
+- 恢复后台任务 + SSE（解决一键研究超时问题）
+- Embedding 修复（升级 Ollama 或安装 sentence-transformers）
+- Observation Engine 增强（财报/新闻信号接入）
+
+### V2 方向
+| 领域 | V1/V1.1 | V2 |
+|------|---------|-----|
 | Knowledge | Hybrid RAG | + Knowledge Graph |
-| AI | Single LLM calls | + LangGraph DAGs |
+| AI | Single LLM | + LangGraph DAGs |
 | Portfolio | Watchlist + Journal | + P&L Tracking |
 | Research | Manual + Assist | + Auto Research |
-| 新增 | — | + 交易信号（V3 目标） |
-
----
-
-## 六、架构概览
-
-```
-                    User
-                     │
-              Research Workspace
-              (Next.js Dashboard)
-                     │
-                     ▼
-              API Gateway (FastAPI)
-                     │
-   ┌────────────────────────────────┐
-   │       Application Layer        │
-   ├────────────────────────────────┤
-   │  Company     │   Research      │
-   │  Center      │   Center        │
-   │              │                 │
-   │  Market      │   AI            │
-   │  Center      │   Center        │
-   │              │                 │
-   │  Document    │   Portfolio     │
-   │  Center      │   Center        │
-   │              │                 │
-   │  Knowledge   │                 │
-   │  Center      │                 │
-   └────────────────────────────────┘
-                     │
-   ┌────────────────────────────────┐
-   │          Core Layer            │
-   ├────────────────────────────────┤
-   │  DB  │  Vector  │  LLM  │  Cache│
-   └────────────────────────────────┘
-```
-
-**依赖规则**: 依赖单向向上。Research 可调用 Knowledge；Knowledge 不能调用 Research。
-
-### 模块结构规范
-
-每个模块遵循统一结构：
-
-```
-module/
-├── models.py    # SQLAlchemy ORM 模型
-├── schemas.py   # Pydantic 请求/响应 Schema
-├── service.py   # 业务逻辑
-└── routes.py    # FastAPI 路由
-```
-
----
-
-## 七、数据流
-
-```text
-Company
-  ↓
-Market + Document
-  ↓
-Knowledge (Hybrid RAG)
-  ↓
-AI (LLM)
-  ↓
-Research (Thesis → Decision)
-  ↓
-Portfolio
-```
-
----
-
-## 八、开发命令
-
-| 命令 | 说明 |
-|------|------|
-| `make dev` | 启动完整开发环境 |
-| `make dev-db` | 启动 Docker 基础设施 |
-| `make dev-backend` | 启动 FastAPI（:8000） |
-| `make dev-frontend` | 启动 Next.js（:3000） |
-| `make test` | 运行测试 |
-| `make lint` | 代码检查 |
-| `make format` | 自动格式化 |
-| `make migrate` | 运行数据库迁移 |
-| `make ingest-sample` | 导入种子数据 |
-| `make reset-db` | 重建数据库 |
+| 产品 | 单用户 | + 用户系统 |
