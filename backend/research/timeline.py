@@ -231,7 +231,7 @@ async def get_session_timeline(
         select(ResearchSession)
         .where(ResearchSession.id == session_id)
         .options(
-            selectinload(ResearchSession.reports).order_by(ResearchReport.version),
+            selectinload(ResearchSession.reports),
             selectinload(ResearchSession.evidences),
         )
     )

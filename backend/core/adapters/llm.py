@@ -114,9 +114,11 @@ class OpenAILLM:
         self,
         api_key: str = settings.OPENAI_API_KEY,
         model: str = settings.OPENAI_MODEL,
+        base_url: str = settings.OPENAI_BASE_URL,
     ) -> None:
         self._api_key = api_key
         self._model = model
+        self._base_url = base_url.rstrip("/")
 
     @property
     def model_name(self) -> str:
@@ -131,7 +133,7 @@ class OpenAILLM:
     ) -> LLMResponse:
         import openai
 
-        client = openai.AsyncOpenAI(api_key=self._api_key)
+        client = openai.AsyncOpenAI(api_key=self._api_key, base_url=self._base_url)
         resp = await client.chat.completions.create(
             model=self._model,
             messages=[{"role": m.role, "content": m.content} for m in messages],
@@ -152,7 +154,7 @@ class OpenAILLM:
     ) -> dict:
         import openai
 
-        client = openai.AsyncOpenAI(api_key=self._api_key)
+        client = openai.AsyncOpenAI(api_key=self._api_key, base_url=self._base_url)
         resp = await client.chat.completions.create(
             model=self._model,
             messages=[{"role": m.role, "content": m.content} for m in messages],

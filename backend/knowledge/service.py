@@ -34,7 +34,7 @@ class SearchResult:
 class KnowledgeService:
     """Hybrid RAG retrieval — dense (vector) + sparse (BM25)."""
 
-    def __init__(self, session: AsyncSession, use_reranker: bool = True) -> None:
+    def __init__(self, session: AsyncSession, use_reranker: bool = False) -> None:
         self.session = session
         self.events = EventLogger(session)
         self.embedder = create_embedding()

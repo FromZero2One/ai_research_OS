@@ -6,6 +6,12 @@ Re-ranks the top-N results from hybrid search to improve precision.
 
 from __future__ import annotations
 
+import os
+
+# Force offline mode — model is cached locally, no need to reach HuggingFace.
+# Prevents timeouts when HF is inaccessible (e.g., from China).
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+
 from functools import lru_cache
 
 from core.config import settings

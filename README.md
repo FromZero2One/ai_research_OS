@@ -46,7 +46,7 @@ A personal AI-powered investment research assistant. Company → Knowledge → A
 | **Market Center** | Stock prices, financials, macros (no analysis) | yfinance / AKShare |
 | **Document Center** | Ingest → Parse → Chunk → Embed → Index | PyMuPDF + BGE-M3 |
 | **Knowledge Center** | Hybrid RAG: dense + sparse retrieval | Qdrant + BM25 |
-| **AI Center** | Prompt mgmt, LLM orchestration, summarization | Ollama / OpenAI |
+| **AI Center** | Prompt mgmt, LLM orchestration, summarization | Ollama / OpenAI (DeepSeek 等兼容) |
 | **Research Center** | Question → Evidence → Report → Decision | LangGraph-ready |
 | **Portfolio Center** | Watchlists, holdings, investment journal | PostgreSQL |
 

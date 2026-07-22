@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     OLLAMA_EMBEDDING_MODEL: str = "nomic-embed-text"
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o"
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
 
     # --- Redis ---
     REDIS_URL: str = "redis://localhost:6379/0"

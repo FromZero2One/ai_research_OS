@@ -32,7 +32,7 @@
 | 前端 | Next.js 15, React 19, TypeScript, Tailwind CSS 4, TanStack React Query |
 | 后端 | FastAPI, SQLAlchemy 2.0 (async), Pydantic v2, Alembic |
 | 数据库 | PostgreSQL 16 (pgvector), Qdrant, Redis |
-| AI | Ollama (本地Llama) / OpenAI (GPT-4o) |
+| AI | Ollama (本地) / OpenAI 兼容 (DeepSeek/Qwen/Moonshot) |
 | 文档处理 | PyMuPDF, BGE-M3 向量化模型 |
 | 基础设施 | Docker Compose |
 
@@ -116,13 +116,28 @@ ollama ps                # 查看运行中的模型
 ollama rm llama3.1:70b   # 删除模型
 ```
 
-**备选方案: 使用 OpenAI**
+**备选方案: 使用 OpenAI 兼容 API (DeepSeek / 通义千问 / Moonshot)**
 
-编辑 `backend/.env`:
+项目支持所有 OpenAI 兼容的 API，只需修改 `.env`：
+
 ```env
 LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-xxx
-OPENAI_MODEL=gpt-4o
+OPENAI_BASE_URL=https://api.deepseek.com   # DeepSeek
+OPENAI_MODEL=deepseek-v4-flash              # 推荐 V4 Flash
+```
+
+> **注意**: `deepseek-chat` 和 `deepseek-reasoner` 已于 2026年7月24日停用，请使用 `deepseek-v4-flash` 或 `deepseek-v4-pro`。
+
+其他国产模型配置示例:
+```env
+# 通义千问
+OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+OPENAI_MODEL=qwen-plus
+
+# Moonshot (Kimi)
+OPENAI_BASE_URL=https://api.moonshot.cn/v1
+OPENAI_MODEL=moonshot-v1-8k
 ```
 
 ---
@@ -680,6 +695,7 @@ OLLAMA_MODEL=llama3.1:70b
 OLLAMA_EMBEDDING_MODEL=nomic-embed-text
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4o
+OPENAI_BASE_URL=https://api.openai.com/v1
 
 # Redis
 REDIS_URL=redis://localhost:6380/0   # 注意端口6380
@@ -785,6 +801,26 @@ docker system info | Select-String proxy
 
 # 如需绕过代理拉取
 docker pull pgvector/pgvector:pg16  # 直接拉取
+```
+
+### Q: 知识库搜索卡住 / HuggingFace 超时
+国内网络无法访问 HuggingFace，sentence-transformers 下载模型时会超时。解决方案:
+1. 后端已默认离线模式 (`HF_HUB_OFFLINE=1`)，模型从本地缓存加载
+2. Reranker 模型默认禁用（搜索走 RRF 融合排序，效果足够）
+3. Embedding 模型使用 Ollama 本地 `bge-m3` 或 sentence-transformers 缓存
+
+### Q: DeepSeek 旧模型 deepseek-chat 是否还能用
+`deepseek-chat` 和 `deepseek-reasoner` 已于 **2026年7月24日停用**，请使用:
+- `deepseek-v4-flash` — 快速版，性价比高（推荐）
+- `deepseek-v4-pro` — 旗舰版，更强推理能力
+
+### Q: 如何切换到其他国产大模型
+项目支持所有 OpenAI 兼容 API，修改 `.env` 中的以下三项即可:
+```env
+LLM_PROVIDER=openai
+OPENAI_BASE_URL=<你的API地址>
+OPENAI_MODEL=<模型名>
+OPENAI_API_KEY=<你的Key>
 ```
 
 ---
