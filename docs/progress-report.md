@@ -1,6 +1,6 @@
 # AI Research OS — 项目完整进度报告
 
-**生成时间**: 2026-07-21 | **状态**: V1 ✅ + V1.1 ✅（共 10 个 Sprint 全部交付）
+**生成时间**: 2026-07-23 | **状态**: V1 ✅ + V1.1 ✅（共 10 个 Sprint 全部交付）
 
 ---
 
@@ -27,10 +27,10 @@
 | 指标 | 数值 |
 |------|------|
 | 后端代码 | ~8000 行 Python |
-| 前端代码 | ~2600 行 TSX/TS |
-| 数据库 | 7 schema × 17 张表 |
+| 前端代码 | ~3000 行 TSX/TS |
+| 数据库 | 9 schema × 17 张表 |
 | 同步测试 | 88 个 |
-| 异步测试 | 10 个（需 bge-m3 模型） |
+| 异步测试 | 10 个（需安装 bge-m3） |
 | 种子数据 | 8 公司 + 2年合成行情 + 1 研究会话 |
 | API 端点 | 45+（V1 + V1.1 新增 16 个） |
 | Git commits | 20 |
@@ -229,9 +229,10 @@ GET  /api/v1/companies/by-ticker/{ticker}/workspace  → 公司工作空间
 | PostgreSQL | ✅ 运行中 | localhost:5432 |
 | Qdrant | ✅ 运行中 | localhost:6333 |
 | Redis | ✅ 运行中 | localhost:6380 |
-| Ollama（qwen3.5:latest） | ✅ 运行中 | 127.0.0.1:11434 |
+| DeepSeek V4 Flash（LLM 云端） | ✅ 已配置 | api.deepseek.com |
 | Backend（FastAPI） | ✅ 运行中 | 127.0.0.1:8000 |
 | Frontend（Next.js 15） | ✅ 运行中 | localhost:3000 |
+| Ollama（qwen3.5 + bge-m3，备选） | 🟡 运行中 | 127.0.0.1:11434 |
 
 ---
 
@@ -241,20 +242,27 @@ GET  /api/v1/companies/by-ticker/{ticker}/workspace  → 公司工作空间
 
 | # | 问题 | 严重度 | 说明 |
 |---|------|--------|------|
-| 1 | **SOCKS 代理环境变量干扰** | 🟡 | `all_proxy=socks://127.0.0.1:7890/` 导致 localhost 连接走代理。LLM/Embedding 已改用 curl subprocess 绕过，但部分 httpx 调用仍受影响。`.bashrc` 已添加 `no_proxy` |
-| 2 | **Ollama 版本过旧（0.20.2）** | 🟡 | 不支持 `/api/chat` 和 `/api/embed` 端点。LLM → curl subprocess + `/api/generate`。Embedding → 返回零向量（稠密检索失效，BM25 正常） |
-| 3 | **sentence-transformers 未安装** | 🟡 | 需 ~2.2GB 下载，Embedding 本地模型可用，但后端启动不阻塞 |
-| 4 | **系统 GNOME 代理 `manual` 模式** | 🟢 已修复 | 已改为 `none`，代理通过 shell env 管理 |
+| 1 | **SOCKS 代理环境变量干扰** | 🟡 | `all_proxy=socks://127.0.0.1:7890/` 导致 localhost 连接走代理。LLM 已改用 curl subprocess 绕过，启动后端需加 `ALL_PROXY= all_proxy=` 前缀。`.bashrc` 已添加 `no_proxy` |
+| 2 | **Ollama 版本 0.20.2 较旧** | 🟡 | 已切换到 DeepSeek V4 Flash 作为主要 LLM，Ollama 仅用于本地 Embedding（BGE-M3）。若 Ollama 不支持 `/api/embed`，Embedding 会零向量，稠密检索降级为 BM25 |
+| 3 | **sentence-transformers 未安装** | 🟢 | Embedding 已切到 Ollama API，不再依赖 sentence-transformers |
+| 4 | **DeepSeek 返回空内容（偶发）** | 🟡 | LLM prompt 格式敏感，偶尔空响应。已通过重试机制部分缓解 |
 
 ### 功能问题
 
 | # | 问题 | 严重度 | 说明 |
 |---|------|--------|------|
-| 5 | **一键研究执行慢（60-90s）** | 🟡 | 同步执行阻塞请求。可改用后台任务 + SSE 恢复 |
-| 6 | **LLM 偶尔返回空内容** | 🟡 | Qwen 模型对 prompt 格式敏感，已调优但偶尔空响应 |
-| 7 | **Research Plan JSON 降级** | 🟡 | LLM 返回格式不规范时用 fallback（1 子问题） |
-| 8 | **Embedding 零向量** | 🟡 | 稠密检索不可用，稀疏检索 BM25 正常 |
-| 9 | **TypeScript 3 类型错误** | 🟢 | `companies/[id]/page.tsx` 中 `string \| null`，不影响运行 |
+| 5 | **一键研究同步执行慢（60-90s）** | 🟡 | `research/quick.py` POST 处理器在请求内同步跑完整研究链，导致前端代理 `socket hang up`。需重构为后台任务 + SSE 流式推送 |
+| 6 | **Research Plan JSON 降级** | 🟡 | LLM 返回格式不规范时用 fallback（1 子问题） |
+| 7 | **TypeScript 3 类型错误** | 🟢 | `companies/[id]/page.tsx` 中 `string \| null`，不影响运行 |
+
+### ✅ 已修复的问题
+
+| # | 问题 | 修复说明 |
+|---|------|---------|
+| — | **Embedding 零向量 bug** | `embedding.py` 中 `OllamaEmbedding.embed()` 原来返回全零向量，已改为真正调用 Ollama `/api/embed` 接口 |
+| — | **HuggingFace 超时** | `HF_HUB_OFFLINE=1` 强制离线 + Reranker 默认禁用（改为 RRF 融合排序） |
+| — | **Timeline 500 错误** | `timeline.py:234` 上 `selectinload().order_by()` 不兼容当前 SQLAlchemy，已移除 SQL 排序改为 Python 排序 |
+| — | **System GNOME 代理自动切换** | 系统代理已从 `manual` 改为 `none` |
 
 ---
 
@@ -264,34 +272,41 @@ GET  /api/v1/companies/by-ticker/{ticker}/workspace  → 公司工作空间
 # 1. 启动 Docker 基础设施
 docker compose -f docker/docker-compose.yml up -d
 
-# 2. 从 backend 目录启动后端（加载 .env 配置）
-cd backend && ALL_PROXY= all_proxy= uvicorn api.app:app --host 0.0.0.0 --port 8000
+# 2. 从 backend 目录启动后端（加载 .env 配置，绕过 SOCKS 代理）
+cd /home/wsm/codes/ai_research_OS/backend
+ALL_PROXY= all_proxy= PYTHONPATH=. uvicorn api.app:app --reload --host 0.0.0.0 --port 8000
 
 # 3. 启动前端（新终端）
-cd frontend && npm run dev
+cd /home/wsm/codes/ai_research_OS/frontend
+npm run dev
 ```
 
-**注意：** 必须从 `backend/` 目录启动 uvicorn，否则 `.env` 文件不会被加载，会导致模型名、数据库 URL 等配置使用默认值。
+**注意：**
+- 必须从 `backend/` 目录启动 uvicorn，否则 `.env` 文件不会被加载
+- 当前 LLM 使用 DeepSeek V4 Flash（云端），需配置 `OPENAI_API_KEY`
+- 如需本地模型，将 `.env` 中 `LLM_PROVIDER` 改为 `ollama`
 
 ---
 
 ## 十、后续建议
 
 ### 短期（1-2 天）
-- 异步测试补全（安装 bge-m3 后通过 10 个异步测试）
+- **快速研究重构** — `research/quick.py` POST 同步链改为后台任务 + SSE 流式推送（当前最影响使用的 bug）
 - 修复 TypeScript 3 个类型错误
+- 异步测试补全（安装 bge-m3 后通过 10 个异步测试）
 
 ### 中期（V1.2）
-- 提升 LLM 调用稳定性（升级 Ollama 或统一 prompt 格式）
-- 恢复后台任务 + SSE（解决一键研究超时问题）
-- Embedding 修复（升级 Ollama 或安装 sentence-transformers）
+- 一键研究后台任务 + SSE（彻底解决前端代理超时问题）
 - Observation Engine 增强（财报/新闻信号接入）
+- 升级 Ollama 以获得更好的本地 Embedding 支持
+- LLM prompt 统一优化，减少空返回
+- A股行情数据源（akshare MySQL）连接
 
 ### V2 方向
 | 领域 | V1/V1.1 | V2 |
 |------|---------|-----|
 | Knowledge | Hybrid RAG | + Knowledge Graph |
-| AI | Single LLM | + LangGraph DAGs |
+| AI | Single LLM (DeepSeek) | + LangGraph DAGs |
 | Portfolio | Watchlist + Journal | + P&L Tracking |
 | Research | Manual + Assist | + Auto Research |
 | 产品 | 单用户 | + 用户系统 |
