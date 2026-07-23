@@ -50,6 +50,15 @@ class PortfolioService:
         wl = await self.get_watchlist(watchlist_id)
         await self.session.delete(wl)
 
+    async def update_watchlist(self, watchlist_id: uuid.UUID, **kwargs) -> Watchlist:
+        wl = await self.get_watchlist(watchlist_id)
+        for key, val in kwargs.items():
+            if val is not None:
+                setattr(wl, key, val)
+        await self.session.flush()
+        await self.session.refresh(wl)
+        return wl
+
     async def add_to_watchlist(
         self, watchlist_id: uuid.UUID, ticker: str, **kwargs
     ) -> WatchlistItem:

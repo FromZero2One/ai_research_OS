@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useResearchSessions, useCreateResearch } from "@/lib/api";
+import { useResearchSessions, useCreateResearch, useCompanies } from "@/lib/api";
 
 const STATUS_OPTIONS = ["all", "draft", "researching", "reviewing", "completed"];
 
@@ -10,17 +10,22 @@ export default function ResearchPage() {
   const [status, setStatus] = useState("all");
   const { data: sessions, isLoading } = useResearchSessions(status === "all" ? undefined : status);
   const createResearch = useCreateResearch();
+  const { data: companiesData } = useCompanies();
 
   const [showNew, setShowNew] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newQuestion, setNewQuestion] = useState("");
+  const [newCompanyId, setNewCompanyId] = useState("");
 
   const handleCreate = async () => {
     if (!newTitle.trim() || !newQuestion.trim()) return;
-    await createResearch.mutateAsync({ title: newTitle, question: newQuestion });
+    const body: Record<string, any> = { title: newTitle, question: newQuestion };
+    if (newCompanyId) body.company_id = newCompanyId;
+    await createResearch.mutateAsync(body);
     setShowNew(false);
     setNewTitle("");
     setNewQuestion("");
+    setNewCompanyId("");
   };
 
   return (
@@ -55,6 +60,16 @@ export default function ResearchPage() {
             rows={3}
             className="w-full p-2.5 rounded-lg bg-[#232736] border border-[#2d3140] text-[#e8eaed] placeholder-[#9aa0a6] focus:outline-none focus:border-[#4f8cff]"
           />
+          <select
+            value={newCompanyId}
+            onChange={(e) => setNewCompanyId(e.target.value)}
+            className="w-full p-2.5 rounded-lg bg-[#232736] border border-[#2d3140] text-[#e8eaed] text-sm focus:outline-none focus:border-[#4f8cff]"
+          >
+            <option value="">不关联公司（可选）</option>
+            {(companiesData?.items || []).map((c) => (
+              <option key={c.id} value={c.id}>{c.ticker} — {c.name}</option>
+            ))}
+          </select>
           <div className="flex gap-2">
             <button
               onClick={handleCreate}

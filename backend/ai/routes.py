@@ -12,6 +12,7 @@ from ai.schemas import (
     GenerateRequest,
     GenerateResponse,
     PromptTemplateCreate,
+    PromptTemplateUpdate,
     PromptTemplateResponse,
     SummarizeRequest,
 )
@@ -42,6 +43,22 @@ async def list_templates(db: AsyncSession = Depends(get_db)):
 async def get_template(template_id: str, db: AsyncSession = Depends(get_db)):
     svc = AIService(db)
     return await svc.get_template(template_id)
+
+
+@router.patch("/templates/{template_id}", response_model=PromptTemplateResponse)
+async def update_template(
+    template_id: str,
+    data: PromptTemplateUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    svc = AIService(db)
+    return await svc.update_template(template_id, **data.model_dump())
+
+
+@router.delete("/templates/{template_id}", status_code=204)
+async def delete_template(template_id: str, db: AsyncSession = Depends(get_db)):
+    svc = AIService(db)
+    await svc.delete_template(template_id)
 
 
 # ── Generation ──────────────────────────────────────────────────────

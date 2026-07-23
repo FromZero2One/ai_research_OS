@@ -18,6 +18,7 @@ from portfolio.schemas import (
     WatchlistItemCreate,
     WatchlistItemResponse,
     WatchlistResponse,
+    WatchlistUpdate,
 )
 from portfolio.service import PortfolioService
 
@@ -44,6 +45,15 @@ async def list_watchlists(db: AsyncSession = Depends(get_db)):
 async def get_watchlist(watchlist_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     svc = PortfolioService(db)
     wl = await svc.get_watchlist(watchlist_id)
+    return WatchlistResponse.model_validate(wl)
+
+
+@router.patch("/watchlists/{watchlist_id}", response_model=WatchlistResponse)
+async def update_watchlist(
+    watchlist_id: uuid.UUID, data: WatchlistUpdate, db: AsyncSession = Depends(get_db)
+):
+    svc = PortfolioService(db)
+    wl = await svc.update_watchlist(watchlist_id, **data.model_dump(exclude_unset=True))
     return WatchlistResponse.model_validate(wl)
 
 

@@ -1,10 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useWatchlists, useHoldings } from "@/lib/api";
 
 export default function PortfolioPage() {
+  const queryClient = useQueryClient();
   const { data: watchlists, isLoading: wlLoading } = useWatchlists();
+  const refreshWLs = () => queryClient.invalidateQueries({ queryKey: [] });
   const { data: holdings, isLoading: hdLoading } = useHoldings();
 
   const [showNewWL, setShowNewWL] = useState(false);
@@ -144,17 +147,7 @@ export default function PortfolioPage() {
           ) : (
             <div className="space-y-3">
               {watchlists.map((wl: any) => (
-                <div key={wl.id} className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
-                  <div className="font-medium text-[#e8eaed]">{wl.name}</div>
-                  {wl.description && <div className="text-sm text-[#9aa0a6] mt-1">{wl.description}</div>}
-                  {wl.items?.length > 0 && (
-                    <div className="flex gap-2 mt-2 flex-wrap">
-                      {wl.items.map((item: any) => (
-                        <span key={item.id} className="px-2 py-0.5 rounded text-xs bg-[#232736] text-[#4f8cff] border border-[#2d3140]">{item.ticker}</span>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <WatchlistCard key={wl.id} wl={wl} onMsg={showMsg} onRefresh={refreshWLs} />
               ))}
             </div>
           )}
@@ -233,6 +226,131 @@ export default function PortfolioPage() {
           日志将显示在此处。通过研究流程自动记录。
         </div>
       </div>
+    {/* Journal */}
+      <div>
+        <h2 className="text-lg font-semibold text-[#e8eaed] mb-3">研究日志</h2>
+        <div className="p-6 rounded-xl bg-[#1a1d28] border border-[#2d3140] text-center text-sm text-[#9aa0a6]">
+          日志将显示在此处。通过研究流程自动记录。
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WatchlistCard({ wl, onMsg, onRefresh }: { wl: any; onMsg: (t: "success" | "error", s: string) => void; onRefresh: () => void }) {
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [ticker, setTicker] = useState("");
+  const [editName, setEditName] = useState(wl.name);
+  const [editDesc, setEditDesc] = useState(wl.description || "");
+
+  const handleAdd = async () => {
+    if (!ticker.trim()) return;
+    try {
+      const resp = await fetch(`/api/portfolio/watchlists/${wl.id}/items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticker: ticker.toUpperCase() }),
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      setTicker("");
+      setAdding(false);
+      onRefresh();
+      onMsg("success", `${ticker.toUpperCase()} 已添加到 "${wl.name}"`);
+    } catch (e: any) {
+      onMsg("error", e.message || "添加股票失败");
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editName.trim()) return;
+    try {
+      const resp = await fetch(`/api/portfolio/watchlists/${wl.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editName, description: editDesc || null }),
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      setEditing(false);
+      onRefresh();
+      onMsg("success", `列表已更新`);
+    } catch (e: any) {
+      onMsg("error", e.message || "更新失败");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm(`确定删除自选列表 "${wl.name}"？`)) return;
+    try {
+      await fetch(`/api/portfolio/watchlists/${wl.id}`, { method: "DELETE" });
+      onRefresh();
+      onMsg("success", `自选列表 "${wl.name}" 已删除`);
+    } catch (e: any) {
+      onMsg("error", e.message || "删除失败");
+    }
+  };
+
+  return (
+    <div className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
+      <div className="flex items-center justify-between">
+        {editing ? (
+          <div className="flex-1 space-y-2">
+            <input value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full p-1.5 rounded bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm" />
+            <input value={editDesc} onChange={(e) => setEditDesc(e.target.value)} placeholder="描述" className="w-full p-1.5 rounded bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm" />
+            <div className="flex gap-2">
+              <button onClick={handleSaveEdit} className="px-2 py-1 rounded bg-[#34d399] text-black text-xs font-medium">保存</button>
+              <button onClick={() => setEditing(false)} className="px-2 py-1 rounded bg-[#2d3140] text-[#9aa0a6] text-xs">取消</button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1">
+            <div className="font-medium text-[#e8eaed]">{wl.name}</div>
+            {wl.description && <div className="text-sm text-[#9aa0a6] mt-1">{wl.description}</div>}
+          </div>
+        )}
+        {!editing && (
+          <div className="flex gap-1 ml-2">
+            <button onClick={() => { setEditName(wl.name); setEditDesc(wl.description || ""); setEditing(true); }} className="text-[#9aa0a6] hover:text-[#4f8cff] text-xs">编辑</button>
+            <button onClick={handleDelete} className="text-[#9aa0a6] hover:text-[#f87171] text-xs">删除</button>
+          </div>
+        )}
+      </div>
+      {wl.items?.length > 0 && (
+        <div className="flex gap-2 mt-2 flex-wrap">
+          {wl.items.map((item: any) => (
+            <span key={item.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-[#232736] text-[#4f8cff] border border-[#2d3140]">
+              {item.ticker}
+              <button
+                onClick={async () => {
+                  try {
+                    await fetch(`/api/portfolio/watchlists/items/${item.id}`, { method: "DELETE" });
+                    onRefresh();
+                    onMsg("success", `${item.ticker} 已从 "${wl.name}" 移除`);
+                  } catch (e: any) {
+                    onMsg("error", e.message || "删除失败");
+                  }
+                }}
+                className="text-[#9aa0a6] hover:text-[#f87171] leading-none"
+              >×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      {adding ? (
+        <div className="mt-3 flex gap-2">
+          <input
+            placeholder="股票代码"
+            value={ticker}
+            onChange={(e) => setTicker(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+            className="flex-1 p-1.5 rounded bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-xs"
+          />
+          <button onClick={handleAdd} className="px-2 py-1 rounded bg-[#34d399] text-black text-xs font-medium">确认</button>
+          <button onClick={() => { setAdding(false); setTicker(""); }} className="px-2 py-1 rounded bg-[#2d3140] text-[#9aa0a6] text-xs">取消</button>
+        </div>
+      ) : (
+        <button onClick={() => setAdding(true)} className="mt-2 text-xs text-[#4f8cff] hover:text-[#6ba3ff]">+ 添加股票</button>
+      )}
     </div>
   );
 }

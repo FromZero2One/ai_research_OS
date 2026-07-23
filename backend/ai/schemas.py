@@ -22,6 +22,16 @@ class PromptTemplateCreate(NameDescription):
     output_schema: dict | None = None
 
 
+class PromptTemplateUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    system_prompt: str | None = None
+    user_prompt_template: str | None = None
+    model: str | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+
+
 class PromptTemplateResponse(PromptTemplateCreate):
     id: UUID
     is_active: bool

@@ -22,6 +22,11 @@ class WatchlistResponse(WatchlistCreate):
     model_config = {"from_attributes": True}
 
 
+class WatchlistUpdate(BaseModel):
+    name: str | None = Field(None, max_length=256)
+    description: str | None = None
+
+
 class WatchlistItemCreate(BaseModel):
     ticker: str = Field(..., max_length=16)
     notes: str | None = None

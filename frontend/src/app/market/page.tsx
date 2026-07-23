@@ -8,6 +8,7 @@ const QUICK_TICKERS = ["NVDA", "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "JPM", "
 
 export default function MarketPage() {
   const [ticker, setTicker] = useState("NVDA");
+  const [customInput, setCustomInput] = useState("");
   const [limit, setLimit] = useState(120);
   const { data: priceData, isLoading } = useMarketPrices(ticker, limit);
   const { data: finData } = useFinancialMetrics(ticker);
@@ -45,12 +46,16 @@ export default function MarketPage() {
         ))}
         <input
           type="text"
-          placeholder="自定义..."
-          value={!QUICK_TICKERS.includes(ticker) ? ticker : ""}
+          placeholder="输入代码回车..."
+          value={customInput}
+          onChange={(e) => setCustomInput(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") setTicker((e.target as HTMLInputElement).value.toUpperCase());
+            if (e.key === "Enter") {
+              setTicker(e.currentTarget.value.toUpperCase());
+              setCustomInput("");
+            }
           }}
-          className="w-24 p-1.5 rounded-lg bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm placeholder-[#9aa0a6] focus:outline-none focus:border-[#4f8cff]"
+          className="w-32 p-1.5 rounded-lg bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm placeholder-[#9aa0a6] focus:outline-none focus:border-[#4f8cff]"
         />
       </div>
 

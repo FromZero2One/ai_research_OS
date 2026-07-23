@@ -2,20 +2,98 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCompanies } from "@/lib/api";
 
 export default function CompaniesPage() {
+  const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const { data, isLoading } = useCompanies(query);
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["companies"] });
+  const [showNew, setShowNew] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newTicker, setNewTicker] = useState("");
+  const [newExchange, setNewExchange] = useState("SSE");
+  const [newTags, setNewTags] = useState("");
+  const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const showMsg = (type: "success" | "error", text: string) => {
+    setMsg({ type, text });
+    setTimeout(() => setMsg(null), 4000);
+  };
+
+  const handleCreate = async () => {
+    if (!newName.trim() || !newTicker.trim()) return;
+    try {
+      const resp = await fetch("/api/companies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newName,
+          ticker: newTicker.toUpperCase(),
+          exchange: newExchange,
+          tags: newTags.split(",").map((t) => t.trim()).filter(Boolean),
+        }),
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      setShowNew(false);
+      setNewName("");
+      setNewTicker("");
+      setNewExchange("SSE");
+      setNewTags("");
+      refresh();
+      showMsg("success", `${newName} 创建成功`);
+    } catch (e: any) {
+      showMsg("error", e.message || "创建失败");
+    }
+  };
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
+      {/* Message */}
+      {msg && (
+        <div className={`p-3 rounded-xl text-sm ${
+          msg.type === "success"
+            ? "bg-[#34d399]/10 text-[#34d399] border border-[#34d399]/20"
+            : "bg-[#f87171]/10 text-[#f87171] border border-[#f87171]/20"
+        }`}>
+          {msg.text}
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[#e8eaed]">🏢 公司中心</h1>
           <p className="text-[#9aa0a6] text-sm mt-1">公司档案、行业分类与研究对象</p>
         </div>
+        <button
+          onClick={() => setShowNew(!showNew)}
+          className="px-3 py-1.5 rounded-lg bg-[#4f8cff] text-white text-xs font-medium hover:bg-[#3a7bf5]"
+        >
+          + 新建
+        </button>
       </div>
+
+      {showNew && (
+        <div className="p-5 rounded-xl bg-[#232736] border border-[#2d3140] space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <input placeholder="公司名称 *" value={newName} onChange={(e) => setNewName(e.target.value)} className="p-2 rounded bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm" />
+            <input placeholder="股票代码 *" value={newTicker} onChange={(e) => setNewTicker(e.target.value)} className="p-2 rounded bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm" />
+            <select value={newExchange} onChange={(e) => setNewExchange(e.target.value)} className="p-2 rounded bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm">
+              <option value="SSE">SSE 上交所</option>
+              <option value="SZSE">SZSE 深交所</option>
+              <option value="NASDAQ">NASDAQ 纳斯达克</option>
+              <option value="NYSE">NYSE 纽交所</option>
+              <option value="HKEX">HKEX 港交所</option>
+            </select>
+            <input placeholder="标签(逗号分隔)" value={newTags} onChange={(e) => setNewTags(e.target.value)} className="p-2 rounded bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm" />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleCreate} disabled={!newName.trim() || !newTicker.trim()} className="px-3 py-1.5 rounded bg-[#34d399] text-black text-xs font-medium disabled:opacity-50">创建</button>
+            <button onClick={() => setShowNew(false)} className="px-3 py-1.5 rounded bg-[#2d3140] text-[#9aa0a6] text-xs">取消</button>
+          </div>
+        </div>
+      )}
 
       {/* Search */}
       <div className="relative">

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCompany, useDocuments, useResearchSessions, useMarketPrices, useFinancialMetrics, useCompanyWorkspace, useUpdateThesis } from "@/lib/api";
 import StockChart from "@/components/StockChart";
 
@@ -58,8 +59,11 @@ function MiniBar({ data, color }: { data: { fiscal_year: number; fiscal_period: 
 }
 
 export default function CompanyDetailPage() {
+  const queryClient = useQueryClient();
   const { id } = useParams<{ id: string }>();
   const { data: company, isLoading } = useCompany(id);
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["company", id] });
+  const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const { data: docsData } = useDocuments();
   const { data: sessions } = useResearchSessions();
   const [activeTab, setActiveTab] = useState("概览");
@@ -77,6 +81,14 @@ export default function CompanyDetailPage() {
   const [thesisText, setThesisText] = useState("");
   const [thesisDecision, setThesisDecision] = useState("watch");
   const [thesisConfidence, setThesisConfidence] = useState(0.6);
+
+  // Company edit state
+  const [editingCompany, setEditingCompany] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editSector, setEditSector] = useState("");
+  const [editIndustry, setEditIndustry] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [editTags, setEditTags] = useState("");
 
   if (company && !chartTicker) setChartTicker(company.ticker);
 
@@ -122,6 +134,14 @@ export default function CompanyDetailPage() {
                 有观点
               </span>
             )}
+            <button onClick={() => {
+              setEditName(company.name); setEditSector(company.sector || "");
+              setEditIndustry(company.industry || ""); setEditDesc(company.description || "");
+              setEditTags(company.tags.map((t: any) => t.tag).join(", "));
+              setEditingCompany(true);
+            }} className="px-3 py-2 rounded-lg bg-[#2d3140] text-[#e8eaed] text-sm hover:bg-[#3d4150] transition-colors shrink-0">
+              编辑
+            </button>
             <Link
               href={`/research/quick?ticker=${company.ticker}`}
               className="px-4 py-2 rounded-lg bg-[#4f8cff] text-white text-sm font-medium hover:bg-[#3a7bf5] transition-colors shrink-0"
@@ -132,6 +152,44 @@ export default function CompanyDetailPage() {
         </div>
       </div>
 
+      {/* Edit Modal */}
+      {editingCompany && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setEditingCompany(false)}>
+          <div className="w-full max-w-lg p-6 rounded-2xl bg-[#232736] border border-[#2d3140] space-y-3" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-[#e8eaed]">编辑公司</h3>
+            <input placeholder="公司名称" value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full p-2 rounded bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm" />
+            <input placeholder="行业板块" value={editSector} onChange={(e) => setEditSector(e.target.value)} className="w-full p-2 rounded bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm" />
+            <input placeholder="细分行业" value={editIndustry} onChange={(e) => setEditIndustry(e.target.value)} className="w-full p-2 rounded bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm" />
+            <textarea placeholder="公司简介" value={editDesc} onChange={(e) => setEditDesc(e.target.value)} rows={3} className="w-full p-2 rounded bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm" />
+            <input placeholder="标签(逗号分隔)" value={editTags} onChange={(e) => setEditTags(e.target.value)} className="w-full p-2 rounded bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm" />
+            <div className="flex gap-2 pt-2">
+              <button onClick={async () => {
+                try {
+                  const resp = await fetch(`/api/companies/${id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      name: editName, sector: editSector || null,
+                      industry: editIndustry || null, description: editDesc || null,
+                      tags: editTags.split(",").map((t) => t.trim()).filter(Boolean),
+                    }),
+                  });
+                  if (!resp.ok) throw new Error(await resp.text());
+                  setEditingCompany(false);
+                  setMsg({ type: "success", text: "公司信息已更新" });
+                  setTimeout(() => setMsg(null), 4000);
+                  refresh();
+                } catch (e: any) {
+                  setMsg({ type: "error", text: e.message || "更新失败" });
+                  setTimeout(() => setMsg(null), 4000);
+                }
+              }} className="px-4 py-2 rounded-lg bg-[#34d399] text-black text-sm font-medium hover:bg-[#2bc088]">保存</button>
+              <button onClick={() => setEditingCompany(false)} className="px-4 py-2 rounded-lg text-sm text-[#9aa0a6] hover:text-[#e8eaed]">取消</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tags */}
       {company.tags.length > 0 && (
         <div className="flex gap-1.5 flex-wrap">
@@ -139,6 +197,14 @@ export default function CompanyDetailPage() {
             <span key={t.id} className="px-2.5 py-1 rounded-lg text-xs bg-[#232736] text-[#9aa0a6] border border-[#2d3140]">{t.tag}</span>
           ))}
         </div>
+      )}
+
+      {/* Message toast */}
+      {msg && (
+        <div className={`p-3 rounded-xl text-sm ${
+          msg.type === "success" ? "bg-[#34d399]/10 text-[#34d399] border border-[#34d399]/20" :
+          "bg-[#f87171]/10 text-[#f87171] border border-[#f87171]/20"
+        }`}>{msg.text}</div>
       )}
 
       {/* Thesis Summary Bar */}

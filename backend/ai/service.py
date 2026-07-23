@@ -48,6 +48,20 @@ class AIService:
             raise NotFoundError("PromptTemplate", template_id)
         return template
 
+    async def update_template(self, template_id: str, **kwargs) -> PromptTemplate:
+        template = await self.get_template(template_id)
+        for key, val in kwargs.items():
+            if val is not None:
+                setattr(template, key, val)
+        await self.session.flush()
+        await self.session.refresh(template)
+        return template
+
+    async def delete_template(self, template_id: str) -> None:
+        template = await self.get_template(template_id)
+        await self.session.delete(template)
+        await self.session.flush()
+
     async def list_templates(self) -> list[PromptTemplate]:
         result = await self.session.execute(
             select(PromptTemplate).where(PromptTemplate.is_active == True)

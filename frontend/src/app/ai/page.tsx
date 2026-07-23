@@ -20,6 +20,12 @@ export default function AICenterPage() {
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
   const [showNew, setShowNew] = useState(false);
   const [newTmpl, setNewTmpl] = useState({ name: "", description: "", system_prompt: "", user_prompt_template: "" });
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editTmpl, setEditTmpl] = useState({ name: "", description: "", system_prompt: "", user_prompt_template: "" });
+  const [execId, setExecId] = useState<string | null>(null);
+  const [execVars, setExecVars] = useState("");
+  const [execResult, setExecResult] = useState("");
+  const [execLoading, setExecLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/ai/templates")
@@ -65,12 +71,52 @@ export default function AICenterPage() {
     }
   };
 
+  const handleUpdateTemplate = async (id: string) => {
+    try {
+      const resp = await fetch(`/api/ai/templates/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editTmpl),
+      });
+      if (resp.ok) {
+        const updated = await resp.json();
+        setTemplates((prev) => prev.map((t) => (t.id === id ? updated : t)));
+        setEditId(null);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const handleDeleteTemplate = async (id: string) => {
     try {
       await fetch(`/api/ai/templates/${id}`, { method: "DELETE" });
       setTemplates((prev) => prev.filter((t) => t.id !== id));
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleExecute = async (id: string) => {
+    setExecLoading(true);
+    setExecResult("");
+    try {
+      const variables: Record<string, string> = {};
+      execVars.split("\n").filter(Boolean).forEach((line) => {
+        const idx = line.indexOf("=");
+        if (idx > 0) variables[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+      });
+      const resp = await fetch("/api/ai/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt_name: id, variables }),
+      });
+      const data = await resp.json();
+      setExecResult(data.content || data.error || "No response");
+    } catch (e: any) {
+      setExecResult("Error: " + e.message);
+    } finally {
+      setExecLoading(false);
     }
   };
 
@@ -154,19 +200,64 @@ export default function AICenterPage() {
         ) : (
           <div className="space-y-2">
             {templates.map((t) => (
-              <div key={t.id} className="flex items-center justify-between p-3 rounded-lg bg-[#232736] border border-[#2d3140]">
-                <div>
-                  <div className="text-sm font-medium text-[#e8eaed]">{t.name}</div>
-                  <div className="text-xs text-[#9aa0a6]">{t.description || "无描述"}</div>
-                </div>
-                <button
-                  onClick={() => handleDeleteTemplate(t.id)}
-                  className="text-xs text-[#f87171] hover:underline"
-                >
-                  删除
-                </button>
+              <div key={t.id}>
+                {editId === t.id ? (
+                  <div className="p-4 rounded-lg bg-[#232736] border border-[#2d3140] space-y-2">
+                    <input value={editTmpl.name} onChange={(e) => setEditTmpl({ ...editTmpl, name: e.target.value })}
+                      className="w-full p-2 rounded bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm" placeholder="名称" />
+                    <input value={editTmpl.description} onChange={(e) => setEditTmpl({ ...editTmpl, description: e.target.value })}
+                      className="w-full p-2 rounded bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm" placeholder="描述" />
+                    <textarea value={editTmpl.system_prompt} onChange={(e) => setEditTmpl({ ...editTmpl, system_prompt: e.target.value })}
+                      rows={2} className="w-full p-2 rounded bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm" placeholder="System Prompt" />
+                    <textarea value={editTmpl.user_prompt_template} onChange={(e) => setEditTmpl({ ...editTmpl, user_prompt_template: e.target.value })}
+                      rows={2} className="w-full p-2 rounded bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm" placeholder="User Prompt" />
+                    <div className="flex gap-2">
+                      <button onClick={() => handleUpdateTemplate(t.id)} className="px-3 py-1.5 rounded bg-[#34d399] text-black text-xs font-medium">保存</button>
+                      <button onClick={() => setEditId(null)} className="px-3 py-1.5 rounded bg-[#2d3140] text-[#9aa0a6] text-xs">取消</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-[#232736] border border-[#2d3140]">
+                    <div>
+                      <div className="text-sm font-medium text-[#e8eaed]">{t.name}</div>
+                      <div className="text-xs text-[#9aa0a6]">{t.description || "无描述"}</div>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <button onClick={() => { setEditId(t.id); setEditTmpl({ name: t.name || "", description: t.description || "", system_prompt: t.system_prompt || "", user_prompt_template: t.user_prompt_template || "" }); }}
+                        className="text-xs text-[#4f8cff] hover:underline">编辑</button>
+                      <button onClick={() => { setExecId(t.id); setExecVars(""); setExecResult(""); }}
+                        className="text-xs text-[#34d399] hover:underline">执行</button>
+                      <button onClick={() => handleDeleteTemplate(t.id)} className="text-xs text-[#f87171] hover:underline">删除</button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Execute Dialog */}
+        {execId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setExecId(null)}>
+            <div className="w-full max-w-lg p-6 rounded-xl bg-[#1a1d28] border border-[#2d3140] space-y-3" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between">
+                <h3 className="text-[#e8eaed] font-medium">执行模板</h3>
+                <button onClick={() => setExecId(null)} className="text-[#9aa0a6] hover:text-[#e8eaed] text-lg leading-none">✕</button>
+              </div>
+              <textarea placeholder="每行一个变量，格式 key=value&#10;例如:&#10;company=工商银行&#10;topic=估值分析" value={execVars} onChange={(e) => setExecVars(e.target.value)}
+                rows={4} className="w-full p-2 rounded bg-[#232736] border border-[#2d3140] text-[#e8eaed] text-sm" />
+              <button onClick={() => handleExecute(execId)} disabled={execLoading}
+                className="w-full px-4 py-2 rounded-lg bg-[#4f8cff] text-white text-sm font-medium disabled:opacity-50">
+                {execLoading ? "执行中..." : "执行"}
+              </button>
+              {execResult && (
+                <div className="p-3 rounded-lg bg-[#232736] border border-[#2d3140] max-h-60 overflow-auto">
+                  <div className="text-xs text-[#9aa0a6] mb-1">结果</div>
+                  <p className="text-[#e8eaed] text-sm whitespace-pre-wrap">{execResult}</p>
+                </div>
+              )}
+              <button onClick={() => setExecId(null)} className="w-full px-4 py-2 rounded-lg bg-[#2d3140] text-[#9aa0a6] text-sm">关闭</button>
+            </div>
           </div>
         )}
       </div>

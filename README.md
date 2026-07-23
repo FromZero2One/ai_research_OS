@@ -45,9 +45,9 @@ A personal AI-powered investment research assistant. Company → Knowledge → A
 | **Company Center** | Company profiles, industry, tags | PostgreSQL |
 | **Market Center** | Stock prices, financials, macros (no analysis) | yfinance / AKShare |
 | **Document Center** | Ingest → Parse → Chunk → Embed → Index | PyMuPDF + BGE-M3 |
-| **Knowledge Center** | Hybrid RAG: dense + sparse retrieval | Qdrant + BM25 |
-| **AI Center** | Prompt mgmt, LLM orchestration, summarization | Ollama / OpenAI (DeepSeek 等兼容) |
-| **Research Center** | Question → Evidence → Report → Decision | LangGraph-ready |
+| **Knowledge Center** | Hybrid RAG: dense + sparse retrieval | Qdrant + BM25 + RRF |
+| **AI Center** | Prompt mgmt, LLM orchestration, summarization | DeepSeek V4 Flash (默认) / Ollama / OpenAI 兼容 |
+| **Research Center** | Question → Evidence → Report → Decision → Thesis | LangGraph-ready |
 | **Portfolio Center** | Watchlists, holdings, investment journal | PostgreSQL |
 
 ## Data Flow
@@ -80,13 +80,17 @@ pip install -e ".[dev]"
 python scripts/seed_data.py
 
 # 3. Start backend
-uvicorn api.app:app --reload --host 0.0.0.0 --port 8000
+ALL_PROXY= all_proxy= PYTHONPATH=. uvicorn api.app:app --reload --host 0.0.0.0 --port 8000
 
 # 4. Start frontend (separate terminal)
 cd frontend
 npm install
 npm run dev
 ```
+
+> **LLM config**: By default the system uses **DeepSeek V4 Flash** (cloud API).
+> Set `OPENAI_API_KEY` in `backend/.env` before using AI features.
+> See [USAGE.md](USAGE.md) for alternative providers (Ollama, other OpenAI-compatible APIs).
 
 Visit **http://localhost:3000** — the Research Workspace dashboard.
 
@@ -97,19 +101,22 @@ Visit **http://localhost:3000** — the Research Workspace dashboard.
 | All | `/api/v1/...` | http://localhost:8000/docs |
 | Health | `/health` | — |
 
-## Key Design Decisions (V1)
+## Key Design Decisions
 
 1. **No Knowledge Graph** — V2 upgrade path, not V1 complexity
 2. **No LlamaIndex** — Hand-rolled SentenceTransformer + Qdrant for control
 3. **No Trading Agents** — V2 feature, Research First
 4. **Event Log** — Write-once audit trail for research process traceability
 5. **Core Layer = Interfaces, not Implementations** — Protocols > concrete classes
+6. **Workspace First, not Module First** — V1.1: Dashboard as default entry, not function list
+7. **AI = Capability, not Center** — LLM provider swappable (DeepSeek/Ollama/OpenAI)
 
-## V1 → V2 → V3
+## V1 → V1.1 → V2 → V3
 
-| | V1 (Now) | V2 | V3 |
-|---|---|---|---|
-| Knowledge | Hybrid RAG | + Knowledge Graph | + Causal Reasoning |
-| AI | Single LLM calls | + LangGraph DAGs | + Multi-agent |
-| Portfolio | Watchlist + Journal | + P&L Tracking | + Execution |
-| Research | Manual + Assist | + Auto Research | + Trading Agents |
+| | V1 | V1.1 ✅ | V2 | V3 |
+|---|---|---|---|---|
+| Knowledge | Hybrid RAG | + RRF Fusion | + Knowledge Graph | + Causal Reasoning |
+| AI | Single LLM (Ollama) | + DeepSeek V4 Flash | + LangGraph DAGs | + Multi-agent |
+| Portfolio | Watchlist + Journal | + Thesis Panel | + P&L Tracking | + Execution |
+| Research | Manual + Assist | + One Click + Timeline | + Auto Research | + Trading Agents |
+| Workspace | Module pages | Dashboard + Observations | — | — |
