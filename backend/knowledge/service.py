@@ -16,6 +16,7 @@ from core.adapters.embedding import create_embedding
 from core.adapters.reranker import create_reranker
 from core.adapters.vector_store import create_vector_store
 from core.event_service import EventLogger
+import jieba
 from document.models import Document, DocumentChunk
 
 
@@ -149,7 +150,7 @@ class KnowledgeService:
         if not bm25 or not query:
             return []
 
-        scores = bm25.get_scores(query.split())
+        scores = bm25.get_scores(jieba.lcut(query))
         top_indices = sorted(
             range(len(scores)), key=lambda i: scores[i], reverse=True
         )[:top_k]
@@ -180,7 +181,7 @@ class KnowledgeService:
         if not chunks:
             return None
 
-        tokenized_corpus = [c.content.split() for c in chunks]
+        tokenized_corpus = [jieba.lcut(c.content) for c in chunks]
         bm25 = BM25Okapi(tokenized_corpus)
         bm25.ids = [c.embedding_id for c in chunks]
         bm25.metadata = [
