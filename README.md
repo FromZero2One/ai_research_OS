@@ -38,6 +38,8 @@ A personal AI-powered investment research assistant. Company → Knowledge → A
    └────────────────────────────────┘
 ```
 
+> **关于 MySQL**: 本项目数据库为 PostgreSQL（docker-compose 内）。代码中引用的 MySQL 属于外部 [akshare MCP 服务](mcp-company/server.py) 自管的数据库，非本项目 docker-compose 的一部分。A 股行情需要额外配置该外部 MySQL 连接。
+
 ## 7 Business Centers
 
 | Center | Responsibility | Tech |
