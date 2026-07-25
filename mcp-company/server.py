@@ -1,10 +1,28 @@
 """
 company-mcp-server: 公司中心 MCP 服务
 
-通过 akshare MySQL 查询股票信息，自动创建到 AI Research OS 的公司中心。
+通过三层降级链获取 A 股股票信息，自动创建到 AI Research OS 的公司中心。
+
+数据获取降级链（按优先级）:
+  第 1 层: MySQL ────────── pymysql 查 akshare 库
+           stock_name_entity → 名称
+           stock_yjbb_em     → 行业
+           stock_zh_a_hist   → K线状态
+           速度 ~10ms，依赖本地 MySQL 运行
+
+  第 2 层: 本地 akshare ──── subprocess → uv run → akshare 库
+           stock_info_a_code_name() → 名称
+           stock_yjbb_em()          → 行业（可能被代理封锁）
+           stock_zh_a_hist()        → K线状态（可能被代理封锁）
+           速度 ~3-10s，依赖 akshare_mcp 项目的 venv
+
+  第 3 层: 云端 akshare ──── MCP Client → HTTP → 8.137.104.120:8088
+           stock_yjbb_em()   → 名称 + 行业（云端请求，无代理问题）
+           stock_zh_a_hist() → K线状态
+           速度 ~1-3s，依赖远程 MCP 服务器可用
 
 工具:
-  create_company  — 按股票代码创建公司（查 akshare MySQL 获取详细信息）
+  create_company  — 按股票代码创建公司（三层降级获取详细信息）
   search_stocks   — 搜索 akshare 中的股票
   import_stocks   — 批量导入股票到公司中心
 """
@@ -14,8 +32,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import urllib.request
+import subprocess
+import sys
 import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,67 +54,117 @@ AKSHARE_MYSQL = {
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
+# ── Fallback (akshare 实时拉取) ──────────────────────────────────────
+
+_FALLBACK_SCRIPT = os.path.join(os.path.dirname(__file__), "fallback_client.py")
+
+
+def _fallback_query_stock(symbol: str) -> dict | None:
+    """MySQL 没有数据时，调 akshare 实时拉取。"""
+    try:
+        result = subprocess.run(
+            [sys.executable, _FALLBACK_SCRIPT, "query_stock", symbol],
+            capture_output=True, text=True, timeout=60,
+        )
+        for line in result.stdout.splitlines():
+            if line.startswith("{"):
+                return json.loads(line)
+    except Exception as e:
+        print(f"  [fallback] error: {e}", file=sys.stderr)
+    return None
+
+
+def _fallback_search_stocks(query: str, limit: int = 20) -> list[dict]:
+    """MySQL 搜索无结果时，调 akshare 搜索。"""
+    try:
+        result = subprocess.run(
+            [sys.executable, _FALLBACK_SCRIPT, "search_stocks", query, str(limit)],
+            capture_output=True, text=True, timeout=60,
+        )
+        for line in result.stdout.splitlines():
+            if line.startswith("["):
+                return json.loads(line)
+    except Exception as e:
+        print(f"  [fallback] search error: {e}", file=sys.stderr)
+    return []
+
 
 # ── MySQL 查询 ─────────────────────────────────────────────────────────
 
 def query_stock(symbol: str) -> dict | None:
-    """查 akshare MySQL 获取一只股票的信息。"""
-    conn = pymysql.connect(**AKSHARE_MYSQL)
+    """查 akshare MySQL 获取一只股票的信息。
+
+    MySQL 查不到时自动 fallback 到 akshare 实时拉取。
+    """
+    # 1. 先查 MySQL
     try:
-        with conn.cursor() as cur:
-            # 查名称
-            cur.execute(
-                "SELECT stock_name FROM stock_name_entity WHERE symbol = %s LIMIT 1",
-                (symbol,),
-            )
-            row = cur.fetchone()
-            if not row:
-                return None
-            name = row[0]
+        conn = pymysql.connect(**AKSHARE_MYSQL)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT stock_name FROM stock_name_entity WHERE symbol = %s LIMIT 1",
+                    (symbol,),
+                )
+                row = cur.fetchone()
+                if row:
+                    name = row[0]
+                    sector = None
+                    cur.execute(
+                        "SELECT `所处行业` FROM stock_yjbb_em WHERE `股票代码` = %s LIMIT 1",
+                        (symbol,),
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        sector = row[0]
+                    cur.execute(
+                        "SELECT COUNT(*) FROM stock_zh_a_hist WHERE symbol = %s",
+                        (symbol,),
+                    )
+                    has_kline = cur.fetchone()[0] > 0
+                    return {
+                        "symbol": symbol,
+                        "name": name,
+                        "sector": sector,
+                        "has_kline": has_kline,
+                    }
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"  [MySQL] 连接失败: {e}", file=sys.stderr)
 
-            # 查估值数据（用于行业判断）
-            sector = None
-            cur.execute(
-                "SELECT `所处行业` FROM stock_yjbb_em WHERE `股票代码` = %s LIMIT 1",
-                (symbol,),
-            )
-            row = cur.fetchone()
-            if row:
-                sector = row[0]
-
-            # 查是否有 K 线数据
-            cur.execute(
-                "SELECT COUNT(*) FROM stock_zh_a_hist WHERE symbol = %s",
-                (symbol,),
-            )
-            has_kline = cur.fetchone()[0] > 0
-
-            return {
-                "symbol": symbol,
-                "name": name,
-                "sector": sector,
-                "has_kline": has_kline,
-            }
-    finally:
-        conn.close()
+    # 2. MySQL 查不到 → fallback 到 akshare 实时拉取
+    print(f"  [fallback] 从 akshare 实时查询 {symbol} ...", file=sys.stderr)
+    info = _fallback_query_stock(symbol)
+    if info and info.get("name"):
+        info["_source"] = "akshare_live"
+        return info
+    return None
 
 
 def search_stocks_db(query: str, limit: int = 20) -> list[dict]:
-    """搜索 akshare MySQL 中的股票。"""
-    conn = pymysql.connect(**AKSHARE_MYSQL)
+    """搜索 akshare MySQL 中的股票，MySQL 无结果时 fallback 到实时查询。"""
     try:
-        with conn.cursor() as cur:
-            like = f"%{query}%"
-            cur.execute(
-                "SELECT symbol, stock_name FROM stock_name_entity "
-                "WHERE symbol LIKE %s OR stock_name LIKE %s LIMIT %s",
-                (like, like, limit),
-            )
-            return [
-                {"symbol": r[0], "name": r[1]} for r in cur.fetchall()
-            ]
-    finally:
-        conn.close()
+        conn = pymysql.connect(**AKSHARE_MYSQL)
+        try:
+            with conn.cursor() as cur:
+                like = f"%{query}%"
+                cur.execute(
+                    "SELECT symbol, stock_name FROM stock_name_entity "
+                    "WHERE symbol LIKE %s OR stock_name LIKE %s LIMIT %s",
+                    (like, like, limit),
+                )
+                results = [
+                    {"symbol": r[0], "name": r[1]} for r in cur.fetchall()
+                ]
+                if results:
+                    return results
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+    # Fallback
+    return _fallback_search_stocks(query, limit)
 
 
 def list_all_stocks(limit: int = 100, offset: int = 0) -> list[dict]:
@@ -168,9 +238,10 @@ def create_company(symbol: str) -> str:
     }
 
     # 3. 调用后端
+    source_note = " (实时数据)" if info.get("_source") == "akshare_live" else ""
     result = call_api("POST", "/api/v1/companies", body)
     return (
-        f"✅ 已创建公司:\n"
+        f"✅ 已创建公司{source_note}:\n"
         f"   · 代码: {info['symbol']}\n"
         f"   · 名称: {info['name']}\n"
         f"   · 行业: {info['sector'] or '未知'}\n"
@@ -250,7 +321,7 @@ def import_stocks(limit: int = 50) -> str:
 
 from mcp.server import Server, NotificationOptions
 from mcp.server.models import InitializationOptions
-from mcp.types import Tool, TextContent
+from mcp.types import ServerCapabilities, Tool, TextContent, ToolsCapability
 import mcp.server.stdio
 
 
@@ -262,7 +333,7 @@ async def main():
         return [
             Tool(
                 name="create_company",
-                description="按股票代码创建公司（从 akshare 获取详细信息）",
+                description="按股票代码创建公司（优先查 MySQL，没有数据时自动从 akshare 实时拉取）",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -335,6 +406,7 @@ async def main():
             InitializationOptions(
                 server_name="company-mcp-server",
                 server_version="0.1.0",
+                capabilities=ServerCapabilities(tools=ToolsCapability(listChanged=False)),
             ),
         )
 
