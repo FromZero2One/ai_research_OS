@@ -428,6 +428,7 @@ class MarketService:
                     "close": r.close,
                     "volume": r.volume or 0,
                 } for r in rows], []
+            warnings.append("Layer 1 (MySQL): no data")
         except Exception as e:
             warnings.append(f"Layer 1 (MySQL): {e}")
 
@@ -437,6 +438,7 @@ class MarketService:
             if rows:
                 logger.info("  [akshare] Layer 2 local: %d rows for %s", len(rows), ticker)
                 return rows, []
+            warnings.append("Layer 2 (Tencent/Sina): returned no data")
         except Exception as e:
             msg = f"Layer 2 (Tencent/Sina): {e}"
             warnings.append(msg)
@@ -448,6 +450,7 @@ class MarketService:
             if rows:
                 logger.info("  [akshare] Layer 3 cloud: %d rows for %s", len(rows), ticker)
                 return rows, []
+            warnings.append("Layer 3 (cloud MCP): no data")
         except Exception as e:
             msg = f"Layer 3 (cloud MCP): {e}"
             warnings.append(msg)
