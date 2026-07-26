@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useMarketPrices, useFinancialMetrics, useStockSearch } from "@/lib/api";
 import StockChart from "@/components/StockChart";
 
@@ -26,6 +27,7 @@ function saveTickers(tickers: string[]) {
 }
 
 export default function MarketPage() {
+  const queryClient = useQueryClient();
   const [ticker, setTicker] = useState("000002");
   const [limit, setLimit] = useState(120);
   const [quickTickers, setQuickTickers] = useState<string[]>([]);
@@ -122,6 +124,19 @@ export default function MarketPage() {
   const prices = priceData?.prices || [];
   const financials = finData?.metrics || [];
   const searchResults = searchData?.results || [];
+  const dataLoaded = !isLoading && priceData !== undefined;
+
+  // Auto-trigger ingest when a stock has no prices after loading
+  const [autoIngested, setAutoIngested] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!dataLoaded || !ticker || autoIngested.has(ticker)) return;
+    if (prices.length === 0) {
+      setAutoIngested((prev) => new Set(prev).add(ticker));
+      fetch(`/api/v1/market/prices/${ticker}/ingest`, { method: "POST" })
+        .then(() => queryClient.invalidateQueries({ queryKey: ["market", ticker] }))
+        .catch(() => {});
+    }
+  }, [dataLoaded, ticker, prices.length, autoIngested, queryClient]);
 
   const activeName = tickerNames[ticker];
   const latestPrice = prices.length > 0 ? prices[prices.length - 1].close : null;
