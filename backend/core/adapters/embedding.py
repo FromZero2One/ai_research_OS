@@ -96,7 +96,7 @@ class SentenceTransformerEmbedding:
 @lru_cache(maxsize=1)
 def create_embedding() -> EmbeddingModel:
     """Create embedding model — prefers Ollama, falls back to sentence-transformers."""
-    if settings.LLM_PROVIDER == "ollama":
+    if settings.EMBEDDING_PROVIDER == "ollama":
         try:
             return OllamaEmbedding(
                 model=settings.OLLAMA_EMBEDDING_MODEL,

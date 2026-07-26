@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     QDRANT_HOST: str = "localhost"
     QDRANT_PORT: int = 6333
     QDRANT_PREFER_GRPC: bool = True
+    EMBEDDING_PROVIDER: str = "ollama"
     EMBEDDING_MODEL: str = "BAAI/bge-m3"
     EMBEDDING_DIMENSION: int = 1024
     EMBEDDING_DEVICE: str = "cpu"

@@ -1,17 +1,71 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMarketPrices, useFinancialMetrics } from "@/lib/api";
 import StockChart from "@/components/StockChart";
 
-const QUICK_TICKERS = ["NVDA", "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "JPM", "BRK.B"];
+const STORAGE_KEY = "market_quick_tickers";
+const DEFAULT_TICKERS = ["NVDA", "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "JPM", "BRK.B"];
+
+function loadTickers(): string[] {
+  if (typeof window === "undefined") return DEFAULT_TICKERS;
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+  return DEFAULT_TICKERS;
+}
+
+function saveTickers(tickers: string[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(tickers));
+  } catch {}
+}
 
 export default function MarketPage() {
   const [ticker, setTicker] = useState("NVDA");
   const [customInput, setCustomInput] = useState("");
   const [limit, setLimit] = useState(120);
+  const [quickTickers, setQuickTickers] = useState<string[]>([]);
+  const [editing, setEditing] = useState(false);
+  const [addInput, setAddInput] = useState("");
   const { data: priceData, isLoading } = useMarketPrices(ticker, limit);
   const { data: finData } = useFinancialMetrics(ticker);
+
+  useEffect(() => {
+    setQuickTickers(loadTickers());
+  }, []);
+
+  useEffect(() => {
+    if (quickTickers.length > 0 && !quickTickers.includes(ticker)) {
+      setTicker(quickTickers[0]);
+    }
+  }, [quickTickers, ticker]);
+
+  function handleRemove(t: string) {
+    const next = quickTickers.filter((x) => x !== t);
+    setQuickTickers(next);
+    saveTickers(next);
+    if (ticker === t && next.length > 0) setTicker(next[0]);
+  }
+
+  function handleAdd() {
+    const val = addInput.trim().toUpperCase();
+    if (!val || quickTickers.includes(val)) return;
+    const next = [...quickTickers, val];
+    setQuickTickers(next);
+    saveTickers(next);
+    setAddInput("");
+  }
+
+  function handleReset() {
+    setQuickTickers(DEFAULT_TICKERS);
+    saveTickers(DEFAULT_TICKERS);
+    setEditing(false);
+  }
 
   const prices = priceData?.prices || [];
   const financials = finData?.metrics || [];
@@ -31,32 +85,85 @@ export default function MarketPage() {
 
       {/* Ticker Selector */}
       <div className="flex flex-wrap gap-2 items-center">
-        {QUICK_TICKERS.map((t) => (
-          <button
-            key={t}
-            onClick={() => setTicker(t)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              ticker === t
-                ? "bg-[#4f8cff]/10 text-[#4f8cff] border border-[#4f8cff]/30"
-                : "bg-[#1a1d28] text-[#9aa0a6] border border-[#2d3140] hover:border-[#4f8cff]/30"
-            }`}
-          >
-            {t}
-          </button>
+        {quickTickers.map((t) => (
+          <div key={t} className="relative group">
+            <button
+              onClick={() => !editing && setTicker(t)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                ticker === t && !editing
+                  ? "bg-[#4f8cff]/10 text-[#4f8cff] border border-[#4f8cff]/30"
+                  : editing
+                  ? "bg-[#2d1b1b] text-[#f87171] border border-[#f87171]/30"
+                  : "bg-[#1a1d28] text-[#9aa0a6] border border-[#2d3140] hover:border-[#4f8cff]/30"
+              }`}
+            >
+              {t}
+            </button>
+            {editing && (
+              <button
+                onClick={() => handleRemove(t)}
+                className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-[#f87171] text-white text-[10px] leading-none flex items-center justify-center hover:bg-red-500 transition-colors"
+              >
+                ×
+              </button>
+            )}
+          </div>
         ))}
-        <input
-          type="text"
-          placeholder="输入代码回车..."
-          value={customInput}
-          onChange={(e) => setCustomInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              setTicker(e.currentTarget.value.toUpperCase());
-              setCustomInput("");
-            }
-          }}
-          className="w-32 p-1.5 rounded-lg bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm placeholder-[#9aa0a6] focus:outline-none focus:border-[#4f8cff]"
-        />
+
+        {/* Edit toggle */}
+        <button
+          onClick={() => { setEditing(!editing); setAddInput(""); }}
+          className={`px-2 py-1.5 rounded-lg text-xs transition-colors ${
+            editing
+              ? "bg-[#4f8cff]/20 text-[#4f8cff] border border-[#4f8cff]/30"
+              : "bg-[#1a1d28] text-[#9aa0a6] border border-[#2d3140] hover:border-[#4f8cff]/30"
+          }`}
+          title={editing ? "完成编辑" : "编辑快捷股票"}
+        >
+          {editing ? "✓ 完成" : "✎ 编辑"}
+        </button>
+
+        {/* Add new ticker (edit mode) */}
+        {editing && (
+          <>
+            <input
+              type="text"
+              placeholder="添加代码..."
+              value={addInput}
+              onChange={(e) => setAddInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+              className="w-24 p-1.5 rounded-lg bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm placeholder-[#9aa0a6] focus:outline-none focus:border-[#4f8cff]"
+            />
+            <button
+              onClick={handleAdd}
+              className="px-2 py-1.5 rounded-lg bg-[#4f8cff]/10 text-[#4f8cff] border border-[#4f8cff]/30 text-xs hover:bg-[#4f8cff]/20"
+            >
+              + 添加
+            </button>
+            <button
+              onClick={handleReset}
+              className="px-2 py-1.5 rounded-lg text-[#9aa0a6] border border-[#2d3140] text-xs hover:text-[#e8eaed]"
+            >
+              ↺ 重置
+            </button>
+          </>
+        )}
+
+        {!editing && (
+          <input
+            type="text"
+            placeholder="输入代码回车..."
+            value={customInput}
+            onChange={(e) => setCustomInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                setTicker(e.currentTarget.value.toUpperCase());
+                setCustomInput("");
+              }
+            }}
+            className="w-32 p-1.5 rounded-lg bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm placeholder-[#9aa0a6] focus:outline-none focus:border-[#4f8cff]"
+          />
+        )}
       </div>
 
       {/* Time Range */}

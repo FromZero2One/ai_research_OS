@@ -15,6 +15,12 @@ export default function CompaniesPage() {
   const [newTicker, setNewTicker] = useState("");
   const [newExchange, setNewExchange] = useState("SSE");
   const [newTags, setNewTags] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editTicker, setEditTicker] = useState("");
+  const [editSector, setEditSector] = useState("");
+  const [editTags, setEditTags] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const showMsg = (type: "success" | "error", text: string) => {
@@ -35,7 +41,16 @@ export default function CompaniesPage() {
           tags: newTags.split(",").map((t) => t.trim()).filter(Boolean),
         }),
       });
-      if (!resp.ok) throw new Error(await resp.text());
+      const body = await resp.json();
+      if (!resp.ok) {
+        const detail = body?.detail || "";
+        if (detail.includes("already exists") || detail.includes("Duplicate")) {
+          showMsg("error", `❌ 股票代码 ${newTicker.toUpperCase()} 已存在`);
+        } else {
+          showMsg("error", typeof detail === "string" ? detail : "创建失败");
+        }
+        return;
+      }
       setShowNew(false);
       setNewName("");
       setNewTicker("");
@@ -45,6 +60,48 @@ export default function CompaniesPage() {
       showMsg("success", `${newName} 创建成功`);
     } catch (e: any) {
       showMsg("error", e.message || "创建失败");
+    }
+  };
+
+  const startEdit = (company: any) => {
+    setEditingId(company.id);
+    setEditName(company.name || "");
+    setEditTicker(company.ticker || "");
+    setEditSector(company.sector || "");
+    setEditTags((company.tags || []).map((t: any) => t.tag).join(", "));
+  };
+
+  const handleEdit = async () => {
+    if (!editingId) return;
+    try {
+      const resp = await fetch(`/api/companies/${editingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editName,
+          ticker: editTicker.toUpperCase(),
+          sector: editSector,
+          tags: editTags.split(",").map((t) => t.trim()).filter(Boolean),
+        }),
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      setEditingId(null);
+      refresh();
+      showMsg("success", "更新成功");
+    } catch (e: any) {
+      showMsg("error", e.message || "更新失败");
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      const resp = await fetch(`/api/companies/${id}`, { method: "DELETE" });
+      if (!resp.ok) throw new Error(await resp.text());
+      setDeletingId(null);
+      refresh();
+      showMsg("success", "已删除");
+    } catch (e: any) {
+      showMsg("error", e.message || "删除失败");
     }
   };
 
@@ -113,29 +170,77 @@ export default function CompaniesPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {data?.items.map((company) => (
-            <Link
+            <div
               key={company.id}
-              href={`/companies/${company.id}`}
-              className="p-5 rounded-xl bg-[#1a1d28] border border-[#2d3140] hover:border-[#4f8cff]/30 transition-colors"
+              className="p-5 rounded-xl bg-[#1a1d28] border border-[#2d3140] transition-colors relative group"
             >
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <span className="text-lg font-bold text-[#e8eaed]">{company.ticker}</span>
-                  <span className="ml-2 text-[#9aa0a6]">{company.name}</span>
+              {/* Edit / Delete buttons (top-right) */}
+              {!editingId && (
+                <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => startEdit(company)}
+                    className="px-2 py-1 rounded text-xs bg-[#2d3140] text-[#9aa0a6] hover:text-[#e8eaed] hover:bg-[#3d4150]"
+                  >
+                    ✎ 编辑
+                  </button>
+                  <button
+                    onClick={() => setDeletingId(company.id)}
+                    className="px-2 py-1 rounded text-xs bg-[#2d1b1b] text-[#f87171] hover:bg-[#3d2525]"
+                  >
+                    🗑 删除
+                  </button>
                 </div>
-              </div>
-              {company.sector && (
-                <div className="text-sm text-[#9aa0a6]">{company.sector} · {company.industry}</div>
               )}
-              <div className="flex gap-1.5 mt-3 flex-wrap">
-                {company.tags.map((t) => (
-                  <span key={t.id} className="px-2 py-0.5 rounded text-xs bg-[#232736] text-[#9aa0a6]">
-                    {t.tag}
-                  </span>
-                ))}
-              </div>
-            </Link>
+
+              {/* Edit mode */}
+              {editingId === company.id ? (
+                <div className="space-y-3" onClick={(e) => e.stopPropagation()}>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="名称" className="p-2 rounded bg-[#232736] border border-[#2d3140] text-[#e8eaed] text-sm" />
+                    <input value={editTicker} onChange={(e) => setEditTicker(e.target.value)} placeholder="代码" className="p-2 rounded bg-[#232736] border border-[#2d3140] text-[#e8eaed] text-sm" />
+                    <input value={editSector} onChange={(e) => setEditSector(e.target.value)} placeholder="行业" className="p-2 rounded bg-[#232736] border border-[#2d3140] text-[#e8eaed] text-sm" />
+                    <input value={editTags} onChange={(e) => setEditTags(e.target.value)} placeholder="标签(逗号分隔)" className="p-2 rounded bg-[#232736] border border-[#2d3140] text-[#e8eaed] text-sm" />
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={handleEdit} className="px-3 py-1 rounded bg-[#4f8cff] text-white text-xs">保存</button>
+                    <button onClick={() => setEditingId(null)} className="px-3 py-1 rounded bg-[#2d3140] text-[#9aa0a6] text-xs">取消</button>
+                  </div>
+                </div>
+              ) : (
+                /* View mode */
+                <Link href={`/companies/${company.id}`} className="block">
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <span className="text-lg font-bold text-[#e8eaed]">{company.ticker}</span>
+                      <span className="ml-2 text-[#9aa0a6]">{company.name}</span>
+                    </div>
+                  </div>
+                  {company.sector && (
+                    <div className="text-sm text-[#9aa0a6]">{company.sector}{company.industry ? ` · ${company.industry}` : ""}</div>
+                  )}
+                  <div className="flex gap-1.5 mt-3 flex-wrap">
+                    {company.tags.map((t) => (
+                      <span key={t.id} className="px-2 py-0.5 rounded text-xs bg-[#232736] text-[#9aa0a6]">{t.tag}</span>
+                    ))}
+                  </div>
+                </Link>
+              )}
+            </div>
           ))}
+        </div>
+      )}
+
+      {/* Delete confirmation dialog */}
+      {deletingId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setDeletingId(null)}>
+          <div className="p-6 rounded-xl bg-[#1a1d28] border border-[#2d3140] max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-[#e8eaed] mb-2">确认删除</h3>
+            <p className="text-sm text-[#9aa0a6] mb-4">删除后不可恢复，确定要删除这家公司吗？</p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setDeletingId(null)} className="px-3 py-1.5 rounded bg-[#2d3140] text-[#9aa0a6] text-sm">取消</button>
+              <button onClick={() => handleDelete(deletingId)} className="px-3 py-1.5 rounded bg-[#f87171] text-white text-sm">确认删除</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

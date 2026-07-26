@@ -50,16 +50,23 @@ class MarketService:
         """Get prices — from MySQL for A-stocks, else from PostgreSQL."""
         ticker_upper = ticker.upper()
 
-        # For A-stocks, try MySQL first
-        if _is_a_stock(ticker):
-            return await self._get_prices_from_mysql(
-                ticker, start_date, end_date, limit
-            )
-
-        # For US stocks / others, query PostgreSQL (may have been ingested)
-        return await self._get_prices_from_pg(
+        # First try PostgreSQL (real yfinance data), fall back to MySQL
+        pg_prices = await self._get_prices_from_pg(
             ticker_upper, start_date, end_date, limit
         )
+        if pg_prices:
+            return pg_prices
+
+        # For A-stocks, try MySQL as fallback
+        if _is_a_stock(ticker):
+            try:
+                return await self._get_prices_from_mysql(
+                    ticker, start_date, end_date, limit
+                )
+            except Exception:
+                pass
+
+        return []
 
     async def _get_prices_from_mysql(
         self,
@@ -117,14 +124,22 @@ class MarketService:
         """Get financial metrics — MySQL for A-stocks, PG otherwise."""
         ticker_upper = ticker.upper()
 
-        if _is_a_stock(ticker):
-            return await self._get_financials_from_mysql(
-                ticker, metric, fiscal_year
-            )
-
-        return await self._get_financials_from_pg(
+        # First try PostgreSQL (yfinance data), fall back to MySQL
+        pg_metrics = await self._get_financials_from_pg(
             ticker_upper, metric, fiscal_year
         )
+        if pg_metrics:
+            return pg_metrics
+
+        if _is_a_stock(ticker):
+            try:
+                return await self._get_financials_from_mysql(
+                    ticker, metric, fiscal_year
+                )
+            except Exception:
+                pass
+
+        return []
 
     async def _get_financials_from_mysql(
         self, ticker: str, metric: str | None, fiscal_year: int | None
