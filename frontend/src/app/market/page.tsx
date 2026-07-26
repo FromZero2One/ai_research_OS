@@ -50,7 +50,7 @@ export default function MarketPage() {
   const [highlightIdx, setHighlightIdx] = useState(-1);
   const searchRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
-  const { data: priceData, isLoading } = useMarketPrices(ticker, limit);
+  const { data: priceData, isPending } = useMarketPrices(ticker, limit);
   const { data: finData } = useFinancialMetrics(ticker);
   const { data: searchData } = useStockSearch(debouncedSearch);
 
@@ -135,13 +135,13 @@ export default function MarketPage() {
   const prices = priceData?.prices || [];
   const financials = finData?.metrics || [];
   const searchResults = searchData?.results || [];
-  const dataLoaded = !isLoading && priceData !== undefined;
+  const dataLoaded = !isPending && priceData !== undefined;
 
   // Debug: log data status
   useEffect(() => {
-    console.log(`[market] ticker=${ticker} prices=${prices.length} loaded=${dataLoaded} isLoading=${isLoading}`);
+    console.log(`[market] ticker=${ticker} prices=${prices.length} loaded=${dataLoaded} isPending=${isPending}`);
     if (priceData) console.log(`[market] first price:`, prices[0]);
-  }, [ticker, prices.length, dataLoaded, isLoading]);
+  }, [ticker, prices.length, dataLoaded, isPending]);
 
   // Auto-trigger ingest when a stock has no prices after loading
   const [autoIngested, setAutoIngested] = useState<Set<string>>(new Set());
@@ -384,10 +384,10 @@ export default function MarketPage() {
           <div className="text-sm text-[#9aa0a6]">{ticker} · K 线图</div>
           {/* Debug indicator */}
           <div className="text-xs text-[#9aa0a6]">
-            {isLoading ? "加载中..." : chartPrices.length > 0 ? `${chartPrices.length}条(${period}) ✅` : "暂无数据"}
+            {isPending ? "加载中..." : chartPrices.length > 0 ? `${chartPrices.length}条(${period}) ✅` : "暂无数据"}
           </div>
         </div>
-        {isLoading ? (
+        {isPending ? (
           <div className="flex items-center justify-center h-64 text-[#9aa0a6]">加载中...</div>
         ) : chartPrices.length === 0 ? (
           <div className="flex items-center justify-center h-64 text-[#9aa0a6]">
