@@ -33,7 +33,6 @@ export default function MarketPage() {
     if (typeof window === "undefined") return "000002";
     try { return localStorage.getItem(TICKER_KEY) || "000002"; } catch { return "000002"; }
   });
-  const [limit, setLimit] = useState(120);
   const [period, setPeriod] = useState<"daily" | "weekly" | "monthly">("daily");
 
   // Persist active ticker + custom setter
@@ -50,7 +49,7 @@ export default function MarketPage() {
   const [highlightIdx, setHighlightIdx] = useState(-1);
   const searchRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
-  const { data: priceData, isPending } = useMarketPrices(ticker, limit);
+  const { data: priceData, isPending } = useMarketPrices(ticker, 520);
   const { data: finData } = useFinancialMetrics(ticker);
   const { data: searchData } = useStockSearch(debouncedSearch);
 
@@ -307,49 +306,23 @@ export default function MarketPage() {
         </div>
       </div>
 
-      {/* Period + Time Range */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-[#9aa0a6] font-medium">K线周期</span>
-          <div className="flex gap-1 bg-[#1a1d28] rounded-lg border border-[#2d3140] p-0.5">
-            {(["daily", "weekly", "monthly"] as const).map((p) => (
-              <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                  period === p
-                    ? "bg-[#4f8cff] text-white"
-                    : "text-[#9aa0a6] hover:text-[#e8eaed]"
-                }`}
-              >
-                {p === "daily" ? "日K" : p === "weekly" ? "周K" : "月K"}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-[#9aa0a6] font-medium">时间范围</span>
-          <div className="flex gap-1 bg-[#1a1d28] rounded-lg border border-[#2d3140] p-0.5">
-          {[
-            { label: "1月", days: 22 },
-            { label: "3月", days: 66 },
-            { label: "半年", days: 130 },
-            { label: "1年", days: 260 },
-            { label: "全部", days: 520 },
-          ].map((r) => (
+      {/* K-line Period */}
+      <div className="flex items-center gap-3">
+        <span className="text-xs text-[#9aa0a6] font-medium">K线周期</span>
+        <div className="flex gap-1 bg-[#1a1d28] rounded-lg border border-[#2d3140] p-0.5">
+          {(["daily", "weekly", "monthly"] as const).map((p) => (
             <button
-              key={r.label}
-              onClick={() => setLimit(r.days)}
+              key={p}
+              onClick={() => setPeriod(p)}
               className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                limit === r.days
-                  ? "bg-[#232736] text-[#e8eaed]"
+                period === p
+                  ? "bg-[#4f8cff] text-white"
                   : "text-[#9aa0a6] hover:text-[#e8eaed]"
               }`}
             >
-              {r.label}
+              {p === "daily" ? "日K" : p === "weekly" ? "周K" : "月K"}
             </button>
           ))}
-          </div>
         </div>
       </div>
 
@@ -390,7 +363,7 @@ export default function MarketPage() {
           <div className="text-sm text-[#9aa0a6]">{ticker} · K 线图</div>
           {/* Debug indicator */}
           <div className="text-xs text-[#9aa0a6]">
-            {isPending ? "加载中..." : chartPrices.length > 0 ? `${chartPrices.length}条(${period}) ✅` : "暂无数据"}
+            {isPending ? "加载中..." : chartPrices.length > 0 ? `${chartPrices.length}条 ✅` : "暂无数据"}
           </div>
         </div>
         {isPending ? (
