@@ -489,6 +489,83 @@ class MarketService:
 
         return await _asyncio.to_thread(_fetch)
 
+    # ── Company profile fetch (cninfo for A, eastmoney HK for HK) ──────
+
+    async def fetch_and_store_company_profile(self, ticker: str) -> dict:
+        """Fetch company profile data and update the Company record in PG."""
+        import akshare as ak
+        import asyncio as _asyncio
+        from company.models import Company
+        from sqlalchemy import update as sql_update
+
+        profile: dict[str, str | int | None] = {}
+        is_hk = ticker.strip().isdigit() and len(ticker.strip()) in (4, 5)
+
+        def _fetch_a():
+            df = ak.stock_profile_cninfo(symbol=ticker)
+            if df is None or df.empty:
+                return {}
+            row = df.iloc[0]
+            return {
+                "sector": row.get("所属行业"),
+                "industry": row.get("所属行业"),
+                "description": str(row.get("机构简介", ""))[:2000] if row.get("机构简介") else None,
+                "website": row.get("官方网站"),
+                "headquarters": row.get("办公地址"),
+                "founded_year": int(str(row.get("成立日期", ""))[:4]) if row.get("成立日期") else None,
+            }
+
+        def _fetch_hk():
+            hk_sym = ticker.zfill(5)
+            df = ak.stock_hk_company_profile_em(symbol=hk_sym)
+            if df is None or df.empty:
+                return {}
+            row = df.iloc[0]
+            emp_raw = row.get("员工人数")
+            try:
+                employees = int(emp_raw)
+            except (ValueError, TypeError):
+                employees = None
+            return {
+                "sector": row.get("所属行业"),
+                "industry": row.get("所属行业"),
+                "description": str(row.get("公司介绍", ""))[:2000] if row.get("公司介绍") else None,
+                "website": row.get("公司网址"),
+                "headquarters": row.get("办公地址"),
+                "founded_year": int(str(row.get("公司成立日期", ""))[:4]) if row.get("公司成立日期") else None,
+                "employees": employees,
+            }
+
+        try:
+            profile = await _asyncio.to_thread(_fetch_hk if is_hk else _fetch_a)
+        except Exception as e:
+            logger.warning("  [profile] fetch failed for %s: %s", ticker, e)
+            return {}
+
+        if not profile:
+            return profile
+
+        # Update Company record in PG
+        update_data = {k: v for k, v in profile.items() if v is not None}
+        if update_data:
+            stmt = (
+                sql_update(Company)
+                .where(Company.ticker == ticker)
+                .values(**update_data)
+            )
+            await self.session.execute(stmt)
+            await self.session.flush()
+            await self.events.record(
+                source="market",
+                event_type="company_profile.ingested",
+                entity_type="company",
+                entity_id=ticker,
+                payload=update_data,
+            )
+            logger.info("  [profile] updated %s: %s", ticker, list(update_data.keys()))
+
+        return profile
+
     # ── Layer 2: local akshare (subprocess) ────────────────────────────
 
     @staticmethod

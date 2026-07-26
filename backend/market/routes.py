@@ -62,6 +62,17 @@ async def ingest_financials(
     return {"ticker": ticker.upper(), "ingested": count, "source": "akshare_hk"}
 
 
+@router.post("/profile/{ticker}/ingest", status_code=201)
+async def ingest_company_profile(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch company profile (description, sector, website, etc.) and update Company record."""
+    svc = MarketService(db)
+    profile = await svc.fetch_and_store_company_profile(ticker)
+    return {"ticker": ticker.upper(), "updated": profile}
+
+
 @router.get("/financials/{ticker}")
 async def get_financials(
     ticker: str,

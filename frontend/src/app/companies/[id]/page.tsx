@@ -118,10 +118,13 @@ export default function CompanyDetailPage() {
         const body = await resp.json();
         throw new Error(body?.detail || "刷新失败");
       }
-      // Also try to refresh financial data for HK/non-A stocks
+      // Also try to refresh financial data + company profile
       fetch(`/api/market/financials/${company.ticker}/ingest`, { method: "POST" }).catch(() => {});
+      fetch(`/api/market/profile/${company.ticker}/ingest`, { method: "POST" }).catch(() => {});
       queryClient.invalidateQueries({ queryKey: ["market", company.ticker] });
       queryClient.invalidateQueries({ queryKey: ["financials", company.ticker] });
+      // Also refresh company detail so overview tab picks up new profile data
+      queryClient.invalidateQueries({ queryKey: ["company"] });
       setMsg({ type: "success", text: "数据已刷新" });
       setTimeout(() => setMsg(null), 4000);
     } catch (e: any) {
