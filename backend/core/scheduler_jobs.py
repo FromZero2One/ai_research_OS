@@ -50,12 +50,12 @@ async def market_data_update() -> dict:
 
 OVERVIEW_PROMPT = """你是一个简洁的投资分析助手。基于以下关注股票的20个交易日数据，生成一份中文市场速览。
 
-对每只股票关注：
-- 当日涨跌
-- 近一月趋势（20日涨跌幅%）
-- 值得注意的形态
+要求：
+1. 先写一段1-2句的总览（共关注几只股票，涨跌各几只）
+2. 然后每只股票独立成段，用「**股票代码 股票名**」开头
+3. 每只股票分析：当日涨跌、近一月趋势、值得注意的形态或新闻
 
-输出3-5句话，用具体数据。要求：全程用中文。"""
+全程用中文，数据具体，不编造。"""
 
 async def _fetch_newsnow(sectors: list[str] | None = None) -> list[str]:
     """Fetch financial news relevant to given sectors via persistent MCP."""
@@ -240,7 +240,7 @@ async def morning_brief() -> dict:
             if s.get("news"):
                 news_str = " 新闻: " + " | ".join(s["news"])
             overview_lines.append(f"  {s['ticker']} ({s['name']}): {s['price']:.2f}{chg}{trend}{news_str}")
-        overview_input = "Watchlist (20-day data):\n" + "\n".join(overview_lines)
+        overview_input = "Watchlist stocks (20-day data each):\n---\n" + "\n---\n".join(overview_lines)
         if market_news:
             overview_input += "\n\nGeneral financial news:\n" + "\n".join(f"  - {h}" for h in market_news[:5])
 
