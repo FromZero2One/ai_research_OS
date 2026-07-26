@@ -537,16 +537,25 @@ Report: {report_content[:3000]}"""
         confidence: float,
     ) -> ResearchSession:
         """Finalize the research with a structured thesis + decision."""
-        session = await self.get_session(session_id)
+        from sqlalchemy.orm import selectinload
+        result = await self.session.execute(
+            select(ResearchSession)
+            .where(ResearchSession.id == session_id)
+            .options(selectinload(ResearchSession.reports))
+        )
+        session = result.scalar_one_or_none()
+        if not session:
+            raise NotFoundError("ResearchSession", str(session_id))
 
         # Generate structured thesis from the latest report
-        structured = await self._generate_structured_thesis(thesis, decision, session.reports)
+        structured = await self._generate_structured_thesis(thesis, decision, list(session.reports))
 
         session.thesis = thesis
         session.decision = decision
         session.confidence = confidence
         session.status = "completed"
-        session.extra_metadata = session.extra_metadata or {}
+        if session.extra_metadata is None:
+            session.extra_metadata = {}
         session.extra_metadata["structured_thesis"] = structured
 
         await self.session.flush()
