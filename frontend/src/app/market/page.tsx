@@ -308,44 +308,50 @@ export default function MarketPage() {
       </div>
 
       {/* Period + Time Range */}
-      <div className="flex items-center gap-4">
-        <div className="flex gap-1 bg-[#1a1d28] rounded-lg border border-[#2d3140] p-0.5">
-          {(["daily", "weekly", "monthly"] as const).map((p) => (
+      <div className="space-y-2">
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-[#9aa0a6] font-medium">K线周期</span>
+          <div className="flex gap-1 bg-[#1a1d28] rounded-lg border border-[#2d3140] p-0.5">
+            {(["daily", "weekly", "monthly"] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                  period === p
+                    ? "bg-[#4f8cff] text-white"
+                    : "text-[#9aa0a6] hover:text-[#e8eaed]"
+                }`}
+              >
+                {p === "daily" ? "日K" : p === "weekly" ? "周K" : "月K"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-[#9aa0a6] font-medium">时间范围</span>
+          <div className="flex gap-1 bg-[#1a1d28] rounded-lg border border-[#2d3140] p-0.5">
+          {[
+            { label: "1月", days: 22 },
+            { label: "3月", days: 66 },
+            { label: "半年", days: 130 },
+            { label: "1年", days: 260 },
+            { label: "全部", days: 520 },
+          ].map((r) => (
             <button
-              key={p}
-              onClick={() => setPeriod(p)}
+              key={r.label}
+              onClick={() => setLimit(r.days)}
               className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                period === p
-                  ? "bg-[#4f8cff] text-white"
+                limit === r.days
+                  ? "bg-[#232736] text-[#e8eaed]"
                   : "text-[#9aa0a6] hover:text-[#e8eaed]"
               }`}
             >
-              {p === "daily" ? "日K" : p === "weekly" ? "周K" : "月K"}
+              {r.label}
             </button>
           ))}
+          </div>
         </div>
-        <div className="flex gap-2">{/* Time Range */}
-        {[
-          { label: "1月", days: 22 },
-          { label: "3月", days: 66 },
-          { label: "半年", days: 130 },
-          { label: "1年", days: 260 },
-          { label: "全部", days: 520 },
-        ].map((r) => (
-          <button
-            key={r.label}
-            onClick={() => setLimit(r.days)}
-            className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
-              limit === r.days
-                ? "bg-[#232736] text-[#e8eaed] border border-[#2d3140]"
-                : "text-[#9aa0a6] hover:text-[#e8eaed]"
-            }`}
-          >
-            {r.label}
-          </button>
-        ))}
       </div>
-      </div>{/* end Period + Time Range wrapper */}
 
       {/* Price Info + Name */}
       {prices.length > 0 && (
