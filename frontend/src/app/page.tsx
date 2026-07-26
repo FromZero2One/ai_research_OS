@@ -27,8 +27,12 @@ export default function DashboardPage() {
   const handleGenerateBrief = async () => {
     setGenerating(true);
     try {
-      await fetch("/api/dashboard/generate-brief", { method: "POST" });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      const resp = await fetch("/api/dashboard/generate-brief", { method: "POST" });
+      if (resp.ok) {
+        // Wait for generation to complete, then refresh both brief + dashboard
+        await new Promise(r => setTimeout(r, 2000));
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      }
     } catch {
       // ignore
     }

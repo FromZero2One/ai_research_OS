@@ -48,30 +48,29 @@ async def market_data_update() -> dict:
 
 # ── Morning Brief ───────────────────────────────────────────────────
 
-OVERVIEW_PROMPT = """You are a concise investment assistant. Based on the watchlist data below (20 trading days each), write a brief market overview.
+OVERVIEW_PROMPT = """你是一个简洁的投资分析助手。基于以下关注股票的20个交易日数据，生成一份中文市场速览。
 
-For each stock:
-- Recent price with daily change
-- Monthly trend (% from 20 days ago)
-- Notable patterns or observations
+对每只股票关注：
+- 当日涨跌
+- 近一月趋势（20日涨跌幅%）
+- 值得注意的形态
 
-Cover: how many are up/down today, which sectors are moving, any notable monthly trends.
-Keep it to 3-5 sentences. Be specific with numbers."""
+输出3-5句话，用具体数据。要求：全程用中文。"""
 
-STOCK_BRIEF_PROMPT = """You are an investment research analyst. Based on 20 trading days of data for a single stock, write a 3-5 sentence brief covering:
+STOCK_BRIEF_PROMPT = """你是一个投资研究分析师。基于以下单只股票的20个交易日数据，写一段3-5句话的中文分析：
 
-1. **Recent trend** — Is the stock trending up/down/flat over the past month?
-2. **Key signal** — What stands out: acceleration, reversal, consolidation?
-3. **What to watch** — What signal would trigger a re-evaluation?
+1. **近期趋势** — 近一月走势如何？上涨/下跌/横盘？
+2. **关键信号** — 加速/反转/整理？
+3. **关注什么** — 什么信号会改变判断？
 
-Stock: {ticker} ({name})
-Latest price: {price}
-Today's change: {change}
-Monthly trend (20d): {monthly_trend}%
-Days since last research: {research_days}
-Open research sessions: {open_sessions}
+股票：{ticker} ({name})
+最新价：{price}
+今日涨跌：{change}
+月度趋势（20日）：{monthly_trend}%
+距上次研究：{research_days} 天
+进行中研究：{open_sessions} 个
 
-Be concise and specific with numbers. Avoid generic advice."""
+要求：全程用中文，数据具体，避免空泛建议。"""
 
 
 async def morning_brief() -> dict:
