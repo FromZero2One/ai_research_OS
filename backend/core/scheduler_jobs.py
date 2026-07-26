@@ -57,10 +57,10 @@ OVERVIEW_PROMPT = """你是一个简洁的投资分析助手。基于以下关�
 
 输出3-5句话，用具体数据。要求：全程用中文。"""
 
-async def _fetch_newsnow() -> list[str]:
-    """Fetch general financial news via persistent MCP connection."""
+async def _fetch_newsnow(sectors: list[str] | None = None) -> list[str]:
+    """Fetch financial news relevant to given sectors via persistent MCP."""
     from core.adapters.newsnow_mcp import get_headlines
-    return await get_headlines()
+    return await get_headlines(sectors=sectors)
 
 
 async def _fetch_news_akshare(ticker: str) -> list[dict]:
@@ -228,8 +228,9 @@ async def morning_brief() -> dict:
         llm = create_llm()
 
         # 3. Layer 1: Market overview (single LLM call)
-        # Fetch general financial news from newsnow
-        market_news = await _fetch_newsnow()
+        # Collect unique sectors from watchlist for news filtering
+        watchlist_sectors = list(set(s.get("sector", "") for s in stock_data if s.get("sector")))
+        market_news = await _fetch_newsnow(sectors=watchlist_sectors)
 
         overview_lines = []
         for s in stock_data:
