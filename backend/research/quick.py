@@ -1,25 +1,27 @@
-"""Quick Research — one-click research with real-time SSE progress.
+"""Quick Research — one-click research with async background execution.
 
-Chains: Create Session → Plan → Gather Evidence → Generate Report
-Progress updates are streamed via Server-Sent Events (SSE).
+POST  → creates session + fires background task → returns immediately
+SSE  → streams progress from DB as the background task runs
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from core.database import get_db
-from core.exceptions import NotFoundError
 from research.models import ResearchSession
+from core.logging import logger
+from core.task_manager import track, untrack
 from research.service import ResearchService
 
 router = APIRouter(prefix="/research/quick", tags=["Quick Research"])
@@ -92,55 +94,58 @@ async def _update_progress(
     await db.flush()
 
 
-async def _run_research_chain(
+async def _run_research_task(
     session_id: uuid.UUID,
-    db: AsyncSession,
 ) -> None:
-    """Background task: run the full research chain with progress updates."""
+    """Background task: run full research chain. Uses its own DB session."""
     from core.database import async_session_factory
 
-    # Use a separate session for the background task
     async with async_session_factory() as bg_session:
         svc = ResearchService(bg_session)
 
         try:
-            # Step 2: Generate Plan
+            # Step 1: Generate Plan
             await _update_progress(session_id, "planning", "AI 正在生成研究计划...", bg_session)
             await bg_session.commit()
-
+            logger.info("  [research] planning %s", session_id)
             await svc.generate_plan(session_id)
-            await bg_session.commit()  # ✅ commit before LLM call
-
-            # Step 3: Gather Evidence
-            await _update_progress(session_id, "searching", "正在搜索知识库和市场数据...", bg_session)
             await bg_session.commit()
 
+            # Step 2: Gather Evidence
+            await _update_progress(session_id, "searching", "正在搜索知识库和市场数据...", bg_session)
+            await bg_session.commit()
+            logger.info("  [research] gathering %s", session_id)
             await svc.auto_gather_evidence(session_id, bg_session, use_plan=True)
             await bg_session.commit()
 
-            # Step 4: Generate Report
+            # Step 3: Generate Report
             await _update_progress(session_id, "generating", "AI 正在生成研究报告...", bg_session)
             await bg_session.commit()
-
+            logger.info("  [research] generating %s", session_id)
             report = await svc.auto_generate_report(session_id, is_final=False)
             await bg_session.commit()
 
             # Done
             await _update_progress(
                 session_id, "completed", "研究完成！",
-                bg_session,
-                report_id=str(report.id),
+                bg_session, report_id=str(report.id),
             )
             await bg_session.commit()
+            logger.info("  [research] completed %s (report=%s)", session_id, report.id)
 
+        except asyncio.CancelledError:
+            logger.warning("  [research] cancelled %s", session_id)
+            await _update_progress(session_id, "error", "研究任务被取消", bg_session)
+            await bg_session.commit()
         except Exception as e:
-            await bg_session.rollback()
+            logger.error("  [research] failed %s: %s", session_id, e, exc_info=True)
             await _update_progress(
                 session_id, "error", f"研究过程出错: {str(e)[:200]}",
-                bg_session,
-                error=str(e),
+                bg_session, error=str(e),
             )
             await bg_session.commit()
+        finally:
+            untrack(str(session_id))
 
 
 # ── API Endpoints ─────────────────────────────────────────────────────
@@ -151,10 +156,10 @@ async def quick_research(
     data: QuickResearchRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """Start a one-click research. Runs synchronously.
+    """Start one-click research. Returns immediately; runs in background.
 
-    Research chain executes in-band (not background task):
-    plan → gather → generate report. May take 30-60s.
+    The research chain (plan → gather → generate) executes as an asyncio
+    background task. Progress is streamed via SSE at GET /{id}/stream.
     """
     ticker = data.ticker.upper()
     title = data.title or f"{ticker} 快速研究"
@@ -169,71 +174,14 @@ async def quick_research(
     )
     await db.commit()
 
-    # Run research chain
-    from core.logging import logger
-    try:
-        from core.database import async_session_factory
-
-        async with async_session_factory() as bg_session:
-            logger.info("Quick research: starting chain for %s", session.id)
-            bg_svc = ResearchService(bg_session)
-
-            # Step 1: Generate Plan
-            await _update_progress(session.id, "planning", "AI 正在生成研究计划...", bg_session)
-            await bg_session.commit()
-            logger.info("Quick research: generating plan...")
-            try:
-                await bg_svc.generate_plan(session.id)
-                await bg_session.commit()
-                logger.info("Quick research: plan done")
-            except Exception as e:
-                logger.error("Plan generation failed: %s", e)
-                raise
-
-            # Step 2: Gather Evidence
-            await _update_progress(session.id, "searching", "正在搜索知识库和市场数据...", bg_session)
-            await bg_session.commit()
-            logger.info("Quick research: gathering evidence...")
-            try:
-                await bg_svc.auto_gather_evidence(session.id, bg_session, use_plan=True)
-                await bg_session.commit()
-                logger.info("Quick research: evidence done")
-            except Exception as e:
-                logger.error("Evidence gathering failed: %s", e)
-                raise
-
-            # Step 3: Generate Report
-            await _update_progress(session.id, "generating", "AI 正在生成研究报告...", bg_session)
-            await bg_session.commit()
-            logger.info("Quick research: generating report...")
-            try:
-                report = await bg_svc.auto_generate_report(session.id, is_final=False)
-                await bg_session.commit()
-                logger.info("Quick research: report done (id=%s)", report.id)
-            except Exception as e:
-                logger.error("Report generation failed: %s", e)
-                raise
-
-            await _update_progress(
-                session.id, "completed", "研究完成！",
-                bg_session, report_id=str(report.id),
-            )
-            await bg_session.commit()
-            logger.info("Quick research: chain complete")
-    except Exception as e:
-        logger.error("Quick research chain failed: %s", e, exc_info=True)
-        try:
-            async with async_session_factory() as err_session:
-                await _update_progress(
-                    session.id, "error", f"研究过程出错: {str(e)[:200]}",
-                    err_session, error=str(e),
-                )
-                await err_session.commit()
-        except Exception:
-            pass
+    # Fire background task — the POST returns immediately
+    sid = str(session.id)
+    track(sid)
+    asyncio.create_task(_run_research_task(session.id))
+    logger.info("  [research] fired background task %s", sid)
 
     return QuickResearchResponse(
-        session_id=str(session.id),
+        session_id=sid,
         status="started",
     )
 
@@ -251,20 +199,23 @@ async def stream_research_progress(session_id: uuid.UUID):
 
     async def event_generator():
         async with async_session_factory() as db:
-            while True:
+            deadline = time.time() + 120  # 2-minute timeout
+            while time.time() < deadline:
                 progress = await _get_progress(session_id, db)
 
                 if progress.get("error"):
                     yield f"event: error\ndata: {json.dumps(progress)}\n\n"
-                    break
+                    return
 
                 if progress["step"] == "completed":
                     yield f"event: complete\ndata: {json.dumps(progress)}\n\n"
-                    break
+                    return
 
                 yield f"event: progress\ndata: {json.dumps(progress)}\n\n"
 
                 await asyncio.sleep(0.5)
+
+            yield f"event: error\ndata: {json.dumps({'error': '研究超时'})}\n\n"
 
     return StreamingResponse(
         event_generator(),
