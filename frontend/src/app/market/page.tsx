@@ -6,7 +6,8 @@ import { useMarketPrices, useFinancialMetrics, useStockSearch } from "@/lib/api"
 import StockChart from "@/components/StockChart";
 
 const STORAGE_KEY = "market_quick_tickers";
-const DEFAULT_TICKERS = ["000002", "600519", "1810", "300750", "NVDA", "TSLA"];
+const TICKER_KEY = "market_active_ticker";
+const DEFAULT_TICKERS = ["000002", "600519", "1810", "300750", "601988", "NVDA", "TSLA"];
 
 function loadTickers(): string[] {
   if (typeof window === "undefined") return DEFAULT_TICKERS;
@@ -28,8 +29,17 @@ function saveTickers(tickers: string[]) {
 
 export default function MarketPage() {
   const queryClient = useQueryClient();
-  const [ticker, setTicker] = useState("000002");
+  const [ticker, setTicker_] = useState(() => {
+    if (typeof window === "undefined") return "000002";
+    try { return localStorage.getItem(TICKER_KEY) || "000002"; } catch { return "000002"; }
+  });
   const [limit, setLimit] = useState(120);
+
+  // Persist active ticker + custom setter
+  function setTicker(t: string) {
+    setTicker_(t);
+    try { localStorage.setItem(TICKER_KEY, t); } catch {}
+  }
   const [quickTickers, setQuickTickers] = useState<string[]>([]);
   const [editing, setEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -125,6 +135,12 @@ export default function MarketPage() {
   const financials = finData?.metrics || [];
   const searchResults = searchData?.results || [];
   const dataLoaded = !isLoading && priceData !== undefined;
+
+  // Debug: log data status
+  useEffect(() => {
+    console.log(`[market] ticker=${ticker} prices=${prices.length} loaded=${dataLoaded} isLoading=${isLoading}`);
+    if (priceData) console.log(`[market] first price:`, prices[0]);
+  }, [ticker, prices.length, dataLoaded, isLoading]);
 
   // Auto-trigger ingest when a stock has no prices after loading
   const [autoIngested, setAutoIngested] = useState<Set<string>>(new Set());
@@ -307,7 +323,13 @@ export default function MarketPage() {
 
       {/* K-line Chart */}
       <div className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
-        <div className="text-sm text-[#9aa0a6] mb-3">{ticker} · K 线图</div>
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm text-[#9aa0a6]">{ticker} · K 线图</div>
+          {/* Debug indicator */}
+          <div className="text-xs text-[#9aa0a6]">
+            {isLoading ? "加载中..." : prices.length > 0 ? `${prices.length}条数据 ✅` : "暂无数据"}
+          </div>
+        </div>
         {isLoading ? (
           <div className="flex items-center justify-center h-64 text-[#9aa0a6]">加载中...</div>
         ) : prices.length === 0 ? (
