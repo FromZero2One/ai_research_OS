@@ -29,7 +29,11 @@ export default function StockChart({ prices, height = 400, showVolume = true }: 
       instanceRef.current = echarts.init(chartRef.current, undefined, { renderer: "canvas" });
     }
 
-    const dates = prices.map((p) => p.date.slice(5)); // MM-DD
+    // Detect if data spans multiple years
+    const firstYear = prices[0].date.slice(0, 4);
+    const lastYear = prices[prices.length - 1].date.slice(0, 4);
+    const multiYear = firstYear !== lastYear;
+    const dates = prices.map((p) => multiYear ? p.date.slice(0, 7) : p.date.slice(5)); // YYYY-MM or MM-DD
     const ohlc = prices.map((p) => [p.open, p.close, p.low, p.high]);
     const volumes = prices.map((p) => p.volume);
 
