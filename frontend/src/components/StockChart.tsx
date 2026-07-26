@@ -22,12 +22,25 @@ export default function StockChart({ prices, height = 400, showVolume = true }: 
   const chartRef = useRef<HTMLDivElement>(null);
   const instanceRef = useRef<echarts.ECharts | null>(null);
 
+  // Init chart once
   useEffect(() => {
-    if (!chartRef.current || prices.length === 0) return;
+    if (!chartRef.current) return;
+    instanceRef.current = echarts.init(chartRef.current, undefined, { renderer: "canvas" });
 
-    if (!instanceRef.current) {
-      instanceRef.current = echarts.init(chartRef.current, undefined, { renderer: "canvas" });
-    }
+    const handleResize = () => instanceRef.current?.resize();
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      instanceRef.current?.dispose();
+      instanceRef.current = null;
+    };
+  }, []);
+
+  // Update chart when data changes
+  useEffect(() => {
+    const chart = instanceRef.current;
+    if (!chart || prices.length === 0) return;
 
     // Detect if data spans multiple years
     const firstYear = prices[0].date.slice(0, 4);
@@ -139,16 +152,8 @@ export default function StockChart({ prices, height = 400, showVolume = true }: 
       ],
     };
 
-    instanceRef.current.setOption(option, true);
-
-    const handleResize = () => instanceRef.current?.resize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    chart.setOption(option, true);
   }, [prices, showVolume, height]);
-
-  useEffect(() => {
-    return () => instanceRef.current?.dispose();
-  }, []);
 
   if (prices.length === 0) {
     return (
