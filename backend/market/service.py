@@ -316,27 +316,22 @@ class MarketService:
         return await asyncio.to_thread(_fetch)
 
     async def _fetch_akshare(self, ticker: str) -> list[dict]:
-        import akshare as ak
-        import asyncio
-        import os
+        """Fetch A-stock data — try MySQL adapter first, fall back to yfinance."""
+        # Layer 1: akshare MySQL (fast, local)
+        try:
+            mysql = await self._get_mysql()
+            rows = await mysql.get_prices(ticker, limit=520)
+            if rows:
+                return [{
+                    "date": r.date,
+                    "open": r.open,
+                    "high": r.high,
+                    "low": r.low,
+                    "close": r.close,
+                    "volume": r.volume or 0,
+                } for r in rows]
+        except Exception:
+            pass
 
-        def _fetch():
-            # Strip proxy vars so akshare can reach Chinese data sources directly
-            for _var in ("http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY",
-                          "ftp_proxy", "FTP_PROXY", "all_proxy", "ALL_PROXY"):
-                os.environ.pop(_var, None)
-            df = ak.stock_zh_a_hist(symbol=ticker, period="daily")
-            results = []
-            for _, row in df.iterrows():
-                results.append({
-                    "date": row["日期"].date()
-                    if hasattr(row["日期"], "date") else row["日期"],
-                    "open": float(row["开盘"]),
-                    "high": float(row["最高"]),
-                    "low": float(row["最低"]),
-                    "close": float(row["收盘"]),
-                    "volume": float(row["成交量"]),
-                })
-            return results
-
-        return await asyncio.to_thread(_fetch)
+        # Layer 2: fall back to yfinance (A-stock with .SS/.SZ suffix)
+        return await self._fetch_yfinance(ticker)
