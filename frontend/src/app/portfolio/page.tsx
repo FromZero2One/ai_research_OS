@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useWatchlists, useHoldings } from "@/lib/api";
+import { useWatchlists, useHoldings, useStockSearch } from "@/lib/api";
 
 export default function PortfolioPage() {
   const queryClient = useQueryClient();
@@ -135,23 +135,35 @@ export default function PortfolioPage() {
 
 function WatchlistCard({ wl, onMsg, onRefresh }: { wl: any; onMsg: (t: "success" | "error", s: string) => void; onRefresh: () => void }) {
   const [adding, setAdding] = useState(false);
-  const [ticker, setTicker] = useState("");
+  const [searchQ, setSearchQ] = useState("");
+  const [showDrop, setShowDrop] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const { data: searchData } = useStockSearch(searchQ);
+  const searchResults = searchData?.results || [];
 
-  const handleAdd = async () => {
-    if (!ticker.trim()) return;
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) setShowDrop(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const handleSelect = async (symbol: string) => {
     try {
       const resp = await fetch(`/api/portfolio/watchlists/${wl.id}/items`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ticker: ticker.toUpperCase() }),
+        body: JSON.stringify({ ticker: symbol }),
       });
       if (!resp.ok) throw new Error(await resp.text());
-      setTicker("");
+      setSearchQ("");
+      setShowDrop(false);
       setAdding(false);
       onRefresh();
-      onMsg("success", `${ticker.toUpperCase()} 已添加`);
+      onMsg("success", `${symbol} 已添加`);
     } catch (e: any) {
-      onMsg("error", e.message || "添加股票失败");
+      onMsg("error", e.message || "添加失败");
     }
   };
 
@@ -177,18 +189,29 @@ function WatchlistCard({ wl, onMsg, onRefresh }: { wl: any; onMsg: (t: "success"
       </div>
 
       {adding && (
-        <div className="flex gap-2">
+        <div ref={searchRef} className="relative">
           <input
-            placeholder="输入股票代码"
-            value={ticker}
-            onChange={(e) => setTicker(e.target.value.toUpperCase())}
-            onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
-            className="flex-1 p-2 rounded bg-[#232736] border border-[#2d3140] text-[#e8eaed] text-sm placeholder-[#6b7280]"
+            placeholder="搜索股票代码或名称..."
+            value={searchQ}
+            onChange={(e) => { setSearchQ(e.target.value); setShowDrop(true); }}
+            onFocus={() => setShowDrop(true)}
+            className="w-full p-2 rounded bg-[#232736] border border-[#2d3140] text-[#e8eaed] text-sm placeholder-[#6b7280] focus:outline-none focus:border-[#4f8cff]"
           />
-          <button onClick={handleAdd} disabled={!ticker.trim()}
-            className="px-3 py-1 rounded bg-[#34d399] text-black text-xs font-medium disabled:opacity-50">
-            添加
-          </button>
+          {showDrop && searchQ && (
+            <div className="absolute z-10 mt-1 w-full rounded-lg bg-[#1a1d28] border border-[#2d3140] shadow-xl max-h-48 overflow-y-auto">
+              {searchResults.length === 0 ? (
+                <div className="p-2 text-sm text-[#9aa0a6]">无匹配结果</div>
+              ) : (
+                searchResults.map((r) => (
+                  <button key={r.symbol} onClick={() => handleSelect(r.symbol)}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-sm text-left hover:bg-[#232736] transition-colors">
+                    <span className="font-mono text-[#4f8cff]">{r.symbol}</span>
+                    {r.name && <span className="text-[#e8eaed]">{r.name}</span>}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
         </div>
       )}
 
