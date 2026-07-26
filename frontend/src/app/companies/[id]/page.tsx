@@ -118,9 +118,11 @@ export default function CompanyDetailPage() {
         const body = await resp.json();
         throw new Error(body?.detail || "刷新失败");
       }
+      // Also try to refresh financial data for HK/non-A stocks
+      fetch(`/api/market/financials/${company.ticker}/ingest`, { method: "POST" }).catch(() => {});
       queryClient.invalidateQueries({ queryKey: ["market", company.ticker] });
       queryClient.invalidateQueries({ queryKey: ["financials", company.ticker] });
-      setMsg({ type: "success", text: "行情数据已刷新" });
+      setMsg({ type: "success", text: "数据已刷新" });
       setTimeout(() => setMsg(null), 4000);
     } catch (e: any) {
       setMsg({ type: "error", text: e.message });
@@ -472,13 +474,9 @@ export default function CompanyDetailPage() {
           <div className="flex items-center justify-between">
             <div className="text-sm text-[#9aa0a6]">akshare 行情（MySQL→本地→云端）</div>
             <div className="flex gap-2">
-              <button onClick={handleRefreshFinancials}
-                className="px-3 py-1.5 rounded-lg bg-[#2d3140] text-[#9aa0a6] text-xs hover:bg-[#3d4150] hover:text-[#e8eaed] transition-colors">
-                📊 刷新财务
-              </button>
               <button onClick={handleRefreshData} disabled={ingesting}
                 className="px-3 py-1.5 rounded-lg bg-[#2d3140] text-[#9aa0a6] text-xs hover:bg-[#3d4150] hover:text-[#e8eaed] disabled:opacity-50 transition-colors">
-                {ingesting ? "↻ 刷新中..." : "↻ 刷新行情"}
+                {ingesting ? "↻ 刷新中..." : "↻ 刷新"}
               </button>
             </div>
           </div>
