@@ -5,27 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useMarketPrices, useFinancialMetrics, useStockSearch } from "@/lib/api";
 import StockChart from "@/components/StockChart";
 
-const STORAGE_KEY = "market_quick_tickers";
 const TICKER_KEY = "market_active_ticker";
-const DEFAULT_TICKERS = ["000002", "600519", "1810", "300750", "601988", "NVDA", "TSLA"];
-
-function loadTickers(): string[] {
-  if (typeof window === "undefined") return DEFAULT_TICKERS;
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch {}
-  return DEFAULT_TICKERS;
-}
-
-function saveTickers(tickers: string[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(tickers));
-  } catch {}
-}
 
 export default function MarketPage() {
   const queryClient = useQueryClient();
@@ -40,8 +20,6 @@ export default function MarketPage() {
     setTicker_(t);
     try { localStorage.setItem(TICKER_KEY, t); } catch {}
   }
-  const [quickTickers, setQuickTickers] = useState<string[]>([]);
-  const [editing, setEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [showDropdown, setShowDropdown] = useState(false);
@@ -64,18 +42,6 @@ export default function MarketPage() {
 
   // Reset highlight when search results change
   useEffect(() => { setHighlightIdx(-1); }, [searchData]);
-
-  // Load quick tickers on mount
-  useEffect(() => {
-    setQuickTickers(loadTickers());
-  }, []);
-
-  // When quick tickers load, pick first valid one
-  useEffect(() => {
-    if (quickTickers.length > 0 && !quickTickers.includes(ticker)) {
-      setTicker(quickTickers[0]);
-    }
-  }, [quickTickers, ticker]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -105,30 +71,12 @@ export default function MarketPage() {
       .catch(() => {});
   }, [ticker, tickerNames]);
 
-  function handleRemove(t: string) {
-    const next = quickTickers.filter((x) => x !== t);
-    setQuickTickers(next);
-    saveTickers(next);
-    if (ticker === t && next.length > 0) setTicker(next[0]);
-  }
-
   function handleSelect(symbol: string, name?: string) {
     setTicker(symbol);
     setShowDropdown(false);
     setSearchQuery("");
     setDebouncedSearch("");
     if (name) setTickerNames((prev) => ({ ...prev, [symbol]: name }));
-    if (!quickTickers.includes(symbol)) {
-      const next = [...quickTickers, symbol];
-      setQuickTickers(next);
-      saveTickers(next);
-    }
-  }
-
-  function handleReset() {
-    setQuickTickers(DEFAULT_TICKERS);
-    saveTickers(DEFAULT_TICKERS);
-    setEditing(false);
   }
 
   const prices = priceData?.prices || [];
@@ -262,48 +210,6 @@ export default function MarketPage() {
           )}
         </div>
 
-        {/* Quick ticker row */}
-        <div className="flex flex-wrap gap-2 items-center">
-          {quickTickers.map((t) => (
-            <div key={t} className="relative group">
-              <button
-                onClick={() => !editing && setTicker(t)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  ticker === t && !editing
-                    ? "bg-[#4f8cff]/10 text-[#4f8cff] border border-[#4f8cff]/30"
-                    : editing
-                    ? "bg-[#2d1b1b] text-[#f87171] border border-[#f87171]/30"
-                    : "bg-[#1a1d28] text-[#9aa0a6] border border-[#2d3140] hover:border-[#4f8cff]/30"
-                }`}
-              >
-                {t}
-              </button>
-              {editing && (
-                <button
-                  onClick={() => handleRemove(t)}
-                  className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-[#f87171] text-white text-[10px] leading-none flex items-center justify-center hover:bg-red-500 transition-colors"
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          ))}
-          <button
-            onClick={() => { setEditing(!editing); }}
-            className={`px-2 py-1.5 rounded-lg text-xs transition-colors ${
-              editing
-                ? "bg-[#4f8cff]/20 text-[#4f8cff] border border-[#4f8cff]/30"
-                : "bg-[#1a1d28] text-[#9aa0a6] border border-[#2d3140] hover:border-[#4f8cff]/30"
-            }`}
-          >
-            {editing ? "✓ 完成" : "✎ 编辑"}
-          </button>
-          {editing && (
-            <button onClick={handleReset} className="px-2 py-1.5 rounded-lg text-[#9aa0a6] border border-[#2d3140] text-xs hover:text-[#e8eaed]">
-              ↺ 重置
-            </button>
-          )}
-        </div>
       </div>
 
       {/* K-line Period */}

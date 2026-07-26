@@ -42,6 +42,7 @@ export default function CompaniesPage() {
     else if (symbol.match(/^\d/)) setNewExchange("SZSE");
     else if (symbol.match(/^0\d{4}HK/)) setNewExchange("HKEX");
     else setNewExchange("");
+  }
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editTicker, setEditTicker] = useState("");
