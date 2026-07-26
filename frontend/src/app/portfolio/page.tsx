@@ -137,6 +137,7 @@ function WatchlistCard({ wl, onMsg, onRefresh }: { wl: any; onMsg: (t: "success"
   const [adding, setAdding] = useState(false);
   const [searchQ, setSearchQ] = useState("");
   const [showDrop, setShowDrop] = useState(false);
+  const [names, setNames] = useState<Record<string, string>>({});
   const searchRef = useRef<HTMLDivElement>(null);
   const { data: searchData } = useStockSearch(searchQ);
   const searchResults = searchData?.results || [];
@@ -148,6 +149,21 @@ function WatchlistCard({ wl, onMsg, onRefresh }: { wl: any; onMsg: (t: "success"
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
+
+  // Look up company names for all items
+  useEffect(() => {
+    if (!wl.items?.length) return;
+    const tickers = wl.items.map((i: any) => i.ticker).filter((t: string) => !names[t]);
+    if (!tickers.length) return;
+    tickers.forEach(async (t: string) => {
+      try {
+        const resp = await fetch(`/api/market/search?query=${encodeURIComponent(t)}&limit=3`);
+        const data = await resp.json();
+        const match = data.results?.find((r: any) => r.symbol.toUpperCase() === t.toUpperCase());
+        if (match?.name) setNames((prev) => ({ ...prev, [t]: match.name }));
+      } catch {}
+    });
+  }, [wl.items]);
 
   const handleSelect = async (symbol: string) => {
     try {
@@ -219,7 +235,10 @@ function WatchlistCard({ wl, onMsg, onRefresh }: { wl: any; onMsg: (t: "success"
         <div className="space-y-1.5">
           {wl.items.map((item: any) => (
             <div key={item.id} className="flex items-center justify-between p-2 rounded bg-[#232736] group">
-              <span className="text-sm text-[#e8eaed] font-mono">{item.ticker}</span>
+              <div>
+                <span className="text-sm text-[#e8eaed] font-mono">{item.ticker}</span>
+                {names[item.ticker] && <span className="text-xs text-[#9aa0a6] ml-2">{names[item.ticker]}</span>}
+              </div>
               <button onClick={() => handleRemove(item.id, item.ticker)}
                 className="text-xs text-[#f87171] opacity-0 group-hover:opacity-100 transition-opacity">
                 ✕ 移除
