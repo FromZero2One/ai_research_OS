@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCompany, useDocuments, useResearchSessions, useMarketPrices, useFinancialMetrics, useCompanyWorkspace, useUpdateThesis } from "@/lib/api";
@@ -60,6 +60,7 @@ function MiniBar({ data, color }: { data: { fiscal_year: number; fiscal_period: 
 
 export default function CompanyDetailPage() {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const { id } = useParams<{ id: string }>();
   const { data: company, isLoading } = useCompany(id);
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["company", id] });
@@ -90,6 +91,11 @@ export default function CompanyDetailPage() {
   const [editDesc, setEditDesc] = useState("");
   const [editTags, setEditTags] = useState("");
 
+  // Ingest / Delete state
+  const [ingesting, setIngesting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
   if (company && !chartTicker) setChartTicker(company.ticker);
 
   const prices = priceData?.prices || [];
@@ -102,6 +108,41 @@ export default function CompanyDetailPage() {
 
   const relatedSessions = sessions?.filter((s) => s.company_id === id) || [];
   const relatedDocs = docsData?.items?.filter((d: any) => d.company_id === id) || [];
+
+  const handleRefreshData = async () => {
+    if (!company?.ticker || ingesting) return;
+    setIngesting(true);
+    try {
+      const resp = await fetch(`/api/market/prices/${company.ticker}/ingest?provider=yfinance`, { method: "POST" });
+      if (!resp.ok) {
+        const body = await resp.json();
+        throw new Error(body?.detail || "刷新失败");
+      }
+      queryClient.invalidateQueries({ queryKey: ["market", company.ticker] });
+      queryClient.invalidateQueries({ queryKey: ["financials", company.ticker] });
+      setMsg({ type: "success", text: "行情数据已刷新" });
+      setTimeout(() => setMsg(null), 4000);
+    } catch (e: any) {
+      setMsg({ type: "error", text: e.message });
+      setTimeout(() => setMsg(null), 4000);
+    }
+    setIngesting(false);
+  };
+
+  const handleDeleteCompany = async () => {
+    if (!id || deleting) return;
+    setDeleting(true);
+    try {
+      const resp = await fetch(`/api/companies/${id}`, { method: "DELETE" });
+      if (!resp.ok) throw new Error(await resp.text());
+      router.push("/companies");
+    } catch (e: any) {
+      setMsg({ type: "error", text: e.message || "删除失败" });
+      setTimeout(() => setMsg(null), 4000);
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
 
   const handleSaveThesis = async () => {
     if (!thesisText.trim()) return;
@@ -141,6 +182,10 @@ export default function CompanyDetailPage() {
               setEditingCompany(true);
             }} className="px-3 py-2 rounded-lg bg-[#2d3140] text-[#e8eaed] text-sm hover:bg-[#3d4150] transition-colors shrink-0">
               编辑
+            </button>
+            <button onClick={() => setShowDeleteConfirm(true)}
+              className="px-3 py-2 rounded-lg bg-[#2d1b1b] text-[#f87171] text-sm hover:bg-[#3d2525] transition-colors shrink-0">
+              🗑 删除
             </button>
             <Link
               href={`/research/quick?ticker=${company.ticker}`}
@@ -185,6 +230,26 @@ export default function CompanyDetailPage() {
                 }
               }} className="px-4 py-2 rounded-lg bg-[#34d399] text-black text-sm font-medium hover:bg-[#2bc088]">保存</button>
               <button onClick={() => setEditingCompany(false)} className="px-4 py-2 rounded-lg text-sm text-[#9aa0a6] hover:text-[#e8eaed]">取消</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation dialog */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => !deleting && setShowDeleteConfirm(false)}>
+          <div className="p-6 rounded-2xl bg-[#232736] border border-[#2d3140] max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-[#e8eaed] mb-2">确认删除</h3>
+            <p className="text-sm text-[#9aa0a6] mb-4">
+              确定要删除 <span className="text-[#e8eaed] font-medium">{company.ticker} {company.name}</span> 吗？关联的研究和行情数据不会被删除。
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setShowDeleteConfirm(false)} disabled={deleting}
+                className="px-3 py-1.5 rounded bg-[#2d3140] text-[#9aa0a6] text-sm">取消</button>
+              <button onClick={handleDeleteCompany} disabled={deleting}
+                className="px-3 py-1.5 rounded bg-[#f87171] text-white text-sm disabled:opacity-50">
+                {deleting ? "删除中..." : "确认删除"}
+              </button>
             </div>
           </div>
         </div>
@@ -387,8 +452,14 @@ export default function CompanyDetailPage() {
       {/* ══════ Financials Tab ══════ */}
       {activeTab === "财务数据" && (
         <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-[#9aa0a6]">yfinance 实时行情</div>
+            <button onClick={handleRefreshData} disabled={ingesting}
+              className="px-3 py-1.5 rounded-lg bg-[#2d3140] text-[#9aa0a6] text-xs hover:bg-[#3d4150] hover:text-[#e8eaed] disabled:opacity-50 transition-colors">
+              {ingesting ? "↻ 刷新中..." : "↻ 从 yfinance 刷新"}
+            </button>
+          </div>
           <div className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
-            <div className="text-sm text-[#9aa0a6] mb-3">{company.ticker} · 股价走势</div>
             <StockChart prices={prices} height={350} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -410,16 +481,19 @@ export default function CompanyDetailPage() {
 
       {/* ══════ Research Tab ══════ */}
       {activeTab === "研究" && (
-        <div>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-[#9aa0a6]">研究会话列表</div>
+            <Link href={`/research/quick?ticker=${company.ticker}`}
+              className="px-3 py-1.5 rounded-lg bg-[#4f8cff] text-white text-xs font-medium hover:bg-[#3a7bf5] transition-colors">
+              + 新建研究会话
+            </Link>
+          </div>
           {relatedSessions.length === 0 ? (
             <div className="p-8 rounded-xl bg-[#1a1d28] border border-[#2d3140] text-center">
               <div className="text-3xl mb-3">🔬</div>
               <div className="text-[#e8eaed] font-medium">暂无研究</div>
-              <div className="text-sm text-[#9aa0a6] mt-1">创建第一个研究会话</div>
-              <Link href={`/research/quick?ticker=${company.ticker}`}
-                className="inline-block mt-3 px-4 py-2 rounded-lg bg-[#4f8cff] text-white text-sm font-medium hover:bg-[#3a7bf5]">
-                ⚡ 快速研究
-              </Link>
+              <div className="text-sm text-[#9aa0a6] mt-1">点击上方 "新建研究会话" 开始研究</div>
             </div>
           ) : (
             <div className="space-y-3">
@@ -451,25 +525,31 @@ export default function CompanyDetailPage() {
 
       {/* ══════ Documents Tab ══════ */}
       {activeTab === "文档" && (
-        <div>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-[#9aa0a6]">已上传文档</div>
+            <Link href="/documents"
+              className="px-3 py-1.5 rounded-lg bg-[#4f8cff] text-white text-xs font-medium hover:bg-[#3a7bf5] transition-colors">
+              + 上传文档
+            </Link>
+          </div>
           {relatedDocs.length === 0 ? (
             <div className="p-8 rounded-xl bg-[#1a1d28] border border-[#2d3140] text-center">
               <div className="text-3xl mb-3">📄</div>
-              <div className="text-[#e8eaed] font-medium">暂无文档</div>
-              <div className="text-sm text-[#9aa0a6] mt-1">上传相关财报或报告</div>
-              <Link href="/documents"
-                className="inline-block mt-3 px-4 py-2 rounded-lg bg-[#4f8cff] text-white text-sm font-medium hover:bg-[#3a7bf5]">
-                + 上传文档
-              </Link>
+              <div className="text-[#e8eaed] font-medium">暂无关联文档</div>
+              <div className="text-sm text-[#9aa0a6] mt-1">上传相关财报或研究报告，上传后会自动索引到知识库</div>
             </div>
           ) : (
             <div className="space-y-2">
               {relatedDocs.map((doc: any) => (
                 <div key={doc.id} className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
                   <div className="font-medium text-[#e8eaed]">{doc.title}</div>
-                  <div className="text-xs text-[#9aa0a6] mt-1">
-                    {doc.doc_type} · {doc.is_indexed ? "已索引" : "未索引"}
-                    {doc.chunk_count != null && ` · ${doc.chunk_count} 切片`}
+                  <div className="text-xs text-[#9aa0a6] mt-1 flex gap-3">
+                    <span>{doc.doc_type?.toUpperCase()}</span>
+                    <span className={doc.is_indexed ? "text-[#34d399]" : "text-[#fbbf24]"}>
+                      {doc.is_indexed ? "✅ 已索引" : "⏳ 未索引"}
+                    </span>
+                    {doc.chunk_count != null && <span>{doc.chunk_count} 切片</span>}
                   </div>
                 </div>
               ))}
