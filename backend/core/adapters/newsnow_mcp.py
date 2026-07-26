@@ -44,10 +44,28 @@ class NewsNowMCPClient:
             self._session = None
             self._ready.clear()
 
+    # Finance keywords — headlines must match at least one to be included
+    _FINANCE_KEYWORDS = [
+        "股", "涨", "跌", "价", "市值", "季报", "财报", "营收", "利润",
+        "业绩", "投资", "融资", "减持", "增持", "回购", "分红",
+        "基金", "ETF", "IPO", "上市", "退市", "重组",
+        "央行", "利率", "降息", "加息", "降准",
+        "期货", "期权", "债券", "国债",
+        "美元", "人民币", "汇率", "通胀",
+        "AI", "芯片", "半导体", "新能源", "光伏", "电动",
+        "订单", "合同", "中标", "产能", "扩产",
+        "收购", "并购", "出售", "剥离",
+        "亿", "万", "元", "美元", "%",
+    ]
+
+    def _is_finance_related(self, headline: str) -> bool:
+        """Check if a headline is finance/investment related."""
+        return any(kw in headline for kw in self._FINANCE_KEYWORDS)
+
     async def fetch_headlines(
         self, sources: list[str] | None = None, max_per_source: int = 5
     ) -> list[str]:
-        """Fetch headlines from multiple sources in parallel."""
+        """Fetch finance-related headlines from multiple sources in parallel."""
         if sources is None:
             sources = ["cls-telegraph", "wallstreetcn-news", "jin10"]
         if not self._session:
@@ -80,10 +98,10 @@ class NewsNowMCPClient:
             seen: set[str] = set()
             for items in results:
                 for h in items:
-                    if h not in seen:
+                    if h not in seen and self._is_finance_related(h):
                         seen.add(h)
                         headlines.append(h)
-            return headlines[:15]
+            return headlines[:10]
 
 
 _client: NewsNowMCPClient | None = None
