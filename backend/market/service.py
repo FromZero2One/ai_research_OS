@@ -280,18 +280,35 @@ class MarketService:
     async def _fetch_yfinance(self, ticker: str) -> list[dict]:
         import yfinance as yf
         import asyncio
+        import os
+
+        # Auto-add exchange suffix for A-stock tickers
+        yf_ticker = ticker
+        if _is_a_stock(ticker):
+            # 6xxxxx → .SS (上交所), 0xxxxx/3xxxxx → .SZ (深交所)
+            if ticker.startswith("6"):
+                yf_ticker = f"{ticker}.SS"
+            else:
+                yf_ticker = f"{ticker}.SZ"
 
         def _fetch():
-            stock = yf.Ticker(ticker)
+            # Strip proxy vars so yfinance can reach Yahoo Finance directly
+            for _var in ("http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY",
+                          "ftp_proxy", "FTP_PROXY", "all_proxy", "ALL_PROXY"):
+                os.environ.pop(_var, None)
+            stock = yf.Ticker(yf_ticker)
             hist = stock.history(period="1y")
             results = []
             for idx, row in hist.iterrows():
+                close = float(row["Close"])
+                if close != close:  # skip NaN
+                    continue
                 results.append({
                     "date": idx.date(),
                     "open": float(row["Open"]),
                     "high": float(row["High"]),
                     "low": float(row["Low"]),
-                    "close": float(row["Close"]),
+                    "close": close,
                     "volume": int(row["Volume"]),
                 })
             return results
@@ -301,8 +318,13 @@ class MarketService:
     async def _fetch_akshare(self, ticker: str) -> list[dict]:
         import akshare as ak
         import asyncio
+        import os
 
         def _fetch():
+            # Strip proxy vars so akshare can reach Chinese data sources directly
+            for _var in ("http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY",
+                          "ftp_proxy", "FTP_PROXY", "all_proxy", "ALL_PROXY"):
+                os.environ.pop(_var, None)
             df = ak.stock_zh_a_hist(symbol=ticker, period="daily")
             results = []
             for _, row in df.iterrows():
