@@ -183,14 +183,19 @@ export default function MarketPage() {
     }
     return Array.from(groups.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([_, bars]) => ({
-        date: bars[bars.length - 1].date,
-        open: bars[0].open,
-        high: Math.max(...bars.map((b) => b.high)),
-        low: Math.min(...bars.map((b) => b.low)),
-        close: bars[bars.length - 1].close,
-        volume: bars.reduce((s, b) => s + b.volume, 0),
-      }));
+      .map(([_, bars]) => {
+        // bars are newest-first (DESC from API)
+        const first = bars[bars.length - 1]; // oldest bar → period open
+        const last = bars[0];                  // newest bar → period close
+        return {
+          date: last.date,
+          open: first.open,
+          high: Math.max(...bars.map((b) => b.high)),
+          low: Math.min(...bars.map((b) => b.low)),
+          close: last.close,
+          volume: bars.reduce((s, b) => s + b.volume, 0),
+        };
+      });
   }
 
   const chartPrices = period === "daily" ? prices : aggregateOHLC(prices, period);
