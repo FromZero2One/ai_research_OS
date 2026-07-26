@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCompanies } from "@/lib/api";
+import { useCompanies, useStockSearch } from "@/lib/api";
 
 export default function CompaniesPage() {
   const queryClient = useQueryClient();
@@ -13,8 +13,35 @@ export default function CompaniesPage() {
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState("");
   const [newTicker, setNewTicker] = useState("");
-  const [newExchange, setNewExchange] = useState("SSE");
+  const [newExchange, setNewExchange] = useState("");
   const [newTags, setNewTags] = useState("");
+  const [searchQ, setSearchQ] = useState("");
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const { data: searchData } = useStockSearch(searchQ);
+  const searchResults = searchData?.results || [];
+
+  // Close search dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setShowSearchDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  function handleSelectStock(symbol: string, name: string) {
+    setNewTicker(symbol);
+    setNewName(name);
+    setSearchQ("");
+    setShowSearchDropdown(false);
+    // Auto-detect exchange
+    if (symbol.startsWith("6")) setNewExchange("SSE");
+    else if (symbol.match(/^\d/)) setNewExchange("SZSE");
+    else if (symbol.match(/^0\d{4}HK/)) setNewExchange("HKEX");
+    else setNewExchange("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editTicker, setEditTicker] = useState("");
@@ -54,9 +81,13 @@ export default function CompaniesPage() {
       setShowNew(false);
       setNewName("");
       setNewTicker("");
-      setNewExchange("SSE");
+      setNewExchange("");
       setNewTags("");
+      setSearchQ("");
       refresh();
+      // Auto-trigger profile + financial fetch after creation
+      fetch(`/api/market/profile/${newTicker}/ingest`, { method: "POST" }).catch(() => {});
+      fetch(`/api/market/financials/${newTicker}/ingest`, { method: "POST" }).catch(() => {});
       showMsg("success", `${newName} 创建成功`);
     } catch (e: any) {
       showMsg("error", e.message || "创建失败");
@@ -133,10 +164,43 @@ export default function CompaniesPage() {
 
       {showNew && (
         <div className="p-5 rounded-xl bg-[#232736] border border-[#2d3140] space-y-3">
+          <div ref={searchRef} className="relative">
+            <input
+              placeholder="搜索股票代码或名称..."
+              value={searchQ}
+              onChange={(e) => { setSearchQ(e.target.value); setShowSearchDropdown(true); }}
+              onFocus={() => setShowSearchDropdown(true)}
+              className="w-full p-2 rounded bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm placeholder-[#9aa0a6] focus:outline-none focus:border-[#4f8cff]"
+            />
+            {showSearchDropdown && searchQ && (
+              <div className="absolute z-10 mt-1 w-full rounded-lg bg-[#1a1d28] border border-[#2d3140] shadow-xl max-h-48 overflow-y-auto">
+                {searchResults.length === 0 ? (
+                  <div className="p-2 text-sm text-[#9aa0a6]">无匹配结果</div>
+                ) : (
+                  searchResults.map((r) => (
+                    <button
+                      key={r.symbol}
+                      onClick={() => handleSelectStock(r.symbol, r.name)}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-sm text-left hover:bg-[#232736] transition-colors"
+                    >
+                      <span className="font-mono text-[#4f8cff]">{r.symbol}</span>
+                      {r.name && <span className="text-[#e8eaed]">{r.name}</span>}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+          {newTicker && (
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded bg-[#1a1d28] text-sm">
+              <span className="font-mono text-[#4f8cff]">{newTicker}</span>
+              <span className="text-[#e8eaed]">{newName}</span>
+              <button onClick={() => { setNewTicker(""); setNewName(""); }} className="ml-auto text-[#9aa0a6] hover:text-[#f87171]">✕</button>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
-            <input placeholder="公司名称 *" value={newName} onChange={(e) => setNewName(e.target.value)} className="p-2 rounded bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm" />
-            <input placeholder="股票代码 *" value={newTicker} onChange={(e) => setNewTicker(e.target.value)} className="p-2 rounded bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm" />
             <select value={newExchange} onChange={(e) => setNewExchange(e.target.value)} className="p-2 rounded bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm">
+              <option value="">选择交易所</option>
               <option value="SSE">SSE 上交所</option>
               <option value="SZSE">SZSE 深交所</option>
               <option value="NASDAQ">NASDAQ 纳斯达克</option>
@@ -147,7 +211,7 @@ export default function CompaniesPage() {
           </div>
           <div className="flex gap-2">
             <button onClick={handleCreate} disabled={!newName.trim() || !newTicker.trim()} className="px-3 py-1.5 rounded bg-[#34d399] text-black text-xs font-medium disabled:opacity-50">创建</button>
-            <button onClick={() => setShowNew(false)} className="px-3 py-1.5 rounded bg-[#2d3140] text-[#9aa0a6] text-xs">取消</button>
+            <button onClick={() => { setShowNew(false); setSearchQ(""); setNewTicker(""); setNewName(""); }} className="px-3 py-1.5 rounded bg-[#2d3140] text-[#9aa0a6] text-xs">取消</button>
           </div>
         </div>
       )}
