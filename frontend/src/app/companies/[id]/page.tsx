@@ -416,6 +416,51 @@ export default function CompanyDetailPage() {
                   <button onClick={() => { setThesisText(currentThesis.thesis || ""); setThesisDecision(currentThesis.decision || "watch"); setThesisConfidence(currentThesis.confidence || 0.6); setEditingThesis(true); }}
                     className="ml-auto text-xs text-[#4f8cff] hover:underline">编辑</button>
                 </div>
+                {/* Structured thesis */}
+                {currentThesis.structured_thesis && (
+                  <div className="grid grid-cols-2 gap-3 mt-4">
+                    {currentThesis.structured_thesis.bull_case?.length > 0 && (
+                      <div className="p-3 rounded-lg bg-[#34d399]/5 border border-[#34d399]/20">
+                        <div className="text-xs font-medium text-[#34d399] mb-1.5">📈 看多逻辑</div>
+                        <ul className="space-y-1">
+                          {currentThesis.structured_thesis.bull_case.map((item, i) => (
+                            <li key={i} className="text-xs text-[#e8eaed]">• {item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {currentThesis.structured_thesis.bear_case?.length > 0 && (
+                      <div className="p-3 rounded-lg bg-[#f87171]/5 border border-[#f87171]/20">
+                        <div className="text-xs font-medium text-[#f87171] mb-1.5">📉 看空逻辑</div>
+                        <ul className="space-y-1">
+                          {currentThesis.structured_thesis.bear_case.map((item, i) => (
+                            <li key={i} className="text-xs text-[#e8eaed]">• {item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {currentThesis.structured_thesis.key_drivers?.length > 0 && (
+                      <div className="p-3 rounded-lg bg-[#4f8cff]/5 border border-[#4f8cff]/20">
+                        <div className="text-xs font-medium text-[#4f8cff] mb-1.5">🎯 关键驱动</div>
+                        <ul className="space-y-1">
+                          {currentThesis.structured_thesis.key_drivers.map((item, i) => (
+                            <li key={i} className="text-xs text-[#e8eaed]">• {item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {currentThesis.structured_thesis.risks?.length > 0 && (
+                      <div className="p-3 rounded-lg bg-[#fbbf24]/5 border border-[#fbbf24]/20">
+                        <div className="text-xs font-medium text-[#fbbf24] mb-1.5">⚠️ 风险因素</div>
+                        <ul className="space-y-1">
+                          {currentThesis.structured_thesis.risks.map((item, i) => (
+                            <li key={i} className="text-xs text-[#e8eaed]">• {item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-center py-6">

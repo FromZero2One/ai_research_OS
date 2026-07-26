@@ -60,11 +60,11 @@ class ResearchSessionResponse(BaseModel):
     decision: str | None
     confidence: float | None
     tags: dict | None
+    extra_metadata: dict | None = None
     created_at: datetime
     updated_at: datetime | None
 
     model_config = {"from_attributes": True}
-
 
 class ResearchSessionDetail(ResearchSessionResponse):
     evidences: list["EvidenceResponse"] = []
@@ -74,12 +74,15 @@ class ResearchSessionDetail(ResearchSessionResponse):
     @model_validator(mode="before")
     @classmethod
     def extract_plan(cls, data: any) -> any:
-        """Extract research plan from session.extra_metadata."""
+        """Extract research plan + structured thesis from session.extra_metadata."""
         if isinstance(data, dict):
             extra = data.get("extra_metadata") or {}
         else:
             extra = getattr(data, "extra_metadata", None) or {}
-        plan_data = extra.get("research_plan") if isinstance(extra, dict) else None
+        if isinstance(extra, dict):
+            plan_data = extra.get("research_plan")
+        else:
+            plan_data = None
         if isinstance(data, dict):
             data["plan"] = plan_data
         else:

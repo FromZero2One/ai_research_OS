@@ -95,6 +95,8 @@ class ThesisResponse(BaseModel):
     confidence: float | None = None
     source_session_id: str | None = None
     updated_at: str | None = None
+    structured_thesis: dict | None = None
+    """bull_case, bear_case, key_drivers, risks from LLM analysis."""
 
 
 class ThesisUpdate(BaseModel):
@@ -162,6 +164,9 @@ async def get_thesis(
     session = result.scalar_one_or_none()
 
     if session and session.thesis:
+        structured = None
+        if session.extra_metadata and isinstance(session.extra_metadata, dict):
+            structured = session.extra_metadata.get("structured_thesis")
         return ThesisResponse(
             ticker=ticker.upper(),
             company_name=company.name,
@@ -170,6 +175,7 @@ async def get_thesis(
             confidence=session.confidence,
             source_session_id=str(session.id),
             updated_at=session.updated_at.isoformat() if session.updated_at else None,
+            structured_thesis=structured,
         )
 
     return ThesisResponse(

@@ -488,6 +488,47 @@ Use markdown formatting. Be objective — clearly distinguish supported conclusi
         )
         return report
 
+    async def _generate_structured_thesis(
+        self, thesis: str, decision: str, reports: list[ResearchReport]
+    ) -> dict:
+        """Extract structured thesis fields from final report via LLM."""
+        from core.adapters.llm import create_llm
+        from core.interfaces import LLMMessage
+
+        report_content = ""
+        for r in sorted(reports, key=lambda x: x.version, reverse=True):
+            if r.is_final:
+                report_content = r.content or ""
+                break
+        if not report_content:
+            report_content = thesis
+
+        prompt = f"""Based on this investment thesis and report, extract as JSON:
+{{"bull_case": ["..."], "bear_case": ["..."], "key_drivers": ["..."], "risks": ["..."]}}
+
+Decision: {decision}
+Thesis: {thesis[:1500]}
+Report: {report_content[:3000]}"""
+
+        try:
+            llm = create_llm()
+            response = await llm.generate(
+                messages=[LLMMessage(role="user", content=prompt)],
+                temperature=0.3, max_tokens=1024,
+            )
+            result = json.loads(response.content)
+            for key in ("bull_case", "bear_case", "key_drivers", "risks"):
+                if key not in result or not isinstance(result[key], list):
+                    result[key] = []
+            return result
+        except Exception:
+            return {
+                "bull_case": [thesis[:200]] if thesis else [],
+                "bear_case": [],
+                "key_drivers": [],
+                "risks": [],
+            }
+
     async def finalize_thesis(
         self,
         session_id: uuid.UUID,
@@ -495,12 +536,18 @@ Use markdown formatting. Be objective — clearly distinguish supported conclusi
         decision: str,
         confidence: float,
     ) -> ResearchSession:
-        """Finalize the research with a thesis and decision."""
+        """Finalize the research with a structured thesis + decision."""
         session = await self.get_session(session_id)
+
+        # Generate structured thesis from the latest report
+        structured = await self._generate_structured_thesis(thesis, decision, session.reports)
+
         session.thesis = thesis
         session.decision = decision
         session.confidence = confidence
         session.status = "completed"
+        session.extra_metadata = session.extra_metadata or {}
+        session.extra_metadata["structured_thesis"] = structured
 
         await self.session.flush()
 
@@ -513,6 +560,7 @@ Use markdown formatting. Be objective — clearly distinguish supported conclusi
                 "title": session.title,
                 "decision": decision,
                 "confidence": confidence,
+                "structured_thesis": structured,
             },
         )
         await self.session.refresh(session)

@@ -545,6 +545,12 @@ export interface ThesisData {
   confidence: number | null;
   source_session_id: string | null;
   updated_at: string | null;
+  structured_thesis?: {
+    bull_case: string[];
+    bear_case: string[];
+    key_drivers: string[];
+    risks: string[];
+  } | null;
 }
 
 export interface WorkspaceData {
