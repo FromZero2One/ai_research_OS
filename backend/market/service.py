@@ -210,9 +210,36 @@ class MarketService:
     async def search_stocks(
         self, query: str, limit: int = 20
     ) -> list[dict]:
-        """Search A-stocks by name or symbol from MySQL."""
-        mysql = await self._get_mysql()
-        return await mysql.search_stocks(query, limit)
+        """Search stocks by code or name — MySQL (A-stocks) + PostgreSQL (all)."""
+        results: list[dict] = []
+        seen = set()
+
+        # PostgreSQL: search Companies table (A, HK, US stocks)
+        from company.models import Company
+        stmt = select(Company).where(
+            (Company.ticker.ilike(f"%{query}%"))
+            | (Company.name.ilike(f"%{query}%"))
+        ).limit(limit)
+        rows = await self.session.execute(stmt)
+        for c in rows.scalars().all():
+            key = c.ticker.upper()
+            if key not in seen:
+                seen.add(key)
+                results.append({"symbol": c.ticker, "name": c.name})
+
+        # MySQL: search akshare stock_name_entity (A-stocks)
+        try:
+            mysql = await self._get_mysql()
+            mysql_results = await mysql.search_stocks(query, limit)
+            for r in mysql_results:
+                key = r.get("symbol", "").upper()
+                if key not in seen:
+                    seen.add(key)
+                    results.append(r)
+        except Exception:
+            pass
+
+        return results[:limit]
 
     async def get_stock_info(self, ticker: str) -> dict | None:
         """Get stock basic info + latest valuation."""

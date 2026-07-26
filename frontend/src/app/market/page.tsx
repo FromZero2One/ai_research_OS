@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useMarketPrices, useFinancialMetrics } from "@/lib/api";
+import { useState, useEffect, useRef } from "react";
+import { useMarketPrices, useFinancialMetrics, useStockSearch } from "@/lib/api";
 import StockChart from "@/components/StockChart";
 
 const STORAGE_KEY = "market_quick_tickers";
-const DEFAULT_TICKERS = ["NVDA", "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "JPM", "BRK.B"];
+const DEFAULT_TICKERS = ["000002", "600519", "1810", "300750", "NVDA", "TSLA"];
 
 function loadTickers(): string[] {
   if (typeof window === "undefined") return DEFAULT_TICKERS;
@@ -26,14 +26,16 @@ function saveTickers(tickers: string[]) {
 }
 
 export default function MarketPage() {
-  const [ticker, setTicker] = useState("NVDA");
-  const [customInput, setCustomInput] = useState("");
+  const [ticker, setTicker] = useState("000002");
   const [limit, setLimit] = useState(120);
   const [quickTickers, setQuickTickers] = useState<string[]>([]);
   const [editing, setEditing] = useState(false);
-  const [addInput, setAddInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showDropdown, setShowDropdown] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
   const { data: priceData, isLoading } = useMarketPrices(ticker, limit);
   const { data: finData } = useFinancialMetrics(ticker);
+  const { data: searchData } = useStockSearch(searchQuery);
 
   useEffect(() => {
     setQuickTickers(loadTickers());
@@ -45,6 +47,17 @@ export default function MarketPage() {
     }
   }, [quickTickers, ticker]);
 
+  // Close search dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
   function handleRemove(t: string) {
     const next = quickTickers.filter((x) => x !== t);
     setQuickTickers(next);
@@ -52,13 +65,15 @@ export default function MarketPage() {
     if (ticker === t && next.length > 0) setTicker(next[0]);
   }
 
-  function handleAdd() {
-    const val = addInput.trim().toUpperCase();
-    if (!val || quickTickers.includes(val)) return;
-    const next = [...quickTickers, val];
-    setQuickTickers(next);
-    saveTickers(next);
-    setAddInput("");
+  function handleSelect(symbol: string) {
+    setTicker(symbol);
+    setShowDropdown(false);
+    setSearchQuery("");
+    if (!quickTickers.includes(symbol)) {
+      const next = [...quickTickers, symbol];
+      setQuickTickers(next);
+      saveTickers(next);
+    }
   }
 
   function handleReset() {
@@ -69,6 +84,7 @@ export default function MarketPage() {
 
   const prices = priceData?.prices || [];
   const financials = finData?.metrics || [];
+  const searchResults = searchData?.results || [];
 
   // Group financials by metric name
   const revenueData = financials.filter((m) => m.metric_name === "revenue").reverse();
@@ -83,87 +99,85 @@ export default function MarketPage() {
         <p className="text-[#9aa0a6] text-sm mt-1">股票行情 · 财务指标 · 宏观数据</p>
       </div>
 
-      {/* Ticker Selector */}
-      <div className="flex flex-wrap gap-2 items-center">
-        {quickTickers.map((t) => (
-          <div key={t} className="relative group">
-            <button
-              onClick={() => !editing && setTicker(t)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                ticker === t && !editing
-                  ? "bg-[#4f8cff]/10 text-[#4f8cff] border border-[#4f8cff]/30"
-                  : editing
-                  ? "bg-[#2d1b1b] text-[#f87171] border border-[#f87171]/30"
-                  : "bg-[#1a1d28] text-[#9aa0a6] border border-[#2d3140] hover:border-[#4f8cff]/30"
-              }`}
-            >
-              {t}
-            </button>
-            {editing && (
-              <button
-                onClick={() => handleRemove(t)}
-                className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-[#f87171] text-white text-[10px] leading-none flex items-center justify-center hover:bg-red-500 transition-colors"
-              >
-                ×
-              </button>
-            )}
-          </div>
-        ))}
-
-        {/* Edit toggle */}
-        <button
-          onClick={() => { setEditing(!editing); setAddInput(""); }}
-          className={`px-2 py-1.5 rounded-lg text-xs transition-colors ${
-            editing
-              ? "bg-[#4f8cff]/20 text-[#4f8cff] border border-[#4f8cff]/30"
-              : "bg-[#1a1d28] text-[#9aa0a6] border border-[#2d3140] hover:border-[#4f8cff]/30"
-          }`}
-          title={editing ? "完成编辑" : "编辑快捷股票"}
-        >
-          {editing ? "✓ 完成" : "✎ 编辑"}
-        </button>
-
-        {/* Add new ticker (edit mode) */}
-        {editing && (
-          <>
-            <input
-              type="text"
-              placeholder="添加代码..."
-              value={addInput}
-              onChange={(e) => setAddInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
-              className="w-24 p-1.5 rounded-lg bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm placeholder-[#9aa0a6] focus:outline-none focus:border-[#4f8cff]"
-            />
-            <button
-              onClick={handleAdd}
-              className="px-2 py-1.5 rounded-lg bg-[#4f8cff]/10 text-[#4f8cff] border border-[#4f8cff]/30 text-xs hover:bg-[#4f8cff]/20"
-            >
-              + 添加
-            </button>
-            <button
-              onClick={handleReset}
-              className="px-2 py-1.5 rounded-lg text-[#9aa0a6] border border-[#2d3140] text-xs hover:text-[#e8eaed]"
-            >
-              ↺ 重置
-            </button>
-          </>
-        )}
-
-        {!editing && (
+      {/* Search + Quick Tickers */}
+      <div className="space-y-3">
+        {/* Search combobox */}
+        <div ref={searchRef} className="relative">
           <input
             type="text"
-            placeholder="输入代码回车..."
-            value={customInput}
-            onChange={(e) => setCustomInput(e.target.value)}
+            placeholder="搜索股票代码或名称..."
+            value={searchQuery}
+            onChange={(e) => { setSearchQuery(e.target.value); setShowDropdown(true); }}
+            onFocus={() => setShowDropdown(true)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                setTicker(e.currentTarget.value.toUpperCase());
-                setCustomInput("");
+              if (e.key === "Enter" && searchResults.length > 0) {
+                handleSelect(searchResults[0].symbol);
               }
             }}
-            className="w-32 p-1.5 rounded-lg bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm placeholder-[#9aa0a6] focus:outline-none focus:border-[#4f8cff]"
+            className="w-full p-2.5 rounded-lg bg-[#1a1d28] border border-[#2d3140] text-[#e8eaed] text-sm placeholder-[#9aa0a6] focus:outline-none focus:border-[#4f8cff]"
           />
-        )}
+          {showDropdown && searchQuery && (
+            <div className="absolute z-10 mt-1 w-full rounded-lg bg-[#1a1d28] border border-[#2d3140] shadow-xl max-h-64 overflow-y-auto">
+              {searchResults.length === 0 ? (
+                <div className="p-3 text-sm text-[#9aa0a6]">无匹配结果</div>
+              ) : (
+                searchResults.map((r) => (
+                  <button
+                    key={r.symbol}
+                    onClick={() => handleSelect(r.symbol)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-left hover:bg-[#232736] transition-colors"
+                  >
+                    <span className="font-mono text-[#4f8cff]">{r.symbol}</span>
+                    {r.name && <span className="text-[#e8eaed]">{r.name}</span>}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Quick ticker row */}
+        <div className="flex flex-wrap gap-2 items-center">
+          {quickTickers.map((t) => (
+            <div key={t} className="relative group">
+              <button
+                onClick={() => !editing && setTicker(t)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  ticker === t && !editing
+                    ? "bg-[#4f8cff]/10 text-[#4f8cff] border border-[#4f8cff]/30"
+                    : editing
+                    ? "bg-[#2d1b1b] text-[#f87171] border border-[#f87171]/30"
+                    : "bg-[#1a1d28] text-[#9aa0a6] border border-[#2d3140] hover:border-[#4f8cff]/30"
+                }`}
+              >
+                {t}
+              </button>
+              {editing && (
+                <button
+                  onClick={() => handleRemove(t)}
+                  className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-[#f87171] text-white text-[10px] leading-none flex items-center justify-center hover:bg-red-500 transition-colors"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            onClick={() => { setEditing(!editing); }}
+            className={`px-2 py-1.5 rounded-lg text-xs transition-colors ${
+              editing
+                ? "bg-[#4f8cff]/20 text-[#4f8cff] border border-[#4f8cff]/30"
+                : "bg-[#1a1d28] text-[#9aa0a6] border border-[#2d3140] hover:border-[#4f8cff]/30"
+            }`}
+          >
+            {editing ? "✓ 完成" : "✎ 编辑"}
+          </button>
+          {editing && (
+            <button onClick={handleReset} className="px-2 py-1.5 rounded-lg text-[#9aa0a6] border border-[#2d3140] text-xs hover:text-[#e8eaed]">
+              ↺ 重置
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Time Range */}

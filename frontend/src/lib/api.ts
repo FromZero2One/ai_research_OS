@@ -301,6 +301,18 @@ export function useFinancialMetrics(ticker: string) {
   );
 }
 
+export interface StockSearchResult {
+  symbol: string;
+  name: string;
+}
+
+export function useStockSearch(query: string) {
+  return useGet<{ query: string; count: number; results: StockSearchResult[] }>(
+    ["stock-search", query],
+    query ? `/market/search?query=${encodeURIComponent(query)}` : "",
+  );
+}
+
 // ── Knowledge (Search) ─────────────────────────────────────────────
 
 export interface SearchResult {
