@@ -48,17 +48,17 @@ class MarketService:
         end_date: date | None = None,
         limit: int = 100,
     ) -> list[StockPrice]:
-        """Get prices — from MySQL for A-stocks, else from PostgreSQL."""
+        """Get prices — PG first, MySQL for A-stocks, akshare for HK/all."""
         ticker_upper = ticker.upper()
 
-        # First try PostgreSQL (real yfinance data), fall back to MySQL
+        # PostgreSQL (ingested data)
         pg_prices = await self._get_prices_from_pg(
             ticker_upper, start_date, end_date, limit
         )
         if pg_prices:
             return pg_prices
 
-        # For A-stocks, try MySQL as fallback
+        # A-stocks → MySQL
         if _is_a_stock(ticker):
             try:
                 return await self._get_prices_from_mysql(
@@ -66,6 +66,19 @@ class MarketService:
                 )
             except Exception:
                 pass
+
+        # Non-A (HK stocks like 1810) → try fetch via akshare
+        try:
+            fetched = await self._fetch_akshare(ticker)
+            if fetched:
+                # Store to PG for next time
+                await self.upsert_prices(ticker, fetched)
+                # Query back with proper sorting
+                return await self._get_prices_from_pg(
+                    ticker_upper, start_date, end_date, limit
+                )
+        except Exception:
+            pass
 
         return []
 
@@ -122,16 +135,17 @@ class MarketService:
         metric: str | None = None,
         fiscal_year: int | None = None,
     ) -> list[FinancialMetric]:
-        """Get financial metrics — MySQL for A-stocks, PG otherwise."""
+        """Get financial metrics — PG first, MySQL for A-stocks, akshare for HK."""
         ticker_upper = ticker.upper()
 
-        # First try PostgreSQL (yfinance data), fall back to MySQL
+        # PostgreSQL first
         pg_metrics = await self._get_financials_from_pg(
             ticker_upper, metric, fiscal_year
         )
         if pg_metrics:
             return pg_metrics
 
+        # A-stocks → MySQL
         if _is_a_stock(ticker):
             try:
                 return await self._get_financials_from_mysql(
@@ -139,6 +153,18 @@ class MarketService:
                 )
             except Exception:
                 pass
+
+        # Non-A → try akshare fetch (HK stocks via eastmoney HK API)
+        try:
+            fetched = await self._fetch_akshare_financials(ticker)
+            if fetched:
+                await self.upsert_financials(ticker, fetched)
+                # Query back
+                return await self._get_financials_from_pg(
+                    ticker_upper, metric, fiscal_year
+                )
+        except Exception:
+            pass
 
         return []
 
@@ -272,6 +298,42 @@ class MarketService:
             )
         return count
 
+    async def upsert_financials(
+        self, ticker: str, metrics: list[FinancialMetric]
+    ) -> int:
+        """Bulk upsert financial metrics into PostgreSQL."""
+        count = 0
+        for m in metrics:
+            existing = await self.session.execute(
+                select(FinancialMetric).where(
+                    FinancialMetric.ticker == ticker.upper(),
+                    FinancialMetric.fiscal_year == m.fiscal_year,
+                    FinancialMetric.fiscal_period == m.fiscal_period,
+                    FinancialMetric.metric_name == m.metric_name,
+                )
+            )
+            if existing.scalar_one_or_none():
+                continue
+            self.session.add(FinancialMetric(
+                ticker=ticker.upper(),
+                fiscal_year=m.fiscal_year,
+                fiscal_period=m.fiscal_period,
+                metric_name=m.metric_name,
+                metric_value=m.metric_value,
+            ))
+            count += 1
+
+        if count:
+            await self.session.flush()
+            await self.events.record(
+                source="market",
+                event_type="financials.ingested",
+                entity_type="financial_metric",
+                entity_id=ticker,
+                payload={"count": count, "ticker": ticker},
+            )
+        return count
+
     async def _fetch_yfinance(self, ticker: str) -> list[dict]:
         import yfinance as yf
         import asyncio
@@ -354,6 +416,52 @@ class MarketService:
         logger.warning("  [akshare] All 3 layers failed for %s", ticker)
         return []
 
+    # ── HK-stock financials (via eastmoney HK API) ─────────────────────
+
+    _HK_METRICS = [
+        ("营业额", "revenue"),
+        ("股东应占溢利", "net_income"),
+        ("每股基本盈利", "eps"),
+        ("毛利", "gross_profit"),
+        ("经营溢利", "operating_profit"),
+        ("研发费用", "rd_expense"),
+    ]
+
+    async def _fetch_akshare_financials(self, ticker: str) -> list[FinancialMetric]:
+        """Fetch HK-stock financial data via akshare (eastmoney HK API)."""
+        import akshare as ak
+        import asyncio as _asyncio
+        from datetime import datetime as _datetime
+
+        # HK stock codes need leading-zero padding (1810 → 01810)
+        hk_symbol = ticker.zfill(5)
+
+        def _fetch():
+            df = ak.stock_financial_hk_report_em(
+                stock=hk_symbol, symbol="利润表", indicator="年度"
+            )
+            results: list[FinancialMetric] = []
+            for cn_name, en_name in self._HK_METRICS:
+                subset = df[df["STD_ITEM_NAME"] == cn_name]
+                for _, row in subset.iterrows():
+                    report_date = row["REPORT_DATE"]
+                    # Can be string "2025-12-31" or datetime
+                    if isinstance(report_date, str):
+                        year = int(report_date[:4])
+                    else:
+                        year = report_date.year
+                    value = float(row["AMOUNT"])
+                    results.append(FinancialMetric(
+                        ticker=ticker,
+                        fiscal_year=year,
+                        fiscal_period="Annual",
+                        metric_name=en_name,
+                        metric_value=value,
+                    ))
+            return results
+
+        return await _asyncio.to_thread(_fetch)
+
     # ── Layer 2: local akshare (subprocess) ────────────────────────────
 
     @staticmethod
@@ -386,13 +494,40 @@ class MarketService:
         return f"sh{ticker}" if ticker.startswith("6") else f"sz{ticker}"
 
     async def _fetch_akshare_local(self, ticker: str) -> list[dict]:
-        """Layer 2: run akshare locally via Tencent data source (stable)."""
+        """Layer 2: run akshare locally via Tencent (A) or Sina (HK) data source."""
         import asyncio as _asyncio
         import json as _json
         from datetime import date as _date
 
-        tx_sym = self._tx_symbol(ticker)
-        code = f"""
+        is_hk = ticker.strip().isdigit() and len(ticker.strip()) in (4, 5)
+
+        if is_hk:
+            hk_symbol = ticker.zfill(5)
+            code = f"""
+import json, sys
+import akshare as ak
+try:
+    df = ak.stock_hk_daily(symbol='{hk_symbol}')
+    if df is None or df.empty:
+        print("__R__:[]")
+    else:
+        rows = []
+        for _, row in df.iterrows():
+            rows.append({{
+                "date": str(row["date"])[:10],
+                "open": float(row["open"]) if row["open"] == row["open"] else None,
+                "high": float(row["high"]) if row["high"] == row["high"] else None,
+                "low": float(row["low"]) if row["low"] == row["low"] else None,
+                "close": float(row["close"]) if row["close"] == row["close"] else None,
+                "volume": float(row.get("volume", 0) or 0),
+            }})
+        print("__R__:" + json.dumps(rows, ensure_ascii=False))
+except Exception as e:
+    print("__E__:" + str(e), file=sys.stderr)
+"""
+        else:
+            tx_sym = self._tx_symbol(ticker)
+            code = f"""
 import json, sys
 import akshare as ak
 try:

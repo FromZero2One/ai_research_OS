@@ -45,6 +45,19 @@ async def ingest_prices(
     return {"ticker": ticker.upper(), "ingested": count, "provider": "akshare"}
 
 
+@router.post("/financials/{ticker}/ingest", status_code=201)
+async def ingest_financials(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Ingest financial metrics via akshare (supports HK stocks)."""
+    svc = MarketService(db)
+    from market.models import FinancialMetric
+    fetched = await svc._fetch_akshare_financials(ticker)
+    count = await svc.upsert_financials(ticker, fetched)
+    return {"ticker": ticker.upper(), "ingested": count, "source": "akshare_hk"}
+
+
 @router.get("/financials/{ticker}")
 async def get_financials(
     ticker: str,
