@@ -34,6 +34,7 @@ export default function MarketPage() {
     try { return localStorage.getItem(TICKER_KEY) || "000002"; } catch { return "000002"; }
   });
   const [limit, setLimit] = useState(120);
+  const [period, setPeriod] = useState<"daily" | "weekly" | "monthly">("daily");
 
   // Persist active ticker + custom setter
   function setTicker(t: string) {
@@ -160,6 +161,40 @@ export default function MarketPage() {
   const change = latestPrice != null && prevClose != null ? latestPrice - prevClose : null;
   const changePct = change != null && prevClose != null ? (change / prevClose) * 100 : null;
 
+  // ── Period aggregation (daily → weekly/monthly OHLC) ───────────
+
+  function getWeekKey(d: Date) {
+    const start = new Date(d.getFullYear(), 0, 1);
+    const diff = (d.getTime() - start.getTime() + 864e5) / 864e5;
+    const week = Math.ceil(diff / 7);
+    return `${d.getFullYear()}-W${String(week).padStart(2, "0")}`;
+  }
+
+  function aggregateOHLC(data: typeof prices, target: "weekly" | "monthly") {
+    if (data.length === 0) return [];
+    const groups = new Map<string, typeof prices>();
+    for (const p of data) {
+      const d = new Date(p.date);
+      const key = target === "weekly"
+        ? getWeekKey(d)
+        : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(p);
+    }
+    return Array.from(groups.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([_, bars]) => ({
+        date: bars[bars.length - 1].date,
+        open: bars[0].open,
+        high: Math.max(...bars.map((b) => b.high)),
+        low: Math.min(...bars.map((b) => b.low)),
+        close: bars[bars.length - 1].close,
+        volume: bars.reduce((s, b) => s + b.volume, 0),
+      }));
+  }
+
+  const chartPrices = period === "daily" ? prices : aggregateOHLC(prices, period);
+
   // Group financials by metric name
   const revenueData = financials.filter((m) => m.metric_name === "revenue").reverse();
   const incomeData = financials.filter((m) => m.metric_name === "net_income").reverse();
@@ -267,8 +302,24 @@ export default function MarketPage() {
         </div>
       </div>
 
-      {/* Time Range */}
-      <div className="flex gap-2">
+      {/* Period + Time Range */}
+      <div className="flex items-center gap-4">
+        <div className="flex gap-1 bg-[#1a1d28] rounded-lg border border-[#2d3140] p-0.5">
+          {(["daily", "weekly", "monthly"] as const).map((p) => (
+            <button
+              key={p}
+              onClick={() => setPeriod(p)}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                period === p
+                  ? "bg-[#4f8cff] text-white"
+                  : "text-[#9aa0a6] hover:text-[#e8eaed]"
+              }`}
+            >
+              {p === "daily" ? "日K" : p === "weekly" ? "周K" : "月K"}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2">{/* Time Range */}
         {[
           { label: "1月", days: 22 },
           { label: "3月", days: 66 },
@@ -289,6 +340,7 @@ export default function MarketPage() {
           </button>
         ))}
       </div>
+      </div>{/* end Period + Time Range wrapper */}
 
       {/* Price Info + Name */}
       {prices.length > 0 && (
@@ -327,17 +379,17 @@ export default function MarketPage() {
           <div className="text-sm text-[#9aa0a6]">{ticker} · K 线图</div>
           {/* Debug indicator */}
           <div className="text-xs text-[#9aa0a6]">
-            {isLoading ? "加载中..." : prices.length > 0 ? `${prices.length}条数据 ✅` : "暂无数据"}
+            {isLoading ? "加载中..." : chartPrices.length > 0 ? `${chartPrices.length}条(${period}) ✅` : "暂无数据"}
           </div>
         </div>
         {isLoading ? (
           <div className="flex items-center justify-center h-64 text-[#9aa0a6]">加载中...</div>
-        ) : prices.length === 0 ? (
+        ) : chartPrices.length === 0 ? (
           <div className="flex items-center justify-center h-64 text-[#9aa0a6]">
             暂无数据 — 请尝试点公司页的「↻ 刷新」拉取行情
           </div>
         ) : (
-          <StockChart prices={prices} height={420} showVolume={true} />
+          <StockChart prices={chartPrices} height={420} showVolume={true} />
         )}
       </div>
 
