@@ -506,7 +506,9 @@ class MarketService:
             if df is None or df.empty:
                 return {}
             row = df.iloc[0]
+            cn_name = str(row.get("公司名称", ""))
             return {
+                "name": cn_name if cn_name else None,
                 "sector": row.get("所属行业"),
                 "industry": row.get("所属行业"),
                 "description": str(row.get("机构简介", ""))[:2000] if row.get("机构简介") else None,
@@ -526,7 +528,9 @@ class MarketService:
                 employees = int(emp_raw)
             except (ValueError, TypeError):
                 employees = None
+            hk_name = str(row.get("公司名称", ""))
             return {
+                "name": hk_name if hk_name else None,
                 "sector": row.get("所属行业"),
                 "industry": row.get("所属行业"),
                 "description": str(row.get("公司介绍", ""))[:2000] if row.get("公司介绍") else None,
