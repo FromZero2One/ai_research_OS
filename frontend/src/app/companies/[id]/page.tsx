@@ -95,6 +95,7 @@ export default function CompanyDetailPage() {
   const [ingesting, setIngesting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [ingestProvider, setIngestProvider] = useState<"yfinance" | "akshare">("yfinance");
 
   if (company && !chartTicker) setChartTicker(company.ticker);
 
@@ -113,7 +114,7 @@ export default function CompanyDetailPage() {
     if (!company?.ticker || ingesting) return;
     setIngesting(true);
     try {
-      const resp = await fetch(`/api/market/prices/${company.ticker}/ingest?provider=yfinance`, { method: "POST" });
+      const resp = await fetch(`/api/market/prices/${company.ticker}/ingest?provider=${ingestProvider}`, { method: "POST" });
       if (!resp.ok) {
         const body = await resp.json();
         throw new Error(body?.detail || "刷新失败");
@@ -453,11 +454,21 @@ export default function CompanyDetailPage() {
       {activeTab === "财务数据" && (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
-            <div className="text-sm text-[#9aa0a6]">yfinance 实时行情</div>
-            <button onClick={handleRefreshData} disabled={ingesting}
-              className="px-3 py-1.5 rounded-lg bg-[#2d3140] text-[#9aa0a6] text-xs hover:bg-[#3d4150] hover:text-[#e8eaed] disabled:opacity-50 transition-colors">
-              {ingesting ? "↻ 刷新中..." : "↻ 从 yfinance 刷新"}
-            </button>
+            <div className="text-sm text-[#9aa0a6]">实时行情</div>
+            <div className="flex gap-2 items-center">
+              <select
+                value={ingestProvider}
+                onChange={(e) => setIngestProvider(e.target.value as "yfinance" | "akshare")}
+                className="p-1.5 rounded-lg bg-[#232736] border border-[#2d3140] text-[#e8eaed] text-xs focus:outline-none focus:border-[#4f8cff]"
+              >
+                <option value="yfinance">yfinance</option>
+                <option value="akshare">akshare (A股)</option>
+              </select>
+              <button onClick={handleRefreshData} disabled={ingesting}
+                className="px-3 py-1.5 rounded-lg bg-[#2d3140] text-[#9aa0a6] text-xs hover:bg-[#3d4150] hover:text-[#e8eaed] disabled:opacity-50 transition-colors">
+                {ingesting ? "↻ 刷新中..." : "↻ 刷新"}
+              </button>
+            </div>
           </div>
           <div className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
             <StockChart prices={prices} height={350} />
