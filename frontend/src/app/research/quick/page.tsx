@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQuickResearch, subscribeResearchStream, type ResearchProgress } from "@/lib/api";
+import { useQuickResearch, subscribeResearchStream, useStockSearch, type ResearchProgress } from "@/lib/api";
 
 const STEP_LABELS: Record<string, string> = {
   starting: "准备开始...",
@@ -22,6 +22,19 @@ export default function QuickResearchPage() {
   const [ticker, setTicker] = useState(initialTicker);
   const [question, setQuestion] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [searchQ, setSearchQ] = useState(initialTicker);
+  const [showDrop, setShowDrop] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const { data: searchData } = useStockSearch(searchQ);
+  const searchResults = searchData?.results || [];
+
+  useEffect(() => {
+    function h(e: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) setShowDrop(false);
+    }
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
   const [progress, setProgress] = useState<ResearchProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<(() => void) | null>(null);
@@ -83,14 +96,32 @@ export default function QuickResearchPage() {
             <label className="block text-sm font-medium text-[#e8eaed] mb-1.5">
               公司代码
             </label>
-            <input
-              type="text"
-              value={ticker}
-              onChange={(e) => setTicker(e.target.value.toUpperCase())}
-              placeholder="例如：NVDA、TSLA、AAPL"
-              className="w-full px-3 py-2 rounded-lg bg-[#232736] border border-[#2d3140] text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:border-[#4f8cff]"
-              maxLength={16}
-            />
+            <div ref={searchRef} className="relative">
+              <input
+                type="text"
+                value={searchQ}
+                onChange={(e) => { setSearchQ(e.target.value); setShowDrop(true); }}
+                onFocus={() => setShowDrop(true)}
+                placeholder="搜索股票代码或名称..."
+                className="w-full px-3 py-2 rounded-lg bg-[#232736] border border-[#2d3140] text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:border-[#4f8cff]"
+              />
+              {showDrop && searchQ && (
+                <div className="absolute z-10 mt-1 w-full rounded-lg bg-[#1a1d28] border border-[#2d3140] shadow-xl max-h-48 overflow-y-auto">
+                  {searchResults.length === 0 ? (
+                    <div className="p-2 text-sm text-[#9aa0a6]">无匹配结果</div>
+                  ) : (
+                    searchResults.map((r) => (
+                      <button key={r.symbol}
+                        onClick={() => { setTicker(r.symbol); setSearchQ(r.symbol); setShowDrop(false); }}
+                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-left hover:bg-[#232736] transition-colors">
+                        <span className="font-mono text-[#4f8cff]">{r.symbol}</span>
+                        {r.name && <span className="text-[#e8eaed]">{r.name}</span>}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           <div>

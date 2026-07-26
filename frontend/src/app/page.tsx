@@ -27,7 +27,6 @@ export default function DashboardPage() {
   const handleGenerateBrief = async () => {
     setGenerating(true);
     await fetch("/api/dashboard/generate-brief", { method: "POST" });
-    // Brief is stored when POST returns; refetch dashboard immediately
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     setGenerating(false);
   };
@@ -44,7 +43,6 @@ export default function DashboardPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[#e8eaed]">☀️ Daily Workspace</h1>
@@ -60,7 +58,6 @@ export default function DashboardPage() {
         <div className="flex items-center justify-center py-20 text-[#9aa0a6]">加载中...</div>
       ) : (
         <>
-          {/* Quick Actions */}
           <div className="grid grid-cols-5 gap-3">
             {QUICK_ACTIONS.map((action) => (
               <Link key={action.label} href={action.href}
@@ -72,17 +69,13 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          {/* Top Row: Morning Brief + Market Overview */}
           <div className="grid grid-cols-3 gap-6">
-            {/* Morning Brief */}
             <div className="col-span-2 p-5 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold text-[#e8eaed]">📋 晨间简报</h2>
                 <div className="flex items-center gap-2">
                   {brief?.generated_at && (
-                    <span className="text-xs text-[#9aa0a6]">
-                      {new Date(brief.generated_at).toLocaleString("zh-CN")}
-                    </span>
+                    <span className="text-xs text-[#9aa0a6]">{new Date(brief.generated_at).toLocaleString("zh-CN")}</span>
                   )}
                   <button onClick={handleGenerateBrief} disabled={generating}
                     className="px-2 py-1 rounded text-xs bg-[#2d3140] text-[#9aa0a6] hover:text-[#e8eaed] disabled:opacity-50 transition-colors">
@@ -91,8 +84,8 @@ export default function DashboardPage() {
                 </div>
               </div>
               {hasBrief ? (
-                <div className="text-sm text-[#e8eaed] whitespace-pre-wrap leading-relaxed max-h-96 overflow-y-auto">
-                  {brief.content}
+                <div className="text-sm text-[#e8eaed] leading-relaxed max-h-96 overflow-y-auto">
+                  <SimpleMarkdown content={brief.content} />
                 </div>
               ) : (
                 <div className="text-sm text-[#9aa0a6] py-4 text-center">
@@ -101,7 +94,6 @@ export default function DashboardPage() {
               )}
             </div>
 
-            {/* Research Reminders */}
             <div className="p-5 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
               <h2 className="text-lg font-semibold text-[#e8eaed] mb-3">⏰ 研究提醒</h2>
               {reminders.length > 0 ? (
@@ -113,80 +105,23 @@ export default function DashboardPage() {
                         <span className="text-xs text-[#f87171]">{r.days_since_research} 天</span>
                       </div>
                       <Link href={`/research/quick?ticker=${r.ticker}`}
-                        className="text-xs text-[#4f8cff] hover:underline mt-1 inline-block">
-                        开始研究 →
-                      </Link>
+                        className="text-xs text-[#4f8cff] hover:underline mt-1 inline-block">开始研究 →</Link>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="text-sm text-[#9aa0a6] py-4 text-center">
-                  没有待处理的研究提醒。
-                </div>
+                <div className="text-sm text-[#9aa0a6] py-4 text-center">没有待处理的研究提醒。</div>
               )}
             </div>
           </div>
 
-          {/* Market Overview */}
-          {marketOverview.length > 0 && (
-            <div className="p-5 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-semibold text-[#e8eaed]">📈 行情概览</h2>
-                <Link href="/market" className="text-sm text-[#4f8cff] hover:underline">
-                  详细 →
-                </Link>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-[#9aa0a6] border-b border-[#2d3140]">
-                      <th className="text-left py-2 pr-4 font-medium">公司</th>
-                      <th className="text-right py-2 pr-4 font-medium">最新价</th>
-                      <th className="text-right py-2 pr-4 font-medium">涨跌幅</th>
-                      <th className="text-left py-2 font-medium">行业</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {marketOverview.map((item) => (
-                      <tr key={item.ticker} className="border-b border-[#2d3140]/50 hover:bg-[#232736] transition-colors">
-                        <td className="py-3 pr-4">
-                          <Link href={`/companies/${item.ticker}`}
-                            className="font-medium text-[#e8eaed] hover:text-[#4f8cff]">
-                            {item.company_name}
-                          </Link>
-                          <div className="text-xs text-[#9aa0a6]">{item.ticker}</div>
-                        </td>
-                        <td className="py-3 pr-4 text-right text-[#e8eaed]">
-                          {item.latest_price?.toFixed(2) ?? "-"}
-                        </td>
-                        <td className="py-3 pr-4 text-right">
-                          {item.change_pct !== null ? (
-                            <span className={item.change_pct >= 0 ? "text-[#34d399]" : "text-[#f87171]"}>
-                              {item.change_pct >= 0 ? "+" : ""}{item.change_pct}%
-                            </span>
-                          ) : (
-                            <span className="text-[#9aa0a6]">-</span>
-                          )}
-                        </td>
-                        <td className="py-3 text-[#9aa0a6]">{item.sector || "-"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Watchlist */}
           {watchlist.length > 0 && (
             <div className="p-5 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold text-[#e8eaed]">👁️ 关注列表</h2>
-                <Link href="/portfolio" className="text-sm text-[#4f8cff] hover:underline">
-                  管理 →
-                </Link>
+                <Link href="/portfolio" className="text-sm text-[#4f8cff] hover:underline">管理 →</Link>
               </div>
-              {watchlist.map((wl) => (
+              {watchlist.map((wl: any) => (
                 <div key={wl.watchlist_id}>
                   {wl.items.length === 0 ? (
                     <div className="text-sm text-[#9aa0a6] py-2">关注列表为空</div>
@@ -203,34 +138,22 @@ export default function DashboardPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {wl.items.map((item) => (
+                          {wl.items.map((item: any) => (
                             <tr key={item.id} className="border-b border-[#2d3140]/50 hover:bg-[#232736] transition-colors">
                               <td className="py-3 pr-4">
-                                <Link href={`/companies/${item.ticker}`}
-                                  className="font-medium text-[#e8eaed] hover:text-[#4f8cff]">{item.company_name}
-                                </Link>
+                                <Link href={`/companies/${item.ticker}`} className="font-medium text-[#e8eaed] hover:text-[#4f8cff]">{item.company_name}</Link>
                                 <div className="text-xs text-[#9aa0a6]">{item.ticker}</div>
                               </td>
-                              <td className="py-3 pr-4 text-right text-[#e8eaed]">
-                                {item.latest_price?.toFixed(2) ?? "-"}
-                              </td>
+                              <td className="py-3 pr-4 text-right text-[#e8eaed]">{item.latest_price?.toFixed(2) ?? "-"}</td>
                               <td className="py-3 pr-4 text-right">
                                 {item.price_change !== null ? (
-                                  <span className={item.price_change >= 0 ? "text-[#34d399]" : "text-[#f87171]"}>
-                                    {item.price_change >= 0 ? "+" : ""}{item.price_change}%
-                                  </span>
-                                ) : (
-                                  <span className="text-[#9aa0a6]">-</span>
-                                )}
+                                  <span className={item.price_change >= 0 ? "text-[#34d399]" : "text-[#f87171]"}>{item.price_change >= 0 ? "+" : ""}{item.price_change}%</span>
+                                ) : <span className="text-[#9aa0a6]">-</span>}
                               </td>
                               <td className="py-3 pr-4 text-center">
-                                <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${STATUS_LABEL[item.status]?.color || ""}`}>
-                                  {STATUS_LABEL[item.status]?.label || item.status}
-                                </span>
+                                <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${STATUS_LABEL[item.status]?.color || ""}`}>{STATUS_LABEL[item.status]?.label || item.status}</span>
                               </td>
-                              <td className="py-3 text-[#9aa0a6] max-w-[200px] truncate">
-                                {item.thesis ?? "-"}
-                              </td>
+                              <td className="py-3 text-[#9aa0a6] max-w-[200px] truncate">{item.thesis ?? "-"}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -242,19 +165,53 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Recent Research */}
+          {marketOverview.length > 0 && (
+            <div className="p-5 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-semibold text-[#e8eaed]">📈 行情概览</h2>
+                <Link href="/market" className="text-sm text-[#4f8cff] hover:underline">详细 →</Link>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-[#9aa0a6] border-b border-[#2d3140]">
+                      <th className="text-left py-2 pr-4 font-medium">公司</th>
+                      <th className="text-right py-2 pr-4 font-medium">最新价</th>
+                      <th className="text-right py-2 pr-4 font-medium">涨跌幅</th>
+                      <th className="text-left py-2 font-medium">行业</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {marketOverview.map((item: any) => (
+                      <tr key={item.ticker} className="border-b border-[#2d3140]/50 hover:bg-[#232736] transition-colors">
+                        <td className="py-3 pr-4">
+                          <Link href={`/companies/${item.ticker}`} className="font-medium text-[#e8eaed] hover:text-[#4f8cff]">{item.company_name}</Link>
+                          <div className="text-xs text-[#9aa0a6]">{item.ticker}</div>
+                        </td>
+                        <td className="py-3 pr-4 text-right text-[#e8eaed]">{item.latest_price?.toFixed(2) ?? "-"}</td>
+                        <td className="py-3 pr-4 text-right">
+                          {item.change_pct !== null ? (
+                            <span className={item.change_pct >= 0 ? "text-[#34d399]" : "text-[#f87171]"}>{item.change_pct >= 0 ? "+" : ""}{item.change_pct}%</span>
+                          ) : <span className="text-[#9aa0a6]">-</span>}
+                        </td>
+                        <td className="py-3 text-[#9aa0a6]">{item.sector || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {recentResearch.length > 0 && (
             <div className="p-5 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold text-[#e8eaed]">📋 最近研究</h2>
-                <Link href="/research" className="text-sm text-[#4f8cff] hover:underline">
-                  查看全部 →
-                </Link>
+                <Link href="/research" className="text-sm text-[#4f8cff] hover:underline">查看全部 →</Link>
               </div>
               <div className="space-y-2">
-                {recentResearch.map((s) => (
-                  <Link key={s.id} href={`/research/${s.id}`}
-                    className="block p-3 rounded-lg bg-[#232736] hover:bg-[#2d3140] transition-colors">
+                {recentResearch.map((s: any) => (
+                  <Link key={s.id} href={`/research/${s.id}`} className="block p-3 rounded-lg bg-[#232736] hover:bg-[#2d3140] transition-colors">
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="font-medium text-sm text-[#e8eaed]">{s.title}</div>
@@ -278,4 +235,39 @@ export default function DashboardPage() {
       )}
     </div>
   );
+}
+
+function SimpleMarkdown({ content }: { content: string }) {
+  const elements: JSX.Element[] = [];
+  let key = 0;
+  for (const line of content.split("\n")) {
+    const t = line.trim();
+    if (t.startsWith("## ")) {
+      elements.push(<h2 key={key++} className="text-lg font-semibold text-[#e8eaed] mt-4 mb-2">{t.slice(3)}</h2>);
+    } else if (t.startsWith("### ")) {
+      elements.push(<h3 key={key++} className="text-md font-semibold text-[#e8eaed] mt-3 mb-1">{t.slice(4)}</h3>);
+    } else if (t.startsWith("- ")) {
+      elements.push(<li key={key++} className="text-sm text-[#e8eaed] ml-4 list-disc">{inlineMd(t.slice(2))}</li>);
+    } else if (/^\d+\.\s/.test(t)) {
+      elements.push(<li key={key++} className="text-sm text-[#e8eaed] ml-4 list-decimal">{inlineMd(t.replace(/^\d+\.\s/, ""))}</li>);
+    } else if (!t) {
+      elements.push(<div key={key++} className="h-2" />);
+    } else {
+      elements.push(<p key={key++} className="text-sm text-[#e8eaed] mb-1">{inlineMd(t)}</p>);
+    }
+  }
+  return <div className="space-y-0.5">{elements}</div>;
+}
+
+function inlineMd(text: string): (string | JSX.Element)[] {
+  const parts: (string | JSX.Element)[] = [];
+  let last = 0, m: RegExpExecArray | null;
+  const re = /\*\*(.+?)\*\*/g;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    parts.push(<strong key={parts.length} className="text-[#e8eaed] font-semibold">{m[1]}</strong>);
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts.length ? parts : [text];
 }
