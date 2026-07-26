@@ -180,6 +180,45 @@ class DashboardService:
         reminders.sort(key=lambda x: -(x["days_since_research"] or 0))
         return reminders
 
+    # ── Market Overview ───────────────────────────────────────────
+
+    async def get_market_overview(self) -> list[dict[str, Any]]:
+        """Recent price movements across tracked companies."""
+        from company.models import Company
+        from market.models import StockPrice
+
+        result = await self.session.execute(
+            select(Company).where(Company.is_active == True)
+        )
+        companies = list(result.scalars().all())
+
+        overview = []
+        for c in companies:
+            price_result = await self.session.execute(
+                select(StockPrice)
+                .where(StockPrice.ticker == c.ticker)
+                .order_by(desc(StockPrice.date))
+                .limit(2)
+            )
+            prices = list(price_result.scalars().all())
+            if len(prices) < 2:
+                continue
+
+            latest, prev = prices[0], prices[1]
+            change_pct = round(((latest.close - prev.close) / prev.close) * 100, 2) if prev.close else None
+
+            overview.append({
+                "ticker": c.ticker,
+                "company_name": c.name,
+                "sector": c.sector,
+                "latest_price": latest.close,
+                "price_date": latest.date.isoformat() if latest.date else None,
+                "change_pct": change_pct,
+            })
+
+        overview.sort(key=lambda x: abs(x["change_pct"] or 0), reverse=True)
+        return overview[:10]
+
     # ── Full Dashboard ────────────────────────────────────────────
 
     async def get_dashboard(self) -> dict[str, Any]:
