@@ -97,13 +97,39 @@ async def run_observation_cycle() -> dict:
             )
             prices = list(price_result.scalars().all())
 
+            significant_move = False
             if len(prices) >= 2:
                 recent_change = abs((prices[0].close - prices[1].close) / prices[1].close * 100)
                 if recent_change >= OBSERVATION_THRESHOLDS["price_change_pct"]:
                     direction = "上涨" if prices[0].close > prices[1].close else "下跌"
                     reasons.append(f"价格显著{direction} {recent_change:.1f}%")
+                    significant_move = True
 
-            # 4. Store observation if any signals found
+            # 4. Sector-level alert: if one stock in sector moves, flag related stocks
+            if significant_move and company.sector:
+                sector_result = await session.execute(
+                    select(Company).where(
+                        Company.sector == company.sector,
+                        Company.ticker != ticker,
+                        Company.is_active == True,
+                    )
+                )
+                sector_companies = list(sector_result.scalars().all())
+                for sc in sector_companies[:3]:  # limit to 3
+                    # Check if this related stock already has an observation
+                    sc_price = await session.execute(
+                        select(StockPrice)
+                        .where(StockPrice.ticker == sc.ticker)
+                        .order_by(desc(StockPrice.date))
+                        .limit(1)
+                    )
+                    sc_latest = sc_price.scalar_one_or_none()
+                    if sc_latest and sc_latest.date == prices[0].date:
+                        # Already has recent data, skip
+                        pass
+                    reasons.append(f"同板块 「{company.sector}」 {ticker} 异动，建议关注 {sc.ticker}")
+
+            # 5. Store observation if any signals found
             if reasons:
                 observations.append({
                     "ticker": ticker,

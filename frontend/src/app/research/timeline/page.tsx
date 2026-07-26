@@ -11,6 +11,7 @@ const TYPE_ICONS: Record<string, string> = {
   report_version: "📄",
   research_completed: "✅",
   status_change: "🔄",
+  observation: "👁️",
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -114,6 +115,13 @@ export default function TimelinePage() {
                           >
                             查看研究 →
                           </Link>
+                        )}
+
+                        {/* Observation detail */}
+                        {event.type === "observation" && (
+                          <div className="mt-1 p-2 rounded bg-[#fbbf24]/5 border border-[#fbbf24]/20 text-xs text-[#fbbf24]">
+                            {event.detail}
+                          </div>
                         )}
 
                         {/* Thesis/Decision */}

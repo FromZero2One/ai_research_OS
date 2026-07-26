@@ -142,6 +142,28 @@ async def get_research_timeline(
                 "detail": f"报告 v{report.version}{' (终稿)' if report.is_final else ''}",
             })
 
+    # 3. Observation events (price alerts, research reminders)
+    obs_result = await db.execute(
+        select(EventLog)
+        .where(
+            EventLog.source == "observation",
+            EventLog.event_type == "observation.generated",
+        )
+        .order_by(desc(EventLog.occurred_at))
+        .limit(50)
+    )
+    for log in obs_result.scalars().all():
+        payload = log.payload or {}
+        if payload.get("ticker") != ticker.upper():
+            continue
+        reasons = payload.get("reasons", [])
+        events.append({
+            "type": "observation",
+            "date": log.occurred_at.isoformat() if log.occurred_at else "",
+            "detail": "; ".join(reasons) if reasons else "系统观察触发",
+            "observation_status": payload.get("status", "attention"),
+        })
+
     # Sort by date ascending
     events.sort(key=lambda e: e.get("date", ""))
 
