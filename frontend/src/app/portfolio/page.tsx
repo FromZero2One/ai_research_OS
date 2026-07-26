@@ -169,10 +169,7 @@ function WatchlistCard({ wl, onMsg, onRefresh }: { wl: any; onMsg: (t: "success"
   return (
     <div className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140] space-y-3">
       <div className="flex items-center justify-between">
-        <div>
-          <span className="font-medium text-[#e8eaed]">{wl.name}</span>
-          <span className="text-xs text-[#9aa0a6] ml-2">{wl.items?.length || 0} 只股票</span>
-        </div>
+        <span className="text-xs text-[#9aa0a6]">{wl.items?.length || 0} 只关注股票</span>
         <button onClick={() => setAdding(!adding)}
           className="px-2 py-1 rounded text-xs bg-[#4f8cff] text-white hover:bg-[#3a7bf5]">
           + 添加股票
