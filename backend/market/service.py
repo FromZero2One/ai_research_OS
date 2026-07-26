@@ -361,11 +361,14 @@ class MarketService:
         """Run akshare Python code in akshare_mcp venv and return stdout."""
         import os as _os, subprocess as _sp
         AKSHARE_MCP_DIR = _os.getenv("AKSHARE_MCP_DIR", "/home/wsm/codes/akshare_mcp")
-        env = _os.environ.copy()
-        for v in ("http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY",
-                   "ftp_proxy", "FTP_PROXY", "all_proxy", "ALL_PROXY"):
-            env.pop(v, None)
-        env["no_proxy"] = "localhost,127.0.0.0/8,::1"
+        # Minimal env — env -i style — to dodge any inherited proxy
+        env = {
+            "HOME": _os.environ.get("HOME", ""),
+            "PATH": _os.environ.get("PATH", ""),
+            "USER": _os.environ.get("USER", ""),
+            "NO_PROXY": "localhost,127.0.0.0/8,::1",
+            "no_proxy": "localhost,127.0.0.0/8,::1",
+        }
         try:
             result = _sp.run(
                 ["uv", "run", "--directory", AKSHARE_MCP_DIR, "python", "-c", code],
@@ -377,29 +380,35 @@ class MarketService:
         except Exception:
             return None
 
+    @staticmethod
+    def _tx_symbol(ticker: str) -> str:
+        """Convert 6-digit A-stock code to Tencent format (sz/sh prefix)."""
+        return f"sh{ticker}" if ticker.startswith("6") else f"sz{ticker}"
+
     async def _fetch_akshare_local(self, ticker: str) -> list[dict]:
-        """Layer 2: run akshare locally via subprocess to get K-line data."""
+        """Layer 2: run akshare locally via Tencent data source (stable)."""
         import asyncio as _asyncio
         import json as _json
         from datetime import date as _date
 
+        tx_sym = self._tx_symbol(ticker)
         code = f"""
 import json, sys
 import akshare as ak
 try:
-    df = ak.stock_zh_a_hist(symbol='{ticker}', period='daily')
+    df = ak.stock_zh_a_hist_tx(symbol='{tx_sym}', start_date='19000101', end_date='20500101')
     if df is None or df.empty:
         print("__R__:[]")
     else:
         rows = []
         for _, row in df.iterrows():
             rows.append({{
-                "date": str(row["日期"]),
-                "open": float(row["开盘"]) if row["开盘"] == row["开盘"] else None,
-                "high": float(row["最高"]) if row["最高"] == row["最高"] else None,
-                "low": float(row["最低"]) if row["最低"] == row["最低"] else None,
-                "close": float(row["收盘"]) if row["收盘"] == row["收盘"] else None,
-                "volume": float(row.get("成交量", 0) or 0),
+                "date": str(row["date"])[:10],
+                "open": float(row["open"]) if row["open"] == row["open"] else None,
+                "high": float(row["high"]) if row["high"] == row["high"] else None,
+                "low": float(row["low"]) if row["low"] == row["low"] else None,
+                "close": float(row["close"]) if row["close"] == row["close"] else None,
+                "volume": float(row.get("amount", 0) or 0),
             }})
         print("__R__:" + json.dumps(rows, ensure_ascii=False))
 except Exception as e:
