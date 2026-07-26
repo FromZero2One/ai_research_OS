@@ -156,8 +156,8 @@ export default function MarketPage() {
   }, [dataLoaded, ticker, prices.length, autoIngested, queryClient]);
 
   const activeName = tickerNames[ticker];
-  const latestPrice = prices.length > 0 ? prices[prices.length - 1].close : null;
-  const prevClose = prices.length > 1 ? prices[prices.length - 2].close : null;
+  const latestPrice = prices.length > 0 ? prices[0].close : null;  // prices DESC, index 0 = newest
+  const prevClose = prices.length > 1 ? prices[1].close : null;
   const change = latestPrice != null && prevClose != null ? latestPrice - prevClose : null;
   const changePct = change != null && prevClose != null ? (change / prevClose) * 100 : null;
 

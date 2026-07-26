@@ -42,17 +42,22 @@ export default function StockChart({ prices, height = 400, showVolume = true }: 
     const chart = instanceRef.current;
     if (!chart || prices.length === 0) return;
 
-    // Detect if data spans multiple years
-    const firstYear = prices[0].date.slice(0, 4);
-    const lastYear = prices[prices.length - 1].date.slice(0, 4);
-    const multiYear = firstYear !== lastYear;
-    const dates = prices.map((p) => multiYear ? p.date.slice(0, 7) : p.date.slice(5)); // YYYY-MM or MM-DD
-    const ohlc = prices.map((p) => [p.open, p.close, p.low, p.high]);
-    const volumes = prices.map((p) => p.volume);
+    // API returns newest-first; reverse to oldest-first for X-axis
+    const sorted = prices.length > 1 && prices[0].date > prices[1].date
+      ? [...prices].reverse()
+      : prices;
 
-    // Calculate MA lines
-    const ma5 = calcMA(prices, 5);
-    const ma20 = calcMA(prices, 20);
+    // Detect if data spans multiple years
+    const firstYear = sorted[0].date.slice(0, 4);
+    const lastYear = sorted[sorted.length - 1].date.slice(0, 4);
+    const multiYear = firstYear !== lastYear;
+    const dates = sorted.map((p) => multiYear ? p.date.slice(0, 7) : p.date.slice(5));
+    const ohlc = sorted.map((p) => [p.open, p.close, p.low, p.high]);
+    const volumes = sorted.map((p) => p.volume);
+
+    // Calculate MA lines (uses sorted order)
+    const ma5 = calcMA(sorted, 5);
+    const ma20 = calcMA(sorted, 20);
 
     const option: echarts.EChartsOption = {
       backgroundColor: "transparent",
