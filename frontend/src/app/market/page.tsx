@@ -93,7 +93,7 @@ export default function MarketPage() {
   useEffect(() => {
     if (!ticker || tickerNames[ticker]) return;
     // Search by exact ticker to get name
-    fetch(`/api/v1/market/search?query=${encodeURIComponent(ticker)}&limit=5`)
+    fetch(`/api/market/search?query=${encodeURIComponent(ticker)}&limit=5`)
       .then((r) => r.json())
       .then((d) => {
         const match = d.results?.find(
