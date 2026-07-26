@@ -57,6 +57,52 @@ OVERVIEW_PROMPT = """你是一个简洁的投资分析助手。基于以下关�
 
 输出3-5句话，用具体数据。要求：全程用中文。"""
 
+async def _fetch_newsnow() -> list[str]:
+    """Fetch general financial news via persistent MCP connection."""
+    from core.adapters.newsnow_mcp import get_headlines
+    return await get_headlines()
+
+
+async def _fetch_news_akshare(ticker: str) -> list[dict]:
+    """Fetch stock news via akshare subprocess."""
+    import asyncio
+    import json as _json
+    import os, subprocess as _sp
+
+    AKSHARE_MCP_DIR = os.getenv("AKSHARE_MCP_DIR", "/home/wsm/codes/akshare_mcp")
+    code = f"""
+import json, sys
+import akshare as ak
+try:
+    df = ak.stock_news_em(symbol='{ticker}')
+    if df is None or df.empty:
+        print("__R__:[]")
+    else:
+        rows = []
+        for _, row in df.iterrows():
+            rows.append({{"title": str(row.get("新闻标题", "")), "source": str(row.get("文章来源", ""))}})
+        print("__R__:" + json.dumps(rows, ensure_ascii=False)[:2000])
+except Exception as e:
+    print("__E__:" + str(e), file=sys.stderr)
+"""
+    env = os.environ.copy()
+    for v in ("http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY"):
+        env.pop(v, None)
+    try:
+        result = _sp.run(
+            ["uv", "run", "--directory", AKSHARE_MCP_DIR, "python", "-c", code],
+            capture_output=True, text=True, timeout=30, env=env,
+        )
+        if result.returncode != 0:
+            return []
+        for line in result.stdout.splitlines():
+            if line.startswith("__R__:"):
+                return _json.loads(line[6:])
+        return []
+    except Exception:
+        return []
+
+
 STOCK_BRIEF_PROMPT = """你是一个投资研究分析师。基于以下单只股票的20个交易日数据，写一段3-5句话的中文分析：
 
 1. **近期趋势** — 近一月走势如何？上涨/下跌/横盘？
@@ -69,8 +115,12 @@ STOCK_BRIEF_PROMPT = """你是一个投资研究分析师。基于以下单只�
 月度趋势（20日）：{monthly_trend}%
 距上次研究：{research_days} 天
 进行中研究：{open_sessions} 个
+相关新闻：{news}
 
 要求：全程用中文，数据具体，避免空泛建议。"""
+
+FOCUS_THRESHOLD_CHANGE = 3.0
+FOCUS_THRESHOLD_DAYS = 30
 
 
 async def morning_brief() -> dict:
@@ -151,6 +201,14 @@ async def morning_brief() -> dict:
                 )
                 open_count = len(list(rc.scalars().all()))
 
+            # Fetch latest news headlines via akshare
+            news_headlines: list[str] = []
+            try:
+                ns = await _fetch_news_akshare(ticker)
+                news_headlines = [n["title"] for n in ns[:3]]  # top 3
+            except Exception:
+                pass
+
             stock_data.append({
                 "ticker": ticker,
                 "name": cname,
@@ -160,6 +218,7 @@ async def morning_brief() -> dict:
                 "days_since_research": days_since,
                 "open_research": open_count,
                 "sector": company.sector if company else None,
+                "news": news_headlines,
             })
 
         if not stock_data:
@@ -169,12 +228,20 @@ async def morning_brief() -> dict:
         llm = create_llm()
 
         # 3. Layer 1: Market overview (single LLM call)
+        # Fetch general financial news from newsnow
+        market_news = await _fetch_newsnow()
+
         overview_lines = []
         for s in stock_data:
             chg = f" (今日 {s['change_pct']:+.2f}%)" if s['change_pct'] is not None else ""
             trend = f" 月趋势 {s['monthly_trend']:+.2f}%" if s['monthly_trend'] is not None else ""
-            overview_lines.append(f"  {s['ticker']} ({s['name']}): {s['price']:.2f}{chg}{trend}")
+            news_str = ""
+            if s.get("news"):
+                news_str = " 新闻: " + " | ".join(s["news"])
+            overview_lines.append(f"  {s['ticker']} ({s['name']}): {s['price']:.2f}{chg}{trend}{news_str}")
         overview_input = "Watchlist (20-day data):\n" + "\n".join(overview_lines)
+        if market_news:
+            overview_input += "\n\nGeneral financial news:\n" + "\n".join(f"  - {h}" for h in market_news[:5])
 
         try:
             resp = await llm.generate(
@@ -190,20 +257,22 @@ async def morning_brief() -> dict:
 
         # 4. Layer 2: Per-stock briefs for focus stocks (max 3)
         focus_stocks = [s for s in stock_data if (
-            (s['change_pct'] is not None and abs(s['change_pct']) >= 3) or
-            (s['days_since_research'] is not None and s['days_since_research'] >= 30)
+            (s['change_pct'] is not None and abs(s['change_pct']) >= FOCUS_THRESHOLD_CHANGE) or
+            (s['days_since_research'] is not None and s['days_since_research'] >= FOCUS_THRESHOLD_DAYS)
         )]
         focus_stocks.sort(key=lambda s: abs(s['change_pct'] or 0), reverse=True)
         focus_stocks = focus_stocks[:3]
 
         stock_briefs: list[dict] = []
         for s in focus_stocks:
+            news_text = "; ".join(s.get("news", [])[:2]) or "暂无"
             prompt = STOCK_BRIEF_PROMPT.format(
                 ticker=s['ticker'], name=s['name'], price=s['price'],
                 change=f"{s['change_pct']:+.2f}%" if s['change_pct'] is not None else "N/A",
                 monthly_trend=f"{s['monthly_trend']:+.2f}" if s['monthly_trend'] is not None else "N/A",
                 research_days=s['days_since_research'] or "unknown",
                 open_sessions=s['open_research'],
+                news=news_text,
             )
             try:
                 resp = await llm.generate(
@@ -222,6 +291,12 @@ async def morning_brief() -> dict:
             for sb in stock_briefs:
                 parts.append(f"### {sb['ticker']} ({sb['name']})\n{sb['brief']}\n")
 
+        if market_news:
+            parts.append("## 📰 财经要闻\n")
+            for h in market_news[:5]:
+                parts.append(f"- {h}")
+            parts.append("")
+
         parts.append("## 持仓一览\n")
         for s in stock_data:
             chg = f" ({s['change_pct']:+.2f}%)" if s['change_pct'] is not None else ""
@@ -229,7 +304,10 @@ async def morning_brief() -> dict:
             research = ""
             if s['days_since_research'] is not None:
                 research = f" [研究 {s['days_since_research']}d]"
-            parts.append(f"- {s['ticker']} ({s['name']}): {s['price']:.2f}{chg}{trend}{research}")
+            news_str = ""
+            if s.get("news"):
+                news_str = f" 📰 {s['news'][0][:40]}"
+            parts.append(f"- {s['ticker']} ({s['name']}): {s['price']:.2f}{chg}{trend}{research}{news_str}")
 
         brief_content = "\n".join(parts)
         logger.info("Morning brief: %d stocks, %d focus, %d chars",

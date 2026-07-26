@@ -586,6 +586,115 @@ class MarketService:
 
         return profile
 
+    # ── News fetch (2-layer fallback: local akshare → cloud MCP) ──────
+
+    async def _fetch_news(self, ticker: str) -> tuple[list[dict], str]:
+        """Fetch stock news via 2-layer fallback.
+
+        Returns (news_list, source_name).
+        Each news item: {title, content, publish_time, source, url}.
+        """
+        import asyncio as _asyncio
+        import json as _json
+
+        # Layer 1: local akshare via subprocess
+        try:
+            from market.service import MarketService
+            code = f"""
+import json, sys
+import akshare as ak
+try:
+    df = ak.stock_news_em(symbol='{ticker}')
+    if df is None or df.empty:
+        print("__R__:[]")
+    else:
+        rows = []
+        for _, row in df.iterrows():
+            rows.append({{
+                "title": str(row.get("新闻标题", "")),
+                "content": str(row.get("新闻内容", ""))[:300],
+                "publish_time": str(row.get("发布时间", "")),
+                "source": str(row.get("文章来源", "")),
+                "url": str(row.get("新闻链接", "")),
+            }})
+        print("__R__:" + json.dumps(rows, ensure_ascii=False))
+except Exception as e:
+    print("__E__:" + str(e), file=sys.stderr)
+"""
+            stdout = await _asyncio.to_thread(self._run_akshare, code)
+            if stdout:
+                for line in stdout.splitlines():
+                    if line.startswith("__R__:"):
+                        data = _json.loads(line[6:])
+                        if data:
+                            logger.info("  [news] Layer 1 local: %d items for %s", len(data), ticker)
+                            return data, "akshare_local"
+        except Exception as e:
+            logger.warning("  [news] Layer 1 failed: %s", e)
+
+        # Layer 2: cloud MCP
+        try:
+            import httpx
+            from mcp import ClientSession
+            from mcp.client.streamable_http import streamable_http_client
+            from mcp.types import TextContent
+
+            CLOUD_MCP_URL = "http://8.137.104.120:8088/mcp"
+            http_client = httpx.AsyncClient(verify=False, timeout=15)
+            try:
+                async with streamable_http_client(CLOUD_MCP_URL, http_client=http_client) as (read, write, _get_id):
+                    async with ClientSession(read, write) as session:
+                        await session.initialize()
+                        result = await session.call_tool("stock_news_em", {"symbol": ticker})
+                        news = []
+                        for c in result.content:
+                            if isinstance(c, TextContent):
+                                parsed = self._parse_news_table(c.text)
+                                news.extend(parsed)
+                        if news:
+                            logger.info("  [news] Layer 2 cloud: %d items for %s", len(news), ticker)
+                            return news, "cloud_mcp"
+            finally:
+                await http_client.aclose()
+        except Exception as e:
+            logger.warning("  [news] Layer 2 failed: %s", e)
+
+        return [], "none"
+
+    @staticmethod
+    def _parse_news_table(text: str) -> list[dict]:
+        """Parse pandas DataFrame text from MCP into list of dicts."""
+        import re
+        lines = text.strip().split("\n")
+        if len(lines) < 2:
+            return []
+        # Find header line (contains "新闻标题")
+        header_idx = -1
+        for i, line in enumerate(lines):
+            if "新闻标题" in line:
+                header_idx = i
+                break
+        if header_idx < 0:
+            return []
+        # Parse headers
+        header_line = lines[header_idx]
+        headers = [h.strip() for h in header_line.split() if h.strip() and h.strip() != "|"]
+        # Find data rows (after header)
+        results = []
+        for line in lines[header_idx + 1:]:
+            if not line.strip() or "---" in line:
+                continue
+            parts = [p.strip() for p in line.split() if p.strip()]
+            if len(parts) >= 3:
+                results.append({
+                    "title": parts[1] if len(parts) > 1 else "",
+                    "content": parts[2][:300] if len(parts) > 2 else "",
+                    "publish_time": parts[3] if len(parts) > 3 else "",
+                    "source": parts[4] if len(parts) > 4 else "",
+                    "url": parts[5] if len(parts) > 5 else "",
+                })
+        return results
+
     # ── Layer 2: local akshare (subprocess) ────────────────────────────
 
     @staticmethod

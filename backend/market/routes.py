@@ -76,6 +76,17 @@ async def ingest_company_profile(
     return {"ticker": ticker.upper(), "updated": profile}
 
 
+@router.get("/news/{ticker}")
+async def get_news(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get news for a stock via 2-layer fallback: local akshare → cloud MCP."""
+    svc = MarketService(db)
+    news, source = await svc._fetch_news(ticker)
+    return {"ticker": ticker.upper(), "news": news, "source": source}
+
+
 @router.get("/financials/{ticker}")
 async def get_financials(
     ticker: str,
