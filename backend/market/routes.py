@@ -50,8 +50,12 @@ async def ingest_financials(
     ticker: str,
     db: AsyncSession = Depends(get_db),
 ):
-    """Ingest financial metrics via akshare (supports HK stocks)."""
+    """Ingest financial metrics via akshare (HK stocks via eastmoney HK API)."""
     svc = MarketService(db)
+    from market.service import _is_a_stock
+    if _is_a_stock(ticker):
+        # A-stock financials come from MySQL (Layer 1), already available
+        return {"ticker": ticker.upper(), "ingested": 0, "source": "mysql", "note": "A-stock financials served from MySQL — no ingest needed"}
     from market.models import FinancialMetric
     fetched = await svc._fetch_akshare_financials(ticker)
     count = await svc.upsert_financials(ticker, fetched)

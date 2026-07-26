@@ -129,6 +129,23 @@ export default function CompanyDetailPage() {
     setIngesting(false);
   };
 
+  const handleRefreshFinancials = async () => {
+    if (!company?.ticker) return;
+    try {
+      const resp = await fetch(`/api/market/financials/${company.ticker}/ingest`, { method: "POST" });
+      if (!resp.ok) {
+        const body = await resp.json();
+        throw new Error(body?.detail || "刷新财务数据失败");
+      }
+      queryClient.invalidateQueries({ queryKey: ["financials", company.ticker] });
+      setMsg({ type: "success", text: "财务数据已刷新" });
+      setTimeout(() => setMsg(null), 4000);
+    } catch (e: any) {
+      setMsg({ type: "error", text: e.message });
+      setTimeout(() => setMsg(null), 4000);
+    }
+  };
+
   const handleDeleteCompany = async () => {
     if (!id || deleting) return;
     setDeleting(true);
@@ -454,10 +471,16 @@ export default function CompanyDetailPage() {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div className="text-sm text-[#9aa0a6]">akshare 行情（MySQL→本地→云端）</div>
-            <button onClick={handleRefreshData} disabled={ingesting}
-              className="px-3 py-1.5 rounded-lg bg-[#2d3140] text-[#9aa0a6] text-xs hover:bg-[#3d4150] hover:text-[#e8eaed] disabled:opacity-50 transition-colors">
-              {ingesting ? "↻ 刷新中..." : "↻ 刷新"}
-            </button>
+            <div className="flex gap-2">
+              <button onClick={handleRefreshFinancials}
+                className="px-3 py-1.5 rounded-lg bg-[#2d3140] text-[#9aa0a6] text-xs hover:bg-[#3d4150] hover:text-[#e8eaed] transition-colors">
+                📊 刷新财务
+              </button>
+              <button onClick={handleRefreshData} disabled={ingesting}
+                className="px-3 py-1.5 rounded-lg bg-[#2d3140] text-[#9aa0a6] text-xs hover:bg-[#3d4150] hover:text-[#e8eaed] disabled:opacity-50 transition-colors">
+                {ingesting ? "↻ 刷新中..." : "↻ 刷新行情"}
+              </button>
+            </div>
           </div>
           <div className="p-4 rounded-xl bg-[#1a1d28] border border-[#2d3140]">
             <StockChart prices={prices} height={350} />
