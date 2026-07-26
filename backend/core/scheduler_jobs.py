@@ -48,28 +48,30 @@ async def market_data_update() -> dict:
 
 # ── Morning Brief ───────────────────────────────────────────────────
 
-OVERVIEW_PROMPT = """You are a concise investment assistant. Based on the watchlist data below, write a very brief market overview (2-3 sentences).
+OVERVIEW_PROMPT = """You are a concise investment assistant. Based on the watchlist data below (20 trading days each), write a brief market overview.
 
-Focus on:
-- How many stocks are up/down
-- Which sector saw the most movement
-- Any notable changes
+For each stock:
+- Recent price with daily change
+- Monthly trend (% from 20 days ago)
+- Notable patterns or observations
 
-Keep it to 2-3 sentences. Be specific with numbers."""
+Cover: how many are up/down today, which sectors are moving, any notable monthly trends.
+Keep it to 3-5 sentences. Be specific with numbers."""
 
-STOCK_BRIEF_PROMPT = """You are an investment research assistant. Based on the following data for a single stock, write a 3-5 sentence brief covering:
+STOCK_BRIEF_PROMPT = """You are an investment research analyst. Based on 20 trading days of data for a single stock, write a 3-5 sentence brief covering:
 
-1. What happened (price change)
-2. Why it might matter (context)
-3. What to watch for (key signal)
+1. **Recent trend** — Is the stock trending up/down/flat over the past month?
+2. **Key signal** — What stands out: acceleration, reversal, consolidation?
+3. **What to watch** — What signal would trigger a re-evaluation?
 
 Stock: {ticker} ({name})
 Latest price: {price}
-Change: {change}
+Today's change: {change}
+Monthly trend (20d): {monthly_trend}%
 Days since last research: {research_days}
-Open research sessions for this company: {open_sessions}
+Open research sessions: {open_sessions}
 
-Be concise and specific."""
+Be concise and specific with numbers. Avoid generic advice."""
 
 
 async def morning_brief() -> dict:
@@ -96,14 +98,14 @@ async def morning_brief() -> dict:
             watchlist_tickers.extend(item.ticker for item in wl.items)
         watchlist_tickers = list(set(watchlist_tickers))
 
-        # 2. Fetch price + research data for each stock
+        # 2. Fetch price + research data for each stock (20 trading days ≈ 1 month)
         stock_data: list[dict] = []
         for ticker in watchlist_tickers[:20]:
             prices = await session.execute(
                 select(StockPrice)
                 .where(StockPrice.ticker == ticker)
                 .order_by(desc(StockPrice.date))
-                .limit(2)
+                .limit(20)
             )
             rows = list(prices.scalars().all())
             if not rows:
@@ -115,11 +117,16 @@ async def morning_brief() -> dict:
             company = comp.scalar_one_or_none()
             cname = company.name if company else ticker
 
-            # Price change
+            # Price change (latest vs previous day)
             latest = rows[0]
             change_pct = None
             if len(rows) >= 2 and rows[1].close:
                 change_pct = round(((latest.close - rows[1].close) / rows[1].close) * 100, 2)
+
+            # Monthly trend (oldest in 20 days vs latest)
+            monthly_trend = None
+            if len(rows) >= 20 and rows[-1].close:
+                monthly_trend = round(((latest.close - rows[-1].close) / rows[-1].close) * 100, 2)
 
             # Days since last research
             days_since = None
@@ -150,6 +157,7 @@ async def morning_brief() -> dict:
                 "name": cname,
                 "price": latest.close,
                 "change_pct": change_pct,
+                "monthly_trend": monthly_trend,
                 "days_since_research": days_since,
                 "open_research": open_count,
                 "sector": company.sector if company else None,
@@ -164,9 +172,10 @@ async def morning_brief() -> dict:
         # 3. Layer 1: Market overview (single LLM call)
         overview_lines = []
         for s in stock_data:
-            chg = f" ({s['change_pct']:+.2f}%)" if s['change_pct'] is not None else ""
-            overview_lines.append(f"  {s['ticker']} ({s['name']}): {s['price']:.2f}{chg}")
-        overview_input = "Watchlist:\n" + "\n".join(overview_lines)
+            chg = f" (今日 {s['change_pct']:+.2f}%)" if s['change_pct'] is not None else ""
+            trend = f" 月趋势 {s['monthly_trend']:+.2f}%" if s['monthly_trend'] is not None else ""
+            overview_lines.append(f"  {s['ticker']} ({s['name']}): {s['price']:.2f}{chg}{trend}")
+        overview_input = "Watchlist (20-day data):\n" + "\n".join(overview_lines)
 
         try:
             resp = await llm.generate(
@@ -193,6 +202,7 @@ async def morning_brief() -> dict:
             prompt = STOCK_BRIEF_PROMPT.format(
                 ticker=s['ticker'], name=s['name'], price=s['price'],
                 change=f"{s['change_pct']:+.2f}%" if s['change_pct'] is not None else "N/A",
+                monthly_trend=f"{s['monthly_trend']:+.2f}" if s['monthly_trend'] is not None else "N/A",
                 research_days=s['days_since_research'] or "unknown",
                 open_sessions=s['open_research'],
             )
@@ -216,10 +226,11 @@ async def morning_brief() -> dict:
         parts.append("## 持仓一览\n")
         for s in stock_data:
             chg = f" ({s['change_pct']:+.2f}%)" if s['change_pct'] is not None else ""
+            trend = f" 月 {s['monthly_trend']:+.2f}%" if s['monthly_trend'] is not None else ""
             research = ""
             if s['days_since_research'] is not None:
                 research = f" [研究 {s['days_since_research']}d]"
-            parts.append(f"- {s['ticker']} ({s['name']}): {s['price']:.2f}{chg}{research}")
+            parts.append(f"- {s['ticker']} ({s['name']}): {s['price']:.2f}{chg}{trend}{research}")
 
         brief_content = "\n".join(parts)
         logger.info("Morning brief: %d stocks, %d focus, %d chars",
