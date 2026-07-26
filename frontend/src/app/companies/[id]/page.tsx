@@ -118,15 +118,19 @@ export default function CompanyDetailPage() {
         const body = await resp.json();
         throw new Error(body?.detail || "刷新失败");
       }
+      const body = await resp.json();
       // Also try to refresh financial data + company profile
       fetch(`/api/market/financials/${company.ticker}/ingest`, { method: "POST" }).catch(() => {});
       fetch(`/api/market/profile/${company.ticker}/ingest`, { method: "POST" }).catch(() => {});
       queryClient.invalidateQueries({ queryKey: ["market", company.ticker] });
       queryClient.invalidateQueries({ queryKey: ["financials", company.ticker] });
-      // Also refresh company detail so overview tab picks up new profile data
       queryClient.invalidateQueries({ queryKey: ["company"] });
-      setMsg({ type: "success", text: "数据已刷新" });
-      setTimeout(() => setMsg(null), 4000);
+      if (body.warnings?.length > 0) {
+        setMsg({ type: "error", text: `数据已刷新（${body.warnings[0]}）` });
+      } else {
+        setMsg({ type: "success", text: `数据已刷新（${body.ingested || 0} 条）` });
+      }
+      setTimeout(() => setMsg(null), 5000);
     } catch (e: any) {
       setMsg({ type: "error", text: e.message });
       setTimeout(() => setMsg(null), 4000);

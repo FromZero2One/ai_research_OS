@@ -69,7 +69,7 @@ class MarketService:
 
         # Non-A (HK stocks like 1810) → try fetch via akshare
         try:
-            fetched = await self._fetch_akshare(ticker)
+            fetched, _warns = await self._fetch_akshare(ticker)
             if fetched:
                 # Store to PG for next time
                 await self.upsert_prices(ticker, fetched)
@@ -276,16 +276,20 @@ class MarketService:
 
     async def fetch_and_store_prices(
         self, ticker: str, provider: str = "akshare"
-    ) -> int:
-        """Fetch prices via akshare 3-layer chain and store in PostgreSQL."""
+    ) -> tuple[int, list[str]]:
+        """Fetch prices via akshare 3-layer chain and store in PostgreSQL.
+
+        Returns (count, warnings).
+        """
         try:
-            prices = await self._fetch_akshare(ticker)
+            prices, warnings = await self._fetch_akshare(ticker)
         except Exception as e:
             raise ValidationError(
                 f"Failed to fetch prices for {ticker}: {e}"
             )
 
-        return await self.upsert_prices(ticker, prices)
+        count = await self.upsert_prices(ticker, prices)
+        return count, warnings
 
     async def upsert_prices(
         self, ticker: str, prices: list[dict]
@@ -403,8 +407,13 @@ class MarketService:
 
         return await asyncio.to_thread(_fetch)
 
-    async def _fetch_akshare(self, ticker: str) -> list[dict]:
-        """Fetch A-stock data — 4-layer fallback chain."""
+    async def _fetch_akshare(self, ticker: str) -> tuple[list[dict], list[str]]:
+        """Fetch A-stock data — 3-layer fallback chain.
+
+        Returns (prices, warnings) where warnings lists why each layer failed.
+        """
+        warnings: list[str] = []
+
         # Layer 1: akshare MySQL (fast, local)
         try:
             mysql = await self._get_mysql()
@@ -418,30 +427,34 @@ class MarketService:
                     "low": r.low,
                     "close": r.close,
                     "volume": r.volume or 0,
-                } for r in rows]
-        except Exception:
-            pass
+                } for r in rows], []
+        except Exception as e:
+            warnings.append(f"Layer 1 (MySQL): {e}")
 
         # Layer 2: local akshare (subprocess → uv run → akshare_mcp)
         try:
             rows = await self._fetch_akshare_local(ticker)
             if rows:
                 logger.info("  [akshare] Layer 2 local: %d rows for %s", len(rows), ticker)
-                return rows
+                return rows, []
         except Exception as e:
-            logger.warning("  [akshare] Layer 2 failed: %s", e)
+            msg = f"Layer 2 (Tencent/Sina): {e}"
+            warnings.append(msg)
+            logger.warning("  [akshare] %s", msg)
 
         # Layer 3: cloud MCP (HTTP → 8.137.104.120:8088)
         try:
             rows = await self._fetch_akshare_cloud(ticker)
             if rows:
                 logger.info("  [akshare] Layer 3 cloud: %d rows for %s", len(rows), ticker)
-                return rows
+                return rows, []
         except Exception as e:
-            logger.warning("  [akshare] Layer 3 failed: %s", e)
+            msg = f"Layer 3 (cloud MCP): {e}"
+            warnings.append(msg)
+            logger.warning("  [akshare] %s", msg)
 
         logger.warning("  [akshare] All 3 layers failed for %s", ticker)
-        return []
+        return [], warnings
 
     # ── HK-stock financials (via eastmoney HK API) ─────────────────────
 

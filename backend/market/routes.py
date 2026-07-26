@@ -29,7 +29,7 @@ async def get_prices(
     """
     svc = MarketService(db)
     prices = await svc.get_prices(ticker, start_date, end_date, limit)
-    return {"ticker": ticker.upper(), "count": len(prices), "prices": prices}
+    return {"ticker": ticker.upper(), "count": len(prices), "prices": prices, "source": "postgresql"}
 
 
 @router.post("/prices/{ticker}/ingest", status_code=201)
@@ -41,8 +41,11 @@ async def ingest_prices(
     Stores result in PostgreSQL for fast reads.
     """
     svc = MarketService(db)
-    count = await svc.fetch_and_store_prices(ticker)
-    return {"ticker": ticker.upper(), "ingested": count, "provider": "akshare"}
+    count, warnings = await svc.fetch_and_store_prices(ticker)
+    result = {"ticker": ticker.upper(), "ingested": count}
+    if warnings:
+        result["warnings"] = warnings
+    return result
 
 
 @router.post("/financials/{ticker}/ingest", status_code=201)
