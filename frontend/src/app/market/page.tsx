@@ -394,7 +394,7 @@ export default function MarketPage() {
             暂无数据 — 请尝试点公司页的「↻ 刷新」拉取行情
           </div>
         ) : (
-          <StockChart prices={chartPrices} height={420} showVolume={true} />
+          <StockChart key={`${ticker}-${period}`} prices={chartPrices} height={420} showVolume={true} />
         )}
       </div>
 
