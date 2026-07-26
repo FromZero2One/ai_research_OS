@@ -57,56 +57,93 @@ Keep it under 500 words. Be specific with numbers and facts."""
 
 
 async def morning_brief() -> dict:
-    """Daily: Generate morning brief using AI with latest data."""
+    """Daily: Generate morning brief using AI with watchlist + price data."""
     from core.adapters.llm import create_llm
     from core.database import async_session_factory
     from core.interfaces import LLMMessage
     from sqlalchemy import desc, select
+    from sqlalchemy.orm import selectinload
 
     async with async_session_factory() as session:
-        # 1. Gather recent market data
-        from market.models import StockPrice
-
-        result = await session.execute(
-            select(StockPrice).order_by(desc(StockPrice.date)).limit(5)
+        # 1. Collect watchlist tickers (user's tracked stocks)
+        from portfolio.models import Watchlist
+        watchlist_tickers: list[str] = []
+        wl_result = await session.execute(
+            select(Watchlist).options(selectinload(Watchlist.items))
         )
-        recent_prices = result.scalars().all()
+        for wl in wl_result.scalars().all():
+            watchlist_tickers.extend(item.ticker for item in wl.items)
+        watchlist_tickers = list(set(watchlist_tickers))  # dedup
 
-        market_summary = "Recent prices:\n"
-        tickers_seen = set()
-        for p in recent_prices:
-            if p.ticker not in tickers_seen:
-                market_summary += f"  {p.ticker}: Close={p.close:.2f} ({p.date})\n"
-                tickers_seen.add(p.ticker)
+        # 2. Fetch latest 2 prices per watchlist stock (for change %)
+        from market.models import StockPrice
+        from company.models import Company
 
-        # 2. Gather open research sessions
+        market_lines: list[str] = []
+        for ticker in watchlist_tickers[:15]:  # max 15 stocks
+            prices = await session.execute(
+                select(StockPrice)
+                .where(StockPrice.ticker == ticker)
+                .order_by(desc(StockPrice.date))
+                .limit(2)
+            )
+            rows = list(prices.scalars().all())
+            if not rows:
+                continue
+
+            # Get company name
+            comp = await session.execute(
+                select(Company.name).where(Company.ticker == ticker).limit(1)
+            )
+            cname = comp.scalar_one_or_none() or ticker
+
+            latest = rows[0]
+            change_str = ""
+            if len(rows) >= 2:
+                prev = rows[1].close
+                if prev:
+                    chg = ((latest.close - prev) / prev) * 100
+                    change_str = f" ({chg:+.2f}%)"
+
+            market_lines.append(f"  {ticker} ({cname}): {latest.close:.2f}{change_str}")
+
+        market_summary = "Watchlist prices:\n" + "\n".join(market_lines) if market_lines else "No watchlist data."
+
+        # 3. Gather open research sessions
         from research.models import ResearchSession
-
         result = await session.execute(
             select(ResearchSession).where(
                 ResearchSession.status.in_(["draft", "researching", "reviewing"])
             ).order_by(ResearchSession.created_at.desc()).limit(10)
         )
-        open_sessions = result.scalars().all()
+        open_sessions = list(result.scalars().all())
 
-        session_summary = "\nOpen research:\n"
+        session_lines: list[str] = []
         for s in open_sessions:
-            session_summary += f"  [{s.status}] {s.title}\n"
+            # Get company name
+            cname = ""
+            if s.company_id:
+                comp = await session.execute(
+                    select(Company.name).where(Company.id == s.company_id).limit(1)
+                )
+                cname = f" ({comp.scalar_one_or_none() or ''})"
+            session_lines.append(f"  [{s.status}] {s.title}{cname}")
+        session_summary = "\nResearch in progress:\n" + "\n".join(session_lines) if session_lines else ""
 
-        # 3. Call LLM
+        # 4. Call LLM
         llm = create_llm()
+        user_content = f"{market_summary}\n{session_summary}" if session_summary else market_summary
         messages = [
             LLMMessage(role="system", content=MORNING_BRIEF_SYSTEM_PROMPT),
-            LLMMessage(role="user", content=f"{market_summary}\n{session_summary}"),
+            LLMMessage(role="user", content=user_content),
         ]
         response = await llm.generate(messages=messages, temperature=0.3, max_tokens=2048)
-
-        # 4. Store brief (in memory / could save to DB)
         brief_content = response.content
 
-        logger.info("Morning brief generated (%d chars)", len(brief_content))
+        logger.info("Morning brief generated (%d chars, %d stocks, %d open research)",
+                     len(brief_content), len(market_lines), len(open_sessions))
 
-        # Store in event log
+        # 5. Store in event log
         from core.event_service import EventLogger
         event_logger = EventLogger(session)
         await event_logger.record(
@@ -114,12 +151,19 @@ async def morning_brief() -> dict:
             event_type="morning_brief.generated",
             entity_type="brief",
             entity_id="daily",
-            payload={"content": brief_content[:2000], "char_count": len(brief_content)},
+            payload={
+                "content": brief_content[:2000],
+                "char_count": len(brief_content),
+                "stocks_covered": len(market_lines),
+                "open_research": len(open_sessions),
+            },
         )
         await session.commit()
 
         return {
             "status": "ok",
             "char_count": len(brief_content),
+            "stocks_covered": len(market_lines),
+            "open_research": len(open_sessions),
             "preview": brief_content[:200],
         }
