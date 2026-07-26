@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.adapters.akshare_mysql import AkshareMySQLAdapter
 from core.event_service import EventLogger
 from core.exceptions import ValidationError
+from core.logging import logger
 from market.models import FinancialMetric, StockPrice
 
 
@@ -221,17 +222,11 @@ class MarketService:
     # ── External data ingestion (yfinance, kept as fallback) ──────
 
     async def fetch_and_store_prices(
-        self, ticker: str, provider: str = "yfinance"
+        self, ticker: str, provider: str = "akshare"
     ) -> int:
-        """Fetch prices from external provider, store in DB.
-
-        Only used for US stocks that aren't in the MySQL database.
-        """
+        """Fetch prices via akshare 3-layer chain and store in PostgreSQL."""
         try:
-            if provider == "yfinance":
-                prices = await self._fetch_yfinance(ticker)
-            else:
-                prices = await self._fetch_akshare(ticker)
+            prices = await self._fetch_akshare(ticker)
         except Exception as e:
             raise ValidationError(
                 f"Failed to fetch prices for {ticker}: {e}"
@@ -297,7 +292,11 @@ class MarketService:
                           "ftp_proxy", "FTP_PROXY", "all_proxy", "ALL_PROXY"):
                 os.environ.pop(_var, None)
             stock = yf.Ticker(yf_ticker)
-            hist = stock.history(period="1y")
+            # Use start/end dates instead of period to avoid cache flakiness
+            from datetime import date as _d, timedelta as _td
+            end = _d.today()
+            start = end - _td(days=400)
+            hist = stock.history(start=start.isoformat(), end=end.isoformat())
             results = []
             for idx, row in hist.iterrows():
                 close = float(row["Close"])
@@ -316,12 +315,13 @@ class MarketService:
         return await asyncio.to_thread(_fetch)
 
     async def _fetch_akshare(self, ticker: str) -> list[dict]:
-        """Fetch A-stock data — try MySQL adapter first, fall back to yfinance."""
+        """Fetch A-stock data — 4-layer fallback chain."""
         # Layer 1: akshare MySQL (fast, local)
         try:
             mysql = await self._get_mysql()
             rows = await mysql.get_prices(ticker, limit=520)
             if rows:
+                logger.info("  [akshare] Layer 1 MySQL: %d rows for %s", len(rows), ticker)
                 return [{
                     "date": r.date,
                     "open": r.open,
@@ -333,5 +333,167 @@ class MarketService:
         except Exception:
             pass
 
-        # Layer 2: fall back to yfinance (A-stock with .SS/.SZ suffix)
-        return await self._fetch_yfinance(ticker)
+        # Layer 2: local akshare (subprocess → uv run → akshare_mcp)
+        try:
+            rows = await self._fetch_akshare_local(ticker)
+            if rows:
+                logger.info("  [akshare] Layer 2 local: %d rows for %s", len(rows), ticker)
+                return rows
+        except Exception as e:
+            logger.warning("  [akshare] Layer 2 failed: %s", e)
+
+        # Layer 3: cloud MCP (HTTP → 8.137.104.120:8088)
+        try:
+            rows = await self._fetch_akshare_cloud(ticker)
+            if rows:
+                logger.info("  [akshare] Layer 3 cloud: %d rows for %s", len(rows), ticker)
+                return rows
+        except Exception as e:
+            logger.warning("  [akshare] Layer 3 failed: %s", e)
+
+        logger.warning("  [akshare] All 3 layers failed for %s", ticker)
+        return []
+
+    # ── Layer 2: local akshare (subprocess) ────────────────────────────
+
+    @staticmethod
+    def _run_akshare(code: str) -> str | None:
+        """Run akshare Python code in akshare_mcp venv and return stdout."""
+        import os as _os, subprocess as _sp
+        AKSHARE_MCP_DIR = _os.getenv("AKSHARE_MCP_DIR", "/home/wsm/codes/akshare_mcp")
+        env = _os.environ.copy()
+        for v in ("http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY",
+                   "ftp_proxy", "FTP_PROXY", "all_proxy", "ALL_PROXY"):
+            env.pop(v, None)
+        env["no_proxy"] = "localhost,127.0.0.0/8,::1"
+        try:
+            result = _sp.run(
+                ["uv", "run", "--directory", AKSHARE_MCP_DIR, "python", "-c", code],
+                capture_output=True, text=True, timeout=60, env=env,
+            )
+            if result.returncode != 0:
+                return None
+            return result.stdout
+        except Exception:
+            return None
+
+    async def _fetch_akshare_local(self, ticker: str) -> list[dict]:
+        """Layer 2: run akshare locally via subprocess to get K-line data."""
+        import asyncio as _asyncio
+        import json as _json
+        from datetime import date as _date
+
+        code = f"""
+import json, sys
+import akshare as ak
+try:
+    df = ak.stock_zh_a_hist(symbol='{ticker}', period='daily')
+    if df is None or df.empty:
+        print("__R__:[]")
+    else:
+        rows = []
+        for _, row in df.iterrows():
+            rows.append({{
+                "date": str(row["日期"]),
+                "open": float(row["开盘"]) if row["开盘"] == row["开盘"] else None,
+                "high": float(row["最高"]) if row["最高"] == row["最高"] else None,
+                "low": float(row["最低"]) if row["最低"] == row["最低"] else None,
+                "close": float(row["收盘"]) if row["收盘"] == row["收盘"] else None,
+                "volume": float(row.get("成交量", 0) or 0),
+            }})
+        print("__R__:" + json.dumps(rows, ensure_ascii=False))
+except Exception as e:
+    print("__E__:" + str(e), file=sys.stderr)
+"""
+        stdout = await _asyncio.to_thread(self._run_akshare, code)
+        if not stdout:
+            return []
+        for line in stdout.splitlines():
+            if line.startswith("__R__:"):
+                data = _json.loads(line[6:])
+                # Convert date strings back to date objects
+                for r in data:
+                    r["date"] = r["date"][:10] if "T" in str(r["date"]) else str(r["date"])
+                    r["date"] = _date.fromisoformat(r["date"])
+                return data
+        return []
+
+    # ── Layer 3: cloud MCP (HTTP) ─────────────────────────────────────
+
+    async def _fetch_akshare_cloud(self, ticker: str) -> list[dict]:
+        """Layer 3: call cloud MCP server's stock_zh_a_hist tool."""
+        import httpx
+        from mcp import ClientSession
+        from mcp.client.streamable_http import streamable_http_client
+        from mcp.types import TextContent
+        from datetime import date as _date
+
+        CLOUD_MCP_URL = "http://8.137.104.120:8088/mcp"
+
+        http_client = httpx.AsyncClient(verify=False, timeout=30)
+        try:
+            async with streamable_http_client(CLOUD_MCP_URL, http_client=http_client) as (read, write, _get_id):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    result = await session.call_tool("stock_zh_a_hist", {
+                        "symbol": ticker,
+                        "period": "daily",
+                        "adjust": "",
+                    })
+                    rows = []
+                    for c in result.content:
+                        if isinstance(c, TextContent):
+                            rows.extend(self._parse_mcp_table(c.text))
+                    if not rows:
+                        return []
+
+                    # Convert to upsert_prices format
+                    prices = []
+                    for r in rows:
+                        date_str = r.get("日期", "")
+                        if not date_str:
+                            continue
+                        prices.append({
+                            "date": _date.fromisoformat(str(date_str)[:10]),
+                            "open": self._to_float(r.get("开盘")),
+                            "high": self._to_float(r.get("最高")),
+                            "low": self._to_float(r.get("最低")),
+                            "close": self._to_float(r.get("收盘")),
+                            "volume": self._to_float(r.get("成交量", 0)) or 0,
+                        })
+                    return prices
+        finally:
+            await http_client.aclose()
+
+    @staticmethod
+    def _to_float(v) -> float | None:
+        if v is None:
+            return None
+        try:
+            return float(v)
+        except (ValueError, TypeError):
+            return None
+
+    @staticmethod
+    def _parse_mcp_table(text: str) -> list[dict]:
+        """Parse pandas DataFrame text table → list[dict]."""
+        lines = text.strip().split("\n")
+        if len(lines) < 2:
+            return []
+        header_line = lines[0]
+        headers = [h.strip() for h in header_line.split("  ") if h.strip()]
+        results = []
+        for line in lines[1:]:
+            if not line.strip():
+                continue
+            parts = [p for p in line.split("  ") if p.strip()]
+            if parts and parts[0].isdigit():
+                parts = parts[1:]
+            if len(parts) == len(headers):
+                results.append(dict(zip(headers, parts)))
+            elif len(parts) > 0:
+                row = {}
+                for i, h in enumerate(headers):
+                    row[h] = parts[i] if i < len(parts) else ""
+                results.append(row)
+        return results

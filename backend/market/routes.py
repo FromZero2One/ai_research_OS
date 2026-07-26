@@ -35,17 +35,14 @@ async def get_prices(
 @router.post("/prices/{ticker}/ingest", status_code=201)
 async def ingest_prices(
     ticker: str,
-    provider: str = Query("yfinance", pattern="^(yfinance|akshare)$"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Ingest prices from yfinance/AKShare into PostgreSQL.
-
-    Note: A-stocks now use MySQL adapter directly. This endpoint is
-    mainly for US stocks or explicit data fetching.
+    """Ingest prices via akshare 3-layer chain (MySQL → local → cloud).
+    Stores result in PostgreSQL for fast reads.
     """
     svc = MarketService(db)
-    count = await svc.fetch_and_store_prices(ticker, provider)
-    return {"ticker": ticker.upper(), "ingested": count, "provider": provider}
+    count = await svc.fetch_and_store_prices(ticker)
+    return {"ticker": ticker.upper(), "ingested": count, "provider": "akshare"}
 
 
 @router.get("/financials/{ticker}")
