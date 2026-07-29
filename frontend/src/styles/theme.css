@@ -1,0 +1,123 @@
+:root {
+  --bg-primary: #0f1117;
+  --bg-secondary: #1a1d28;
+  --bg-tertiary: #232736;
+  --text-primary: #e8eaed;
+  --text-secondary: #9aa0a6;
+  --accent: #4f8cff;
+  --accent-hover: #3a7bf5;
+  --border: #2d3140;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+}
+
+html.dark {
+  --el-bg-color: var(--bg-primary);
+  --el-bg-color-overlay: var(--bg-secondary);
+  --el-border-color: var(--border);
+  --el-border-color-light: var(--border);
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-secondary);
+  --el-text-color-secondary: var(--text-secondary);
+  --el-color-primary: var(--accent);
+  --el-color-primary-light-3: #6ba3ff;
+  --el-color-primary-light-5: #8fb9ff;
+  --el-color-primary-dark-2: #3a7bf5;
+  --el-color-success: var(--success);
+  --el-color-warning: var(--warning);
+  --el-color-danger: var(--danger);
+  --el-bg-color-page: var(--bg-primary);
+  --el-fill-color: var(--bg-tertiary);
+  --el-fill-color-light: var(--bg-secondary);
+  --el-fill-color-lighter: var(--bg-tertiary);
+  --el-mask-color: rgba(0, 0, 0, 0.6);
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.el-card {
+  --el-card-border-color: var(--border);
+  --el-card-bg-color: var(--bg-secondary);
+}
+
+.el-button {
+  --el-button-bg-color: var(--accent);
+  --el-button-border-color: var(--accent);
+  --el-button-hover-bg-color: var(--accent-hover);
+  --el-button-hover-border-color: var(--accent-hover);
+  --el-button-text-color: #fff;
+}
+
+.el-button--primary {
+  --el-button-bg-color: var(--accent);
+  --el-button-border-color: var(--accent);
+  --el-button-hover-bg-color: var(--accent-hover);
+}
+
+.el-button--success {
+  --el-button-bg-color: var(--success);
+  --el-button-border-color: var(--success);
+  --el-button-hover-bg-color: #2bc088;
+}
+
+.el-button--danger {
+  --el-button-bg-color: var(--danger);
+  --el-button-border-color: var(--danger);
+}
+
+.el-table {
+  --el-table-bg-color: var(--bg-secondary);
+  --el-table-tr-bg-color: var(--bg-secondary);
+  --el-table-header-bg-color: var(--bg-secondary);
+  --el-table-border-color: var(--border);
+  --el-table-row-hover-bg-color: var(--bg-tertiary);
+  --el-table-text-color: var(--text-primary);
+  --el-table-header-text-color: var(--text-secondary);
+}
+
+.el-input__wrapper,
+.el-select .el-input__wrapper,
+.el-textarea__inner {
+  background-color: var(--bg-tertiary) !important;
+  border-color: var(--border) !important;
+  box-shadow: none !important;
+}
+
+.el-input__inner {
+  color: var(--text-primary) !important;
+}
+
+.el-dialog {
+  --el-dialog-bg-color: var(--bg-secondary);
+  --el-dialog-border-color: var(--border);
+}
+
+.el-menu {
+  --el-menu-bg-color: transparent;
+  --el-menu-text-color: var(--text-secondary);
+  --el-menu-active-color: var(--accent);
+  --el-menu-hover-bg-color: var(--bg-tertiary);
+  --el-menu-border-color: var(--border);
+}
+
+.el-select-dropdown,
+.el-popper {
+  --el-bg-color-overlay: var(--bg-secondary);
+  --el-border-color-light: var(--border);
+}
+
+.el-tag {
+  --el-tag-bg-color: var(--bg-tertiary);
+  --el-tag-border-color: var(--border);
+  --el-tag-text-color: var(--text-secondary);
+}
+
+.el-empty__description p {
+  color: var(--text-secondary);
+}
