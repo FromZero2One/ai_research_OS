@@ -19,11 +19,11 @@ async def market_data_update() -> dict:
     For US stocks: data is already seeded; this is a placeholder for
     a future yfinance/API integration.
     """
-    from core.database import async_session_factory
-    from market.service import MarketService
+    from core.database import managed_session
+    from market.price_service import PriceService
 
-    async with async_session_factory() as session:
-        market = MarketService(session)
+    async with managed_session() as session:
+        market = PriceService(session)
 
         # Get all companies with tickers
         from sqlalchemy import select
@@ -100,6 +100,7 @@ except Exception as e:
                 return _json.loads(line[6:])
         return []
     except Exception:
+        logger.debug("akshare news subprocess failed")
         return []
 
 
@@ -127,12 +128,12 @@ async def morning_brief() -> dict:
     """Two-layer morning brief: overview + per-stock deep dives for focus stocks."""
     import json
     from core.adapters.llm import create_llm
-    from core.database import async_session_factory
+    from core.database import managed_session
     from core.interfaces import LLMMessage
     from sqlalchemy import desc, select
     from sqlalchemy.orm import selectinload
 
-    async with async_session_factory() as session:
+    async with managed_session() as session:
         from market.models import StockPrice
         from company.models import Company
         from portfolio.models import Watchlist
@@ -147,72 +148,130 @@ async def morning_brief() -> dict:
             watchlist_tickers.extend(item.ticker for item in wl.items)
         watchlist_tickers = list(set(watchlist_tickers))
 
-        # 2. Fetch price + research data for each stock (20 trading days ≈ 1 month)
-        stock_data: list[dict] = []
-        for ticker in watchlist_tickers[:20]:
-            prices = await session.execute(
-                select(StockPrice)
-                .where(StockPrice.ticker == ticker)
-                .order_by(desc(StockPrice.date))
-                .limit(20)
+        # 2. Batch query: fetch ALL prices, companies, and research data at once
+        active_tickers = watchlist_tickers[:20]
+        if not active_tickers:
+            brief_content = "关注列表为空，无法生成晨间简报。请先在投资组合中添加自选股。"
+            return _store_brief(session, brief_content, 0, 0)
+
+        # 2a. Prices: one query for all tickers (latest 20 days each using DISTINCT ON / row_number)
+        from sqlalchemy import text as sa_text
+
+        price_result = await session.execute(
+            sa_text(f"""
+                SELECT DISTINCT ON (sp.ticker) sp.id, sp.ticker, sp.date,
+                       sp.open, sp.high, sp.low, sp.close, sp.volume
+                FROM market.stock_prices sp
+                WHERE sp.ticker = ANY(:tickers)
+                ORDER BY sp.ticker, sp.date DESC
+            """),
+            {"tickers": active_tickers},
+        )
+        # Get latest price per ticker
+        latest_prices: dict[str, dict] = {}
+        for row in price_result.all():
+            latest_prices[row.ticker] = {
+                "close": row.close, "date": row.date,
+                "open": row.open, "high": row.high, "low": row.low,
+            }
+
+        # Get 20-day windows per ticker (one batch query)
+        all_price_rows = await session.execute(
+            sa_text(f"""
+                SELECT sp.ticker, sp.date, sp.close
+                FROM market.stock_prices sp
+                WHERE sp.ticker = ANY(:tickers)
+                ORDER BY sp.ticker, sp.date DESC
+            """),
+            {"tickers": active_tickers},
+        )
+        ticker_prices: dict[str, list[dict]] = {}
+        for row in all_price_rows.all():
+            ticker_prices.setdefault(row.ticker, []).append({
+                "date": row.date, "close": row.close,
+            })
+        # Trim to 20 per ticker
+        for t in ticker_prices:
+            ticker_prices[t] = ticker_prices[t][:20]
+
+        # 2b. Companies: one query
+        comp_result = await session.execute(
+            select(Company).where(Company.ticker.in_(active_tickers))
+        )
+        companies_by_ticker: dict[str, Company] = {
+            c.ticker: c for c in comp_result.scalars().all()
+        }
+
+        # 2c. Research sessions: one query per company (collect company_ids)
+        company_ids = [c.id for c in companies_by_ticker.values() if c.id]
+        # Latest research per company
+        research_last: dict[uuid.UUID, ResearchSession] = {}
+        if company_ids:
+            rs_result = await session.execute(
+                select(ResearchSession)
+                .where(ResearchSession.company_id.in_(company_ids))
+                .order_by(ResearchSession.company_id, desc(ResearchSession.created_at))
             )
-            rows = list(prices.scalars().all())
-            if not rows:
+            for rs in rs_result.scalars().all():
+                if rs.company_id not in research_last:
+                    research_last[rs.company_id] = rs
+
+        # Open research count per company
+        open_count_map: dict[uuid.UUID, int] = {}
+        if company_ids:
+            from sqlalchemy import func as sa_func
+            count_result = await session.execute(
+                select(ResearchSession.company_id, sa_func.count(ResearchSession.id))
+                .where(
+                    ResearchSession.company_id.in_(company_ids),
+                    ResearchSession.status.in_(["draft", "researching", "reviewing"]),
+                )
+                .group_by(ResearchSession.company_id)
+            )
+            for cid, cnt in count_result.all():
+                open_count_map[cid] = cnt
+
+        # 3. Assemble stock_data from batch results
+        stock_data: list[dict] = []
+        for ticker in active_tickers:
+            company = companies_by_ticker.get(ticker)
+            cname = company.name if company else ticker
+            prices_20 = ticker_prices.get(ticker, [])
+            if not prices_20:
                 continue
 
-            comp = await session.execute(
-                select(Company).where(Company.ticker == ticker).limit(1)
-            )
-            company = comp.scalar_one_or_none()
-            cname = company.name if company else ticker
+            latest = prices_20[0]
+            prev = prices_20[1] if len(prices_20) >= 2 else None
+            oldest = prices_20[-1] if len(prices_20) >= 20 else None
 
-            # Price change (latest vs previous day)
-            latest = rows[0]
             change_pct = None
-            if len(rows) >= 2 and rows[1].close:
-                change_pct = round(((latest.close - rows[1].close) / rows[1].close) * 100, 2)
+            if prev and prev["close"]:
+                change_pct = round(((latest["close"] - prev["close"]) / prev["close"]) * 100, 2)
 
-            # Monthly trend (oldest in 20 days vs latest)
             monthly_trend = None
-            if len(rows) >= 20 and rows[-1].close:
-                monthly_trend = round(((latest.close - rows[-1].close) / rows[-1].close) * 100, 2)
+            if oldest and oldest["close"]:
+                monthly_trend = round(((latest["close"] - oldest["close"]) / oldest["close"]) * 100, 2)
 
-            # Days since last research
             days_since = None
-            if company:
-                rs = await session.execute(
-                    select(ResearchSession)
-                    .where(ResearchSession.company_id == company.id)
-                    .order_by(desc(ResearchSession.created_at))
-                    .limit(1)
-                )
-                last = rs.scalar_one_or_none()
-                if last and last.created_at:
-                    days_since = (datetime.now(timezone.utc) - last.created_at).days
-
-            # Open research sessions for this company
             open_count = 0
-            if company:
-                rc = await session.execute(
-                    select(ResearchSession).where(
-                        ResearchSession.company_id == company.id,
-                        ResearchSession.status.in_(["draft", "researching", "reviewing"]),
-                    )
-                )
-                open_count = len(list(rc.scalars().all()))
+            if company and company.id:
+                last_rs = research_last.get(company.id)
+                if last_rs and last_rs.created_at:
+                    days_since = (datetime.now(timezone.utc) - last_rs.created_at).days
+                open_count = open_count_map.get(company.id, 0)
 
             # Fetch latest news headlines via akshare
             news_headlines: list[str] = []
             try:
                 ns = await _fetch_news_akshare(ticker)
-                news_headlines = [n["title"] for n in ns[:3]]  # top 3
+                news_headlines = [n["title"] for n in ns[:3]]
             except Exception:
-                pass
+                logger.debug("No news for %s (non-critical)", ticker)
 
             stock_data.append({
                 "ticker": ticker,
                 "name": cname,
-                "price": latest.close,
+                "price": latest["close"],
                 "change_pct": change_pct,
                 "monthly_trend": monthly_trend,
                 "days_since_research": days_since,
@@ -251,6 +310,7 @@ async def morning_brief() -> dict:
             )
             overview = resp.content
         except Exception:
+            logger.debug("Morning brief overview generation failed, using fallback")
             overview = f"关注 {len(stock_data)} 只股票。" + (
                 f"上涨 {sum(1 for s in stock_data if s['change_pct'] and s['change_pct'] > 0)} 只，"
                 f"下跌 {sum(1 for s in stock_data if s['change_pct'] and s['change_pct'] < 0)} 只。"
@@ -282,6 +342,7 @@ async def morning_brief() -> dict:
                 )
                 stock_briefs.append({"ticker": s['ticker'], "name": s['name'], "brief": resp.content})
             except Exception:
+                logger.debug("Stock brief LLM call failed for %s (non-critical)", s['ticker'])
                 pass
 
         # 5. Assemble final brief
@@ -319,16 +380,16 @@ async def morning_brief() -> dict:
 
 
 async def _store_brief(session, content: str, stocks: int, focus: int) -> dict:
-    """Store brief in EventLog and return response."""
-    from core.event_service import EventLogger
-    event_logger = EventLogger(session)
-    await event_logger.record(
-        source="scheduler",
-        event_type="morning_brief.generated",
-        entity_type="brief",
-        entity_id="daily",
-        payload={"content": content[:3000], "char_count": len(content), "stocks": stocks, "focus_stocks": focus},
+    """Store brief in MorningBrief table and return response."""
+    from core.morning_brief import MorningBrief
+
+    brief = MorningBrief(
+        content=content,
+        char_count=len(content),
+        stocks_covered=stocks,
+        focus_stocks=focus,
     )
+    session.add(brief)
     await session.commit()
     return {
         "status": "ok", "char_count": len(content),

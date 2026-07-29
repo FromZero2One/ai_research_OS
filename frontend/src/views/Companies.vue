@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQueryClient } from '@tanstack/vue-query'
 import { Search } from '@element-plus/icons-vue'
-import { useCompanies, useStockSearch } from '@/stores/api'
+import { useCompanies } from '@/stores/api'
+import StockSearch from '@/components/StockSearch.vue'
 
 const queryClient = useQueryClient()
 const router = useRouter()
@@ -16,9 +17,6 @@ const newName = ref('')
 const newTicker = ref('')
 const newExchange = ref('')
 const newTags = ref('')
-const searchQ = ref('')
-const showSearchDropdown = ref(false)
-const searchRef = ref<HTMLDivElement | null>(null)
 const editingId = ref<string | null>(null)
 const editName = ref('')
 const editTicker = ref('')
@@ -28,17 +26,10 @@ const deletingId = ref<string | null>(null)
 const deleteDialogVisible = computed({ get: () => deletingId.value !== null, set: (v: boolean) => { if (!v) deletingId.value = null } })
 const msg = ref<{ type: 'success' | 'error'; text: string } | null>(null)
 
-const { data: searchData } = useStockSearch(searchQ)
-const searchResults = computed(() => searchData.value?.results || [])
-
 function showMsg(type: 'success' | 'error', text: string) { msg.value = { type, text }; setTimeout(() => msg.value = null, 4000) }
 
-function onClick(e: MouseEvent) { if (searchRef.value && !searchRef.value.contains(e.target as Node)) showSearchDropdown.value = false }
-onMounted(() => document.addEventListener('mousedown', onClick))
-onUnmounted(() => document.removeEventListener('mousedown', onClick))
-
-function handleSelectStock(symbol: string, name: string) {
-  newTicker.value = symbol; newName.value = name; searchQ.value = ''; showSearchDropdown.value = false
+function onStockSelect(item: { symbol: string; name: string }) {
+  newTicker.value = item.symbol; newName.value = item.name
   if (symbol.startsWith('6')) newExchange.value = 'SSE'
   else if (symbol.match(/^\d/)) newExchange.value = 'SZSE'
   else if (symbol.match(/^0\d{4}HK/)) newExchange.value = 'HKEX'
@@ -51,7 +42,7 @@ async function handleCreate() {
     const resp = await fetch('/api/companies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newName.value, ticker: newTicker.value.toUpperCase(), exchange: newExchange.value, tags: newTags.value.split(',').map((t) => t.trim()).filter(Boolean) }) })
     const body = await resp.json()
     if (!resp.ok) { showMsg('error', (body?.detail || '').includes('already exists') ? `❌ 股票代码 ${newTicker.value.toUpperCase()} 已存在` : typeof body?.detail === 'string' ? body.detail : '创建失败'); return }
-    showNew.value = false; newName.value = ''; newTicker.value = ''; newExchange.value = ''; newTags.value = ''; searchQ.value = ''
+    showNew.value = false; newName.value = ''; newTicker.value = ''; newExchange.value = ''; newTags.value = ''
     refresh()
     fetch(`/api/market/profile/${newTicker.value}/ingest`, { method: 'POST' }).catch(() => {})
     fetch(`/api/market/financials/${newTicker.value}/ingest`, { method: 'POST' }).catch(() => {})
@@ -87,21 +78,13 @@ async function handleDelete(id: string) {
     </div>
 
     <div v-if="showNew" class="new-form">
-      <div ref="searchRef" class="search-wrap">
-        <el-input v-model="searchQ" placeholder="搜索股票代码或名称..." @focus="showSearchDropdown = true" @input="showSearchDropdown = true" />
-        <div v-if="showSearchDropdown && searchQ" class="search-dropdown">
-          <div v-if="!searchResults.length" class="search-empty">无匹配结果</div>
-          <button v-for="r in searchResults" :key="r.symbol" class="search-item" @click="handleSelectStock(r.symbol, r.name)">
-            <span class="search-symbol">{{ r.symbol }}</span><span v-if="r.name" class="search-name">{{ r.name }}</span>
-          </button>
-        </div>
-      </div>
-      <div v-if="newTicker" class="selected-stock"><span class="search-symbol">{{ newTicker }}</span><span>{{ newName }}</span><el-button text size="small" @click="newTicker = ''; newName = ''" style="color:var(--danger);margin-left:auto">✕</el-button></div>
+      <StockSearch @select="onStockSelect" />
+      <div v-if="newTicker" class="selected-stock"><span class="stock-code">{{ newTicker }}</span><span>{{ newName }}</span><el-button text size="small" @click="newTicker = ''; newName = ''" style="color:var(--danger);margin-left:auto">✕</el-button></div>
       <el-row :gutter="12">
         <el-col :span="12"><el-select v-model="newExchange" placeholder="选择交易所" style="width:100%"><el-option value="" label="交易所" disabled /><el-option value="SSE" label="SSE 上交所" /><el-option value="SZSE" label="SZSE 深交所" /><el-option value="NASDAQ" label="NASDAQ 纳斯达克" /><el-option value="NYSE" label="NYSE 纽交所" /><el-option value="HKEX" label="HKEX 港交所" /></el-select></el-col>
         <el-col :span="12"><el-input v-model="newTags" placeholder="标签(逗号分隔)" /></el-col>
       </el-row>
-      <div class="flex gap-2"><el-button @click="handleCreate" :disabled="!newName.trim() || !newTicker.trim()" type="success" size="small">创建</el-button><el-button @click="showNew = false; searchQ = ''; newTicker = ''; newName = ''" size="small">取消</el-button></div>
+      <div class="flex gap-2"><el-button @click="handleCreate" :disabled="!newName.trim() || !newTicker.trim()" type="success" size="small">创建</el-button><el-button @click="showNew = false; newTicker = ''; newName = ''" size="small">取消</el-button></div>
     </div>
 
     <el-input v-model="query" placeholder="搜索公司名称或股票代码..." clearable :prefix-icon="Search" />
@@ -146,14 +129,8 @@ async function handleDelete(id: string) {
 .msg-success { background: rgba(52,211,153,0.1); color: var(--success); border: 1px solid rgba(52,211,153,0.2); }
 .msg-error { background: rgba(248,113,113,0.1); color: var(--danger); border: 1px solid rgba(248,113,113,0.2); }
 .new-form { padding: 20px; border-radius: 12px; background: var(--bg-tertiary); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px; }
-.search-wrap { position: relative; }
-.search-dropdown { position: absolute; z-index: 10; width: 100%; margin-top: 4px; border-radius: 8px; background: var(--bg-secondary); border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.3); max-height: 192px; overflow-y: auto; }
-.search-empty { padding: 8px; text-align: center; color: var(--text-secondary); font-size: 14px; }
-.search-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 12px; text-align: left; background: none; border: none; cursor: pointer; font-size: 14px; }
-.search-item:hover { background: var(--bg-tertiary); }
-.search-symbol { font-family: monospace; color: var(--accent); }
-.search-name { color: var(--text-primary); }
 .selected-stock { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; background: var(--bg-secondary); font-size: 14px; }
+.selected-stock .stock-code { font-family: monospace; color: var(--accent); }
 .loading-state { text-align: center; padding: 48px 0; color: var(--text-secondary); }
 .company-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .company-card { padding: 20px; border-radius: 12px; background: var(--bg-secondary); border: 1px solid var(--border); position: relative; }

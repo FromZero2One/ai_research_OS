@@ -8,6 +8,7 @@ Outputs observations stored in EventLog that feed:
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 
 from core.logging import logger
@@ -26,8 +27,7 @@ async def run_observation_cycle() -> dict:
     Called by scheduler (daily) or manually via API.
     Returns summary of observations generated.
     """
-    from core.database import async_session_factory
-    from core.event_service import EventLogger
+    from core.database import managed_session
     from sqlalchemy import desc, select
     from sqlalchemy.orm import selectinload
 
@@ -36,7 +36,7 @@ async def run_observation_cycle() -> dict:
     from portfolio.models import Watchlist, WatchlistItem
     from research.models import ResearchSession
 
-    async with async_session_factory() as session:
+    async with managed_session() as session:
         event_logger = EventLogger(session)
         observations = []
 
@@ -56,27 +56,74 @@ async def run_observation_cycle() -> dict:
 
         logger.info("Observation: scanning %d watchlist items", len(all_items))
 
+        # ── Batch preload: resolve all tickers → companies ────────────
+        tickers = list({item.ticker for item in all_items})
+        companies_result = await session.execute(
+            select(Company).where(Company.ticker.in_(tickers))
+        )
+        companies_by_ticker: dict[str, Company] = {
+            c.ticker: c for c in companies_result.scalars().all()
+        }
+
+        # ── Batch preload: latest 2 prices per ticker ─────────────────
+        from sqlalchemy import text as sa_text
+
+        prices_result = await session.execute(
+            sa_text(f"""
+                SELECT p.ticker, p.date, p.close
+                FROM market.stock_prices p
+                WHERE p.ticker = ANY(:tickers)
+                ORDER BY p.ticker, p.date DESC
+            """),
+            {"tickers": tickers},
+        )
+        ticker_prices: dict[str, list[dict]] = {}
+        for row in prices_result.all():
+            ticker_prices.setdefault(row.ticker, []).append(
+                {"date": row.date, "close": row.close}
+            )
+
+        # ── Batch preload: latest research per company ────────────────
+        company_ids = [c.id for c in companies_by_ticker.values() if c.id]
+        latest_research_by_company: dict[uuid.UUID, ResearchSession] = {}
+        if company_ids:
+            rs_result = await session.execute(
+                select(ResearchSession)
+                .where(ResearchSession.company_id.in_(company_ids))
+                .order_by(ResearchSession.company_id, desc(ResearchSession.created_at))
+            )
+            for rs in rs_result.scalars().all():
+                if rs.company_id not in latest_research_by_company:
+                    latest_research_by_company[rs.company_id] = rs
+
+        # ── Batch preload: sectors → companies in same sector ─────────
+        sectors: set[str] = set()
+        for c in companies_by_ticker.values():
+            if c.sector:
+                sectors.add(c.sector)
+        sector_companies_map: dict[str, list[Company]] = {}
+        if sectors:
+            sc_result = await session.execute(
+                select(Company).where(
+                    Company.sector.in_(list(sectors)),
+                    Company.is_active == True,
+                )
+            )
+            for sc in sc_result.scalars().all():
+                if sc.sector:
+                    sector_companies_map.setdefault(sc.sector, []).append(sc)
+
+        # ── Main loop: all DB lookups are now dict lookups ────────────
         for item in all_items:
             ticker = item.ticker
             reasons: list[str] = []
 
-            # 1. Get company info
-            company_result = await session.execute(
-                select(Company).where(Company.ticker == ticker).limit(1)
-            )
-            company = company_result.scalar_one_or_none()
+            company = companies_by_ticker.get(ticker)
             if not company:
                 continue
 
-            # 2. Check last research date
-            research_result = await session.execute(
-                select(ResearchSession)
-                .where(ResearchSession.company_id == company.id)
-                .order_by(desc(ResearchSession.created_at))
-                .limit(1)
-            )
-            latest_research = research_result.scalar_one_or_none()
-
+            # Research freshness check
+            latest_research = latest_research_by_company.get(company.id) if company.id else None
             days_since_research = None
             if latest_research and latest_research.created_at:
                 delta = datetime.now(timezone.utc) - latest_research.created_at
@@ -88,48 +135,27 @@ async def run_observation_cycle() -> dict:
                 elif days_since_research >= OBSERVATION_THRESHOLDS["research_days_warning"]:
                     reasons.append(f"距上次研究 {days_since_research} 天（超过 {OBSERVATION_THRESHOLDS['research_days_warning']} 天）")
 
-            # 3. Check latest price change
-            price_result = await session.execute(
-                select(StockPrice)
-                .where(StockPrice.ticker == ticker)
-                .order_by(desc(StockPrice.date))
-                .limit(2)
-            )
-            prices = list(price_result.scalars().all())
-
+            # Price change check
+            prices_2 = ticker_prices.get(ticker, [])
             significant_move = False
-            if len(prices) >= 2:
-                recent_change = abs((prices[0].close - prices[1].close) / prices[1].close * 100)
-                if recent_change >= OBSERVATION_THRESHOLDS["price_change_pct"]:
-                    direction = "上涨" if prices[0].close > prices[1].close else "下跌"
-                    reasons.append(f"价格显著{direction} {recent_change:.1f}%")
-                    significant_move = True
+            if len(prices_2) >= 2:
+                p0, p1 = prices_2[0], prices_2[1]
+                if p1["close"]:
+                    recent_change = abs((p0["close"] - p1["close"]) / p1["close"] * 100)
+                    if recent_change >= OBSERVATION_THRESHOLDS["price_change_pct"]:
+                        direction = "上涨" if p0["close"] > p1["close"] else "下跌"
+                        reasons.append(f"价格显著{direction} {recent_change:.1f}%")
+                        significant_move = True
 
-            # 4. Sector-level alert: if one stock in sector moves, flag related stocks
+            # Sector-level alert
             if significant_move and company.sector:
-                sector_result = await session.execute(
-                    select(Company).where(
-                        Company.sector == company.sector,
-                        Company.ticker != ticker,
-                        Company.is_active == True,
-                    )
-                )
-                sector_companies = list(sector_result.scalars().all())
-                for sc in sector_companies[:3]:  # limit to 3
-                    # Check if this related stock already has an observation
-                    sc_price = await session.execute(
-                        select(StockPrice)
-                        .where(StockPrice.ticker == sc.ticker)
-                        .order_by(desc(StockPrice.date))
-                        .limit(1)
-                    )
-                    sc_latest = sc_price.scalar_one_or_none()
-                    if sc_latest and sc_latest.date == prices[0].date:
-                        # Already has recent data, skip
-                        pass
+                related = sector_companies_map.get(company.sector, [])
+                for sc in related[:3]:
+                    if sc.ticker == ticker:
+                        continue
                     reasons.append(f"同板块 「{company.sector}」 {ticker} 异动，建议关注 {sc.ticker}")
 
-            # 5. Store observation if any signals found
+            # Store observation if any signals found
             if reasons:
                 observations.append({
                     "ticker": ticker,
@@ -138,19 +164,20 @@ async def run_observation_cycle() -> dict:
                     "days_since_research": days_since_research,
                 })
 
-                await event_logger.record(
-                    source="observation",
-                    event_type="observation.generated",
-                    entity_type="watchlist_item",
-                    entity_id=str(item.id),
-                    payload={
-                        "ticker": ticker,
-                        "company_name": company.name,
-                        "reasons": reasons,
-                        "days_since_research": days_since_research,
-                        "status": "need_research" if days_since_research and days_since_research >= OBSERVATION_THRESHOLDS["research_days_critical"] else "attention",
-                    },
+                from core.observation import Observation
+
+                obs_status = (
+                    "need_research" if days_since_research
+                    and days_since_research >= OBSERVATION_THRESHOLDS["research_days_critical"]
+                    else "attention"
                 )
+                session.add(Observation(
+                    ticker=ticker,
+                    company_name=company.name,
+                    reasons="\n".join(reasons),
+                    status=obs_status,
+                    days_since_research=days_since_research,
+                ))
 
         await session.commit()
         logger.info("Observation: %d observations from %d items", len(observations), len(all_items))
@@ -164,19 +191,15 @@ async def run_observation_cycle() -> dict:
 
 
 async def get_recent_observations(limit: int = 20) -> list[dict]:
-    """Fetch recent observations from EventLog."""
-    from core.database import async_session_factory
-    from core.event_log import EventLog
+    """Fetch recent observations from Observation table."""
+    from core.database import managed_session
+    from core.observation import Observation
     from sqlalchemy import desc, select
 
-    async with async_session_factory() as session:
+    async with managed_session() as session:
         result = await session.execute(
-            select(EventLog)
-            .where(
-                EventLog.source == "observation",
-                EventLog.event_type == "observation.generated",
-            )
-            .order_by(desc(EventLog.occurred_at))
+            select(Observation)
+            .order_by(desc(Observation.observed_at))
             .limit(limit)
         )
         entries = list(result.scalars().all())
@@ -184,11 +207,11 @@ async def get_recent_observations(limit: int = 20) -> list[dict]:
         return [
             {
                 "id": str(e.id),
-                "ticker": e.payload.get("ticker") if e.payload else None,
-                "company_name": e.payload.get("company_name") if e.payload else None,
-                "reasons": e.payload.get("reasons") if e.payload else [],
-                "status": e.payload.get("status") if e.payload else "attention",
-                "observed_at": e.occurred_at.isoformat() if e.occurred_at else None,
+                "ticker": e.ticker,
+                "company_name": e.company_name,
+                "reasons": e.reasons.split("\n"),
+                "status": e.status,
+                "observed_at": e.observed_at.isoformat() if e.observed_at else None,
             }
             for e in entries
         ]

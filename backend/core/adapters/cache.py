@@ -8,7 +8,6 @@ from functools import lru_cache
 import redis.asyncio as aioredis
 
 from core.config import settings
-from core.interfaces import Cache
 
 
 class RedisCache:

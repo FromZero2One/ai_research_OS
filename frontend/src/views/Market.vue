@@ -1,35 +1,21 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useQueryClient } from '@tanstack/vue-query'
-import { useMarketPrices, useFinancialMetrics, useStockSearch } from '@/stores/api'
+import { useMarketPrices, useFinancialMetrics } from '@/stores/api'
 import StockChart from '@/components/StockChart.vue'
+import StockSearch from '@/components/StockSearch.vue'
 
 const queryClient = useQueryClient()
 const tickerRef = ref('000002')
 const period = ref<'daily' | 'weekly' | 'monthly'>('daily')
-const searchQuery = ref('')
-const debouncedSearch = ref('')
-const showDropdown = ref(false)
-const highlightIdx = ref(-1)
 const tickerNames = ref<Record<string, string>>({})
-const searchRef = ref<HTMLDivElement | null>(null)
 const autoIngested = ref<Set<string>>(new Set())
-let debounceTimer: ReturnType<typeof setTimeout>
 
 const { data: priceData, isPending } = useMarketPrices(tickerRef.value, 520)
 const { data: finData } = useFinancialMetrics(tickerRef.value)
-const { data: searchData } = useStockSearch(debouncedSearch.value)
 
 const prices = computed(() => priceData.value?.prices || [])
 const financials = computed(() => finData.value?.metrics || [])
-const searchResults = computed(() => searchData.value?.results || [])
-
-function onClick(e: MouseEvent) { if (searchRef.value && !searchRef.value.contains(e.target as Node)) showDropdown.value = false }
-onMounted(() => document.addEventListener('mousedown', onClick))
-onUnmounted(() => document.removeEventListener('mousedown', onClick))
-
-watch(searchQuery, (v) => { clearTimeout(debounceTimer); debounceTimer = setTimeout(() => debouncedSearch.value = v, 300) })
-watch(searchData, () => { highlightIdx.value = -1 })
 
 watch(tickerRef, async (t) => {
   if (!t || tickerNames.value[t]) return
@@ -78,7 +64,10 @@ const chartPrices = computed(() => {
   })
 })
 
-function handleSelect(symbol: string, name?: string) { tickerRef.value = symbol; showDropdown.value = false; searchQuery.value = ''; debouncedSearch.value = ''; if (name) tickerNames.value = { ...tickerNames.value, [symbol]: name } }
+function onStockSelect(item: { symbol: string; name: string }) {
+  tickerRef.value = item.symbol
+  if (item.name) tickerNames.value = { ...tickerNames.value, [item.symbol]: item.name }
+}
 
 function formatVal(v: number, fmt: 'num' | 'pct' = 'num') { if (fmt === 'pct') return `${(v * 100).toFixed(1)}%`; if (v > 1e9) return `$${(v / 1e9).toFixed(1)}B`; if (v > 1e6) return `$${(v / 1e6).toFixed(1)}M`; return `$${v.toFixed(0)}` }
 </script>
@@ -87,15 +76,7 @@ function formatVal(v: number, fmt: 'num' | 'pct' = 'num') { if (fmt === 'pct') r
   <div class="page">
     <div class="page-header"><h1 class="page-title">📊 行情中心</h1><p class="page-desc">股票行情 · 财务指标 · 宏观数据</p></div>
 
-    <div ref="searchRef" class="search-wrap">
-      <el-input v-model="searchQuery" placeholder="搜索股票代码或名称..." @focus="showDropdown = true" @input="showDropdown = true" @keydown.arrow-down.prevent="highlightIdx = Math.min(highlightIdx + 1, searchResults.length - 1)" @keydown.arrow-up.prevent="highlightIdx = Math.max(highlightIdx - 1, 0)" @keydown.enter="searchResults.length && handleSelect(searchResults[highlightIdx >= 0 ? highlightIdx : 0].symbol, searchResults[highlightIdx >= 0 ? highlightIdx : 0].name)" @keydown.escape="showDropdown = false" />
-      <div v-if="showDropdown && debouncedSearch" class="search-dropdown">
-        <div v-if="!searchResults.length" class="search-empty">无匹配结果</div>
-        <button v-for="(r, i) in searchResults" :key="r.symbol" class="search-item" :class="{ active: i === highlightIdx }" @click="handleSelect(r.symbol, r.name)" @mouseenter="highlightIdx = i">
-          <span class="search-symbol">{{ r.symbol }}</span><span v-if="r.name" class="search-name">{{ r.name }}</span>
-        </button>
-      </div>
-    </div>
+    <StockSearch @select="onStockSelect" />
 
     <div class="flex items-center gap-3">
       <span class="text-xs text-secondary font-medium">K线周期</span>
@@ -146,13 +127,6 @@ function formatVal(v: number, fmt: 'num' | 'pct' = 'num') { if (fmt === 'pct') r
 
 <style scoped>
 .page { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
-.search-wrap { position: relative; }
-.search-dropdown { position: absolute; z-index: 10; width: 100%; margin-top: 4px; border-radius: 8px; background: var(--bg-secondary); border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.3); max-height: 256px; overflow-y: auto; }
-.search-empty { padding: 12px; text-align: center; color: var(--text-secondary); font-size: 14px; }
-.search-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; text-align: left; background: none; border: none; cursor: pointer; font-size: 14px; }
-.search-item:hover, .search-item.active { background: var(--bg-tertiary); }
-.search-symbol { font-family: monospace; color: var(--accent); }
-.search-name { color: var(--text-primary); }
 .chart-card { padding: 16px; border-radius: 12px; }
 .chart-empty { display: flex; align-items: center; justify-content: center; height: 256px; color: var(--text-secondary); }
 .text-success { color: var(--success); }

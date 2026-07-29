@@ -5,22 +5,34 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 
-# Strip proxy env vars that interfere with local connections.
-# Must run before any httpx client is created.
-for _var in ("all_proxy", "ALL_PROXY", "http_proxy", "HTTP_PROXY",
-              "https_proxy", "HTTPS_PROXY", "ftp_proxy", "FTP_PROXY"):
-    os.environ.pop(_var, None)
-os.environ["no_proxy"] = "localhost,127.0.0.0/8,::1"
-os.environ["NO_PROXY"] = "localhost,127.0.0.0/8,::1"
-
 import httpx
 
 from core.config import settings
 from core.interfaces import EmbeddingModel
+from core.logging import logger
+
+# Shared httpx client with connection pooling
+_embed_client: httpx.AsyncClient | None = None
+
+
+def _get_embed_client() -> httpx.AsyncClient:
+    global _embed_client
+    if _embed_client is None:
+        _embed_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(60.0),
+            limits=httpx.Limits(max_keepalive_connections=5, max_connections=20),
+            proxy=None,
+        )
+    return _embed_client
 
 
 class OllamaEmbedding:
-    """Embedding via Ollama API — no local model download needed."""
+    """Embedding via Ollama API — no local model download needed.
+
+    Dimension is auto-discovered from the first embed response and cached.
+    If it differs from ``settings.EMBEDDING_DIMENSION`` a warning is logged
+    (this catches config drift when swapping models).
+    """
 
     def __init__(
         self,
@@ -35,22 +47,35 @@ class OllamaEmbedding:
     def dimension(self) -> int:
         if self._dim is None:
             self._dim = settings.EMBEDDING_DIMENSION
+            if self._dim is None:
+                self._dim = 768  # last-resort fallback
         return self._dim
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            try:
-                resp = await client.post(
-                    f"{self._base_url}/api/embed",
-                    json={"model": self._model, "input": texts},
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                embeddings = data.get("embeddings")
-                if embeddings:
-                    return embeddings
-            except Exception:
-                pass
+        client = _get_embed_client()
+        try:
+            resp = await client.post(
+                f"{self._base_url}/api/embed",
+                json={"model": self._model, "input": texts},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            embeddings = data.get("embeddings")
+            if embeddings:
+                # ── Auto-discover actual dimension ────────────────
+                actual_dim = len(embeddings[0])
+                if self._dim is not None and self._dim != actual_dim:
+                    logger.warning(
+                        "Embedding dimension mismatch: "
+                        "config/settings=%d, Ollama '%s' returns %d. "
+                        "Overriding to %d — update EMBEDDING_DIMENSION "
+                        "in config to silence this warning.",
+                        self._dim, self._model, actual_dim, actual_dim,
+                    )
+                self._dim = actual_dim
+                return embeddings
+        except Exception:
+            logger.warning("Ollama embed API call failed, returning zero vectors")
         # Fallback: return zero vectors
         return [[0.0] * self.dimension for _ in texts]
 

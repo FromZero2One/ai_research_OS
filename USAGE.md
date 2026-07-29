@@ -8,7 +8,7 @@
 
 ```
 ┌──────────────────────────────────────────────┐
-│  前端: Next.js 15 (localhost:3000)           │
+│  前端: Vue 3 + Vite (localhost:5173)         │
 │  后端: FastAPI (localhost:8000)              │
 │  API文档: localhost:8000/docs (Swagger UI)   │
 └──────────────────────────────────────────────┘
@@ -31,7 +31,7 @@
 
 | 层级 | 技术 |
 |------|------|
-| 前端 | Next.js 15, React 19, TypeScript, Tailwind CSS 4, TanStack React Query |
+| 前端 | Vue 3, Vite, TypeScript, Element Plus, TanStack Vue Query, ECharts |
 | 后端 | FastAPI, SQLAlchemy 2.0 (async), Pydantic v2, Alembic |
 | 数据库 | PostgreSQL 16 (pgvector), Qdrant, Redis |
 | AI | DeepSeek V4 Flash (默认) / Ollama 本地 (备选) / 任意 OpenAI 兼容 API |
@@ -60,14 +60,59 @@ docker compose -f docker/docker-compose.yml ps
 
 ---
 
-#### Step 2 — 启动后端
+#### Step 2 — 安装后端依赖
+
+> 推荐使用 `uv`（已安装），速度远快于 pip。首次使用需创建虚拟环境。
+
+**方式 A — uv（推荐）：**
+
+```bash
+cd /home/wsm/codes/ai_research_OS/backend
+uv venv --python 3.13 .venv
+uv pip install --python .venv/bin/python \
+  "fastapi>=0.115" "uvicorn[standard]>=0.30" "pydantic>=2.0" "pydantic-settings>=2.0" \
+  "sqlalchemy[asyncio]>=2.0" "asyncpg>=0.29" "alembic>=1.13" "pgvector>=0.3" \
+  "ollama>=0.4" "openai>=1.0" "langgraph>=0.2" \
+  "qdrant-client>=1.11" "rank-bm25>=0.2" \
+  "pymupdf>=1.24" "markdown>=3.0" \
+  "apscheduler>=3.10" \
+  "redis[hiredis]>=5.0" "httpx>=0.27" "python-multipart>=0.0.12" \
+  "python-jose[cryptography]>=3.3" "passlib[bcrypt]>=1.7" \
+  "structlog>=24.0" "opentelemetry-api>=1.25" "opentelemetry-sdk>=1.25" \
+  "pytest>=8.0" "pytest-asyncio>=0.24" "pytest-cov>=5.0" "ruff>=0.6" "mypy>=1.11"
+```
+
+**方式 B — pip：**
+
+```bash
+cd /home/wsm/codes/ai_research_OS/backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+> **注意**: `pip install -e` 方式需要 `pyproject.toml` 包含 `[tool.setuptools.packages.find]` 配置，否则会因 flat-layout 多包结构报错。请确保该配置存在后再执行。
+
+**安装额外依赖：**
+
+```bash
+source .venv/bin/activate
+uv pip install --python .venv/bin/python jieba  # BM25 中文分词（必须）
+# 可选：sentence-transformers 作为嵌入备用（需下载 CUDA 包 ~3GB）
+# uv pip install --python .venv/bin/python "sentence-transformers>=3.0"
+```
+
+> **关于 sentence-transformers**（可选依赖）: 项目主要嵌入走 Ollama API（BGE-M3），`sentence-transformers` 仅作备用。安装它会拉取 torch + CUDA（约 3GB）。需要时通过 `uv pip install --python .venv/bin/python "sentence-transformers>=3.0"` 或 `pip install "ai-research-os[embedding]"` 安装。详情见 [Ollama 安装指南](https://ollama.ai)。
+
+---
+
+#### Step 3 — 启动后端
 
 > **注意**: 必须从 `backend/` 目录启动 uvicorn，否则 `.env` 文件不会被加载。
 
 ```bash
-# 设置 Python 路径并启动 (从 backend 目录)
 cd /home/wsm/codes/ai_research_OS/backend
-ALL_PROXY= all_proxy= PYTHONPATH=. uvicorn api.app:app --reload --host 0.0.0.0 --port 8000
+ALL_PROXY= all_proxy= PYTHONPATH=. .venv/bin/python -m uvicorn api.app:app --reload --host 0.0.0.0 --port 8000
 ```
 
 > **SOCKS 代理注意事项**: 如果你本地启用了 SOCKS 代理（如 Clash），需要 `ALL_PROXY= all_proxy=` 前缀来绕过代理连接本地 PostgreSQL/Qdrant/Redis。
@@ -79,16 +124,30 @@ ALL_PROXY= all_proxy= PYTHONPATH=. uvicorn api.app:app --reload --host 0.0.0.0 -
 
 ---
 
-#### Step 3 — 启动前端
+#### Step 4 — 启动前端
+
+> 前端是基于 Vue 3 + Vite 的 SPA，需要在 `frontend/` 目录下操作。
 
 ```bash
 cd /home/wsm/codes/ai_research_OS/frontend
+
+# 首次使用需安装依赖
+npm install
+
+# 启动开发服务器（默认端口 5173）
 npm run dev
 ```
 
+> **前端端口**: Vite 开发服务器默认运行在 **5173 端口**（不是 3000）。vite.config.ts 已配置 `/api` 代理到 `localhost:8000`（自动加 `/v1` 前缀），无需额外配置。
+>
+> 如需修改端口，在 `package.json` 的 `dev` 脚本中加 `--port` 参数:
+> ```bash
+> npm run dev -- --port 3000
+> ```
+
 ---
 
-#### Step 4 — (可选) 配置 AI 服务
+#### Step 5 — (可选) 配置 AI 服务
 
 项目默认使用 **DeepSeek V4 Flash**（云端 API），无需本地模型。只需配置 `.env` 中的 API Key：
 
@@ -150,7 +209,7 @@ OPENAI_API_KEY=sk-xxx
 kill $(lsof -ti:8000) 2>/dev/null
 
 # 停止前端 (Ctrl+C 或 kill)
-kill $(lsof -ti:3000) 2>/dev/null
+kill $(lsof -ti:5173) 2>/dev/null
 
 # 停止所有数据库容器
 docker compose -f docker/docker-compose.yml down
@@ -183,7 +242,7 @@ make ingest-sample # 加载示例数据
 
 | 服务 | 地址 | 说明 |
 |------|------|------|
-| 前端首页 | http://localhost:3000 | 工作台/仪表盘 |
+| 前端首页 | http://localhost:5173 | Vue 3 + Vite SPA (默认端口) |
 | 后端API | http://localhost:8000 | — |
 | API文档 | http://localhost:8000/docs | Swagger UI (交互式) |
 | ReDoc | http://localhost:8000/redoc | 替代文档 |
@@ -197,7 +256,7 @@ make ingest-sample # 加载示例数据
 
 ### 4.1 工作台 Dashboard
 
-**访问地址**: http://localhost:3000
+**访问地址**: http://localhost:5173
 
 进入系统后的首页,自动展示4个面板:
 
@@ -309,6 +368,26 @@ GET /api/v1/knowledge/search/document/{document_id}?query=...  # 只搜索指定
 - **AI工作流**: 串联多个LLM步骤(V2支持LangGraph DAG)
 
 **依赖**: 必须配置 DeepSeek (或 Ollama/OpenAI 兼容 API)
+
+### 共享组件
+
+| 组件 | 用途 |
+|------|------|
+| StockSearch.vue | 可复用股票搜索下拉 (v-model, 300ms防抖, 键盘导航, 5个视图共用) |
+| StockChart.vue | ECharts K 线图 (MA5/MA20/成交量/dataZoom) |
+| CommandPalette.vue | ⌘K 全局命令面板 |
+| Sidebar.vue | 侧边栏导航 |
+
+### 类型系统
+
+```bash
+# 从后端 OpenAPI 模式重新生成前端类型
+cd frontend && npm run gen
+
+# 生成: backend/scripts/generate_openapi.py → openapi.json → src/types/api.ts
+# 使用: import type { ApiResponse } from '@/types/helpers'
+#       type CompanyList = ApiResponse<'list_companies_api_v1_companies_get'>
+```
 
 **API示例**:
 ```bash
@@ -671,6 +750,24 @@ OPENAI_MODEL=deepseek-v4-flash                # V4 Flash (快速/高性价比)
 | `/scheduler/run/{job_name}` | POST | 手动触发任务 |
 | `/scheduler/observations` | GET | 观察报告列表 |
 | `/scheduler/observe` | POST | 手动触发观察 |
+| `/scheduler/tasks` | GET | 后台任务列表 (持久化,支持重试) |
+| `/scheduler/tasks/{task_id}/retry` | POST | 重试失败任务 |
+
+### Events (系统事件日志)
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/events` | GET | 查询事件 (支持 source/type/entity/日期/分页) |
+| `/events/latest` | GET | 最近 N 条事件 |
+| `/events/sources` | GET | 所有事件来源列表 |
+| `/events/stats` | GET | 按来源分组统计 |
+
+### Data Freshness (数据新鲜度追踪)
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/market/freshness` | GET | 查询 freshness 记录 |
+| `/market/freshness/stats` | GET | 聚合统计 (每种数据类型最新/最旧) |
+| `/market/freshness/stale` | GET | 过期数据列表 |
+| `/market/freshness/{ticker}` | GET | 单个股票的所有数据类型汇总 |
 
 ---
 
@@ -742,23 +839,15 @@ OBSERVATION_SCHEDULE="30 5 * * 1-5"
 SECRET_KEY=dev-secret-key          # 生产环境必须改
 
 # CORS
-CORS_ORIGINS=["http://localhost:3000"]
+CORS_ORIGINS=["http://localhost:5173"]
 ```
 
 ---
 
-## 九、MCP Server (可选扩展)
+## 九、MCP 工具 (可选)
 
-项目包含一个 MCP (Model Context Protocol) 服务器,用于给AI工具提供公司数据访问能力。
-
-路径: `mcp-company/server.py`
-
-```bash
-cd /home/wsm/codes/ai_research_OS/mcp-company
-python server.py
-```
-
-该服务器可被AI编码工具(如 Cursor/Cline)调用,提供自然语言查询公司数据的能力。
+公司创建/搜索等工具逻辑实现在 `backend/mcp_company/service.py`，直接调用后端服务函数。
+如果需要从外部 MCP 客户端调用，可参考该模块的接口自行包装。
 
 ---
 
@@ -814,7 +903,7 @@ ollama pull qwen3.5
 ```bash
 # 1. 停止所有服务
 docker compose -f docker/docker-compose.yml down -v
-kill $(lsof -ti:3000) 2>/dev/null
+kill $(lsof -ti:5173) 2>/dev/null
 kill $(lsof -ti:8000) 2>/dev/null
 
 # 2. 重新安装前端依赖
@@ -948,14 +1037,18 @@ ai_research_os/
 │       └── seed_market_data.py # 市场数据
 ├── frontend/
 │   └── src/
-│       ├── app/              # Next.js App Router页面
+│       ├── main.ts           # 应用入口
+│       ├── App.vue           # 根组件
+│       ├── router/           # Vue Router 路由 (13条)
+│       ├── stores/api.ts     # TanStack VueQuery hooks
+│       ├── types/            # 自动生成的 API 类型
 │       ├── components/       # 共享组件
-│       └── lib/api.ts        # React Query hooks + API客户端
+│       └── views/            # 13个页面视图
 ├── docker/
 │   ├── docker-compose.yml   # 数据库基础设施
 │   ├── Dockerfile.backend
 │   └── init.sql             # 9个schema初始化
-├── mcp-company/             # MCP服务器(可选)
+├── backend/mcp_company/     # MCP 工具内部实现
 ├── docs/                    # 项目计划文档
 ├── USAGE.md                 # 本文档
 └── README.md

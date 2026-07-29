@@ -131,10 +131,10 @@ async def seed() -> None:
                 logger.warning("  Skip %s: %s", data["ticker"], e)
 
         # Create a demo research session
-        from research.service import ResearchService
+        from research.session_service import SessionService
 
-        research = ResearchService(session)
-        session_obj = await research.create_session(
+        research = SessionService(session)
+        session_obj = await research.create(
             title="NVDA — AI Growth Thesis 2026",
             question=(
                 "Is NVIDIA still a strong buy given the rapid AI infrastructure buildout, "

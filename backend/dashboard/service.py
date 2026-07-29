@@ -1,11 +1,14 @@
-"""Dashboard service — aggregates data from all modules for the daily workspace."""
+"""Dashboard service — aggregates data from all modules for the daily workspace.
+
+All methods use batch queries (not N+1) to avoid per-item round-trips.
+"""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -21,76 +24,114 @@ class DashboardService:
     # ── Morning Brief ─────────────────────────────────────────────
 
     async def get_latest_brief(self) -> dict[str, Any] | None:
-        """Fetch the most recent morning brief from EventLog."""
+        """Fetch the most recent morning brief from MorningBrief table."""
+        from core.morning_brief import MorningBrief
+
         result = await self.session.execute(
-            select(EventLog)
-            .where(
-                EventLog.source == "scheduler",
-                EventLog.event_type == "morning_brief.generated",
-            )
-            .order_by(desc(EventLog.occurred_at))
+            select(MorningBrief)
+            .order_by(desc(MorningBrief.generated_at))
             .limit(1)
         )
-        entry = result.scalar_one_or_none()
-        if not entry or not entry.payload:
+        brief = result.scalar_one_or_none()
+        if not brief:
             return None
         return {
-            "content": entry.payload.get("content", ""),
-            "generated_at": entry.occurred_at.isoformat() if entry.occurred_at else None,
+            "content": brief.content,
+            "generated_at": brief.generated_at.isoformat() if brief.generated_at else None,
         }
 
-    # ── Watchlist Summary ─────────────────────────────────────────
+    # ── Watchlist Summary (batch-queried) ─────────────────────────
 
     async def get_watchlist_summary(self) -> list[dict[str, Any]]:
-        """Fetch all watchlists with items enriched with company info + prices + research."""
+        """Fetch all watchlists with items enriched with company info + prices + research.
+
+        Before: O(1 + N*3) queries — one per item.
+        After:  O(1 + 3) queries — batch all companies, prices, and research.
+        """
         from company.models import Company
         from market.models import StockPrice
         from portfolio.models import Watchlist
         from research.models import ResearchSession
 
+        # 1. Load watchlists with items
         result = await self.session.execute(
             select(Watchlist).options(selectinload(Watchlist.items))
         )
         watchlists = list(result.scalars().all())
 
+        # Collect all tickers and company_ids in one pass
+        all_tickers: list[str] = []
+        for wl in watchlists:
+            for item in wl.items:
+                all_tickers.append(item.ticker)
+
+        if not all_tickers:
+            return []
+
+        # 2. Batch-load companies by ticker → {ticker: Company}
+        comp_result = await self.session.execute(
+            select(Company).where(Company.ticker.in_(all_tickers))
+        )
+        company_by_ticker: dict[str, Company] = {
+            c.ticker: c for c in comp_result.scalars().all()
+        }
+        company_ids = [c.id for c in company_by_ticker.values()]
+
+        # 3. Batch-load latest price per ticker (GROUP BY → max date)
+        subq = (
+            select(StockPrice.ticker, func.max(StockPrice.date).label("max_date"))
+            .where(StockPrice.ticker.in_(all_tickers))
+            .group_by(StockPrice.ticker)
+            .subquery()
+        )
+        latest_px = await self.session.execute(
+            select(StockPrice)
+            .join(
+                subq,
+                (StockPrice.ticker == subq.c.ticker)
+                & (StockPrice.date == subq.c.max_date),
+            )
+        )
+        latest_price_by_ticker: dict[str, StockPrice] = {
+            p.ticker: p for p in latest_px.scalars().all()
+        }
+
+        # 4. Batch-load latest research per company (GROUP BY → max created_at)
+        research_by_company: dict[str, ResearchSession] = {}
+        if company_ids:
+            subq_rs = (
+                select(
+                    ResearchSession.company_id,
+                    func.max(ResearchSession.created_at).label("max_created"),
+                )
+                .where(ResearchSession.company_id.in_(company_ids))
+                .group_by(ResearchSession.company_id)
+                .subquery()
+            )
+            rs_result = await self.session.execute(
+                select(ResearchSession)
+                .join(
+                    subq_rs,
+                    (ResearchSession.company_id == subq_rs.c.company_id)
+                    & (ResearchSession.created_at == subq_rs.c.max_created),
+                )
+            )
+            for rs in rs_result.scalars().all():
+                research_by_company[str(rs.company_id)] = rs
+
+        # 5. Assemble (no per-item queries)
         summaries = []
         for wl in watchlists:
             items_data = []
             for item in wl.items:
-                ticker = item.ticker
+                company = company_by_ticker.get(item.ticker)
+                price = latest_price_by_ticker.get(item.ticker)
+                research = research_by_company.get(str(company.id)) if company else None
 
-                # Company info
-                company_result = await self.session.execute(
-                    select(Company).where(Company.ticker == ticker).limit(1)
-                )
-                company = company_result.scalar_one_or_none()
-
-                # Latest price
-                price_result = await self.session.execute(
-                    select(StockPrice)
-                    .where(StockPrice.ticker == ticker)
-                    .order_by(desc(StockPrice.date))
-                    .limit(1)
-                )
-                latest_price = price_result.scalar_one_or_none()
-
-                # Latest research for this company/ticker
-                if company:
-                    research_result = await self.session.execute(
-                        select(ResearchSession)
-                        .where(ResearchSession.company_id == company.id)
-                        .order_by(desc(ResearchSession.created_at))
-                        .limit(1)
-                    )
-                    latest_research = research_result.scalar_one_or_none()
-                else:
-                    latest_research = None
-
-                # Compute status
                 days_since_research = None
                 status = "normal"
-                if latest_research and latest_research.created_at:
-                    delta = datetime.now(timezone.utc) - latest_research.created_at
+                if research and research.created_at:
+                    delta = datetime.now(timezone.utc) - research.created_at
                     days_since_research = delta.days
                     if days_since_research and days_since_research > 30:
                         status = "need_research"
@@ -99,28 +140,26 @@ class DashboardService:
 
                 items_data.append({
                     "id": str(item.id),
-                    "ticker": ticker,
-                    "company_name": company.name if company else ticker,
+                    "ticker": item.ticker,
+                    "company_name": company.name if company else item.ticker,
                     "sector": company.sector if company else None,
                     "priority": item.priority,
                     "target_price": item.target_price,
                     "reason": item.reason,
-                    "latest_price": latest_price.close if latest_price else None,
-                    "price_date": latest_price.date.isoformat() if latest_price and latest_price.date else None,
+                    "latest_price": price.close if price else None,
+                    "price_date": price.date.isoformat() if price and price.date else None,
                     "price_change": (
-                        round(((latest_price.close - latest_price.open) / latest_price.open) * 100, 2)
-                        if latest_price and latest_price.open
+                        round(((price.close - price.open) / price.open) * 100, 2)
+                        if price and price.open
                         else None
                     ),
                     "status": status,
-                    "thesis": latest_research.thesis if latest_research else None,
-                    "last_research_at": latest_research.created_at.isoformat() if latest_research and latest_research.created_at else None,
+                    "thesis": research.thesis if research else None,
+                    "last_research_at": research.created_at.isoformat() if research and research.created_at else None,
                     "days_since_research": days_since_research,
                 })
 
-            # Sort by priority (lower = higher priority)
             items_data.sort(key=lambda x: (x["priority"], x["ticker"]))
-
             summaries.append({
                 "watchlist_id": str(wl.id),
                 "watchlist_name": wl.name,
@@ -129,39 +168,68 @@ class DashboardService:
 
         return summaries
 
-    # ── Research Reminders ────────────────────────────────────────
+    # ── Research Reminders (batch-queried) ────────────────────────
 
     async def get_research_reminders(self) -> list[dict[str, Any]]:
-        """Find items needing research attention (30d+ since last research)."""
+        """Find items needing research attention (30d+ since last research).
+
+        Before: O(1 + N*2) — one company + one research query per item.
+        After:  O(1 + 2) — batch companies, then batch research.
+        """
         from company.models import Company
         from portfolio.models import WatchlistItem
         from research.models import ResearchSession
 
-        result = await self.session.execute(
-            select(WatchlistItem)
-        )
+        result = await self.session.execute(select(WatchlistItem))
         items = list(result.scalars().all())
+        if not items:
+            return []
 
+        all_tickers = [item.ticker for item in items]
+
+        # 2. Batch companies by ticker
+        comp_result = await self.session.execute(
+            select(Company).where(Company.ticker.in_(all_tickers))
+        )
+        company_by_ticker: dict[str, Company] = {
+            c.ticker: c for c in comp_result.scalars().all()
+        }
+        company_ids = [c.id for c in company_by_ticker.values()]
+
+        # 3. Batch latest research per company
+        research_by_company: dict[str, ResearchSession] = {}
+        if company_ids:
+            subq = (
+                select(
+                    ResearchSession.company_id,
+                    func.max(ResearchSession.created_at).label("max_created"),
+                )
+                .where(ResearchSession.company_id.in_(company_ids))
+                .group_by(ResearchSession.company_id)
+                .subquery()
+            )
+            rs_result = await self.session.execute(
+                select(ResearchSession)
+                .join(
+                    subq,
+                    (ResearchSession.company_id == subq.c.company_id)
+                    & (ResearchSession.created_at == subq.c.max_created),
+                )
+            )
+            for rs in rs_result.scalars().all():
+                research_by_company[str(rs.company_id)] = rs
+
+        # 4. Assemble (no per-item queries)
         reminders = []
         for item in items:
-            company_result = await self.session.execute(
-                select(Company).where(Company.ticker == item.ticker).limit(1)
-            )
-            company = company_result.scalar_one_or_none()
+            company = company_by_ticker.get(item.ticker)
             if not company:
                 continue
 
-            research_result = await self.session.execute(
-                select(ResearchSession)
-                .where(ResearchSession.company_id == company.id)
-                .order_by(desc(ResearchSession.created_at))
-                .limit(1)
-            )
-            latest = research_result.scalar_one_or_none()
-
+            research = research_by_company.get(str(company.id))
             days_since = None
-            if latest and latest.created_at:
-                delta = datetime.now(timezone.utc) - latest.created_at
+            if research and research.created_at:
+                delta = datetime.now(timezone.utc) - research.created_at
                 days_since = delta.days
 
             reasons = []
@@ -180,10 +248,14 @@ class DashboardService:
         reminders.sort(key=lambda x: -(x["days_since_research"] or 0))
         return reminders
 
-    # ── Market Overview ───────────────────────────────────────────
+    # ── Market Overview (batch-queried) ───────────────────────────
 
     async def get_market_overview(self) -> list[dict[str, Any]]:
-        """Recent price movements across tracked companies."""
+        """Recent price movements across tracked companies.
+
+        Single query: load last 90 days of prices for all tracked companies,
+        then take the latest 2 per ticker in Python.
+        """
         from company.models import Company
         from market.models import StockPrice
 
@@ -191,21 +263,41 @@ class DashboardService:
             select(Company).where(Company.is_active == True)
         )
         companies = list(result.scalars().all())
+        if not companies:
+            return []
+
+        tickers = [c.ticker for c in companies]
+
+        # Single batch query: all prices from last 90 days
+        price_result = await self.session.execute(
+            select(StockPrice)
+            .where(
+                StockPrice.ticker.in_(tickers),
+                StockPrice.date >= func.current_date() - text("interval '90 days'"),
+            )
+            .order_by(StockPrice.ticker, StockPrice.date.desc())
+        )
+        all_prices = list(price_result.scalars().all())
+
+        # Take latest 2 per ticker in Python
+        latest_by_ticker: dict[str, StockPrice] = {}
+        prev_by_ticker: dict[str, StockPrice] = {}
+        for p in all_prices:
+            if p.ticker not in latest_by_ticker:
+                latest_by_ticker[p.ticker] = p
+            elif p.ticker not in prev_by_ticker:
+                prev_by_ticker[p.ticker] = p
 
         overview = []
         for c in companies:
-            price_result = await self.session.execute(
-                select(StockPrice)
-                .where(StockPrice.ticker == c.ticker)
-                .order_by(desc(StockPrice.date))
-                .limit(2)
-            )
-            prices = list(price_result.scalars().all())
-            if len(prices) < 2:
+            latest = latest_by_ticker.get(c.ticker)
+            prev = prev_by_ticker.get(c.ticker)
+            if not latest or not prev:
                 continue
 
-            latest, prev = prices[0], prices[1]
-            change_pct = round(((latest.close - prev.close) / prev.close) * 100, 2) if prev.close else None
+            change_pct = round(
+                ((latest.close - prev.close) / prev.close) * 100, 2
+            ) if prev.close else None
 
             overview.append({
                 "ticker": c.ticker,
@@ -222,14 +314,13 @@ class DashboardService:
     # ── Full Dashboard ────────────────────────────────────────────
 
     async def get_dashboard(self) -> dict[str, Any]:
-        """Aggregate everything for the daily workspace homepage."""
+        """Aggregate everything for the daily workspace homepage — all batch."""
         from research.models import ResearchSession
 
         brief = await self.get_latest_brief()
         watchlist = await self.get_watchlist_summary()
         reminders = await self.get_research_reminders()
 
-        # Recent research sessions
         result = await self.session.execute(
             select(ResearchSession)
             .order_by(desc(ResearchSession.created_at))

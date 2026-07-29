@@ -147,3 +147,123 @@ class CompanyService:
             entity_type="company",
             entity_id=str(company.id),
         )
+
+    # ── Thesis ─────────────────────────────────────────────────────────
+
+    async def get_thesis(self, ticker: str) -> dict | None:
+        """Get current thesis for a company (latest completed research or manual update)."""
+        from sqlalchemy import desc
+
+        from core.event_log import EventLog
+        from research.models import ResearchSession
+
+        company = await self.get_by_ticker(ticker)
+        if not company:
+            return None
+
+        # 1. Check for manual thesis override in EventLog
+        result = await self.session.execute(
+            select(EventLog)
+            .where(
+                EventLog.source == "company",
+                EventLog.event_type == "thesis.updated",
+                EventLog.entity_id == ticker.upper(),
+            )
+            .order_by(desc(EventLog.occurred_at))
+            .limit(1)
+        )
+        thesis_log = result.scalar_one_or_none()
+
+        if thesis_log and thesis_log.payload:
+            return {
+                "ticker": ticker.upper(),
+                "company_name": company.name,
+                "thesis": thesis_log.payload.get("thesis"),
+                "decision": thesis_log.payload.get("decision"),
+                "confidence": thesis_log.payload.get("confidence"),
+                "updated_at": thesis_log.occurred_at.isoformat() if thesis_log.occurred_at else None,
+            }
+
+        # 2. Fallback to latest completed research
+        result = await self.session.execute(
+            select(ResearchSession)
+            .where(
+                ResearchSession.company_id == company.id,
+                ResearchSession.status == "completed",
+                ResearchSession.thesis.isnot(None),
+            )
+            .order_by(desc(ResearchSession.updated_at))
+            .limit(1)
+        )
+        session = result.scalar_one_or_none()
+
+        if session and session.thesis:
+            structured = None
+            if session.extra_metadata and isinstance(session.extra_metadata, dict):
+                structured = session.extra_metadata.get("structured_thesis")
+            return {
+                "ticker": ticker.upper(),
+                "company_name": company.name,
+                "thesis": session.thesis,
+                "decision": session.decision,
+                "confidence": session.confidence,
+                "source_session_id": str(session.id),
+                "updated_at": session.updated_at.isoformat() if session.updated_at else None,
+                "structured_thesis": structured,
+            }
+
+        return {
+            "ticker": ticker.upper(),
+            "company_name": company.name,
+        }
+
+    async def get_workspace(self, ticker: str) -> dict | None:
+        """Aggregated company workspace — thesis, timeline snippets, evidence."""
+        from sqlalchemy import desc
+
+        from research.models import ResearchEvidence, ResearchSession
+
+        company = await self.get_by_ticker(ticker)
+        if not company:
+            return None
+
+        # Latest thesis
+        thesis = await self.get_thesis(ticker)
+
+        # Recent research sessions
+        result = await self.session.execute(
+            select(ResearchSession)
+            .where(ResearchSession.company_id == company.id)
+            .order_by(desc(ResearchSession.created_at))
+            .limit(5)
+        )
+        sessions = list(result.scalars().all())
+
+        # Evidence summary across all sessions for this company
+        evidence_counts = {"supporting": 0, "opposing": 0, "neutral": 0}
+        for s in sessions:
+            ev_result = await self.session.execute(
+                select(ResearchEvidence).where(ResearchEvidence.session_id == s.id)
+            )
+            for ev in ev_result.scalars().all():
+                if ev.evidence_type in evidence_counts:
+                    evidence_counts[ev.evidence_type] += 1
+
+        return {
+            "ticker": ticker.upper(),
+            "company_name": company.name,
+            "company_id": str(company.id),
+            "thesis": thesis,
+            "recent_research": [
+                {
+                    "id": str(s.id),
+                    "title": s.title,
+                    "status": s.status,
+                    "decision": s.decision,
+                    "thesis": s.thesis,
+                    "created_at": s.created_at.isoformat() if s.created_at else None,
+                }
+                for s in sessions
+            ],
+            "evidence_summary": evidence_counts,
+        }

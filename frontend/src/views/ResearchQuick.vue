@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useQuickResearch, subscribeResearchStream, useStockSearch, type ResearchProgress } from '@/stores/api'
+import { useQuickResearch, subscribeResearchStream, type ResearchProgress } from '@/stores/api'
+import StockSearch from '@/components/StockSearch.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -10,15 +11,10 @@ const initialTicker = (route.query.ticker as string) || ''
 const tickerModel = ref(initialTicker)
 const question = ref('')
 const sessionId = ref<string | null>(null)
-const searchQ = ref(initialTicker)
-const showDrop = ref(false)
-const searchRef = ref<HTMLDivElement | null>(null)
 const progress = ref<ResearchProgress | null>(null)
 const error = ref<string | null>(null)
 const abortRef = ref<(() => void) | null>(null)
 
-const { data: searchData } = useStockSearch(searchQ)
-const searchResults = computed(() => searchData.value?.results || [])
 const quickResearch = useQuickResearch()
 
 const stepLabels: Record<string, string> = {
@@ -27,9 +23,7 @@ const stepLabels: Record<string, string> = {
   completed: '研究完成！', error: '研究出错',
 }
 
-function onClick(e: MouseEvent) { if (searchRef.value && !searchRef.value.contains(e.target as Node)) showDrop.value = false }
-onMounted(() => document.addEventListener('mousedown', onClick))
-onUnmounted(() => { document.removeEventListener('mousedown', onClick); abortRef.value?.() })
+onUnmounted(() => { abortRef.value?.() })
 
 const progressPct = computed(() => {
   if (!progress.value) return 0
@@ -59,15 +53,7 @@ async function handleStart() {
     <template v-if="!sessionId">
       <div class="form-card">
         <label class="form-label">公司代码</label>
-        <div ref="searchRef" class="search-wrap">
-          <el-input v-model="searchQ" placeholder="搜索股票代码或名称..." @focus="showDrop = true" @input="showDrop = true" />
-          <div v-if="showDrop && searchQ" class="search-dropdown">
-            <div v-if="!searchResults.length" class="search-empty">无匹配结果</div>
-            <button v-for="r in searchResults" :key="r.symbol" class="search-item" @click="tickerModel = r.symbol; searchQ = r.symbol; showDrop = false">
-              <span class="search-symbol">{{ r.symbol }}</span><span v-if="r.name" class="search-name">{{ r.name }}</span>
-            </button>
-          </div>
-        </div>
+        <StockSearch v-model="tickerModel" />
 
         <label class="form-label">研究问题<span class="text-xs text-secondary ml-2">({{ question.length }}/1000，至少 10 字)</span></label>
         <el-input v-model="question" type="textarea" :rows="4" placeholder="例如：未来两年的增长逻辑是什么？" :maxlength="1000" />
@@ -111,13 +97,6 @@ async function handleStart() {
 .page { max-width: 500px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
 .form-card { display: flex; flex-direction: column; gap: 16px; }
 .form-label { font-size: 14px; font-weight: 500; color: var(--text-primary); }
-.search-wrap { position: relative; }
-.search-dropdown { position: absolute; z-index: 10; width: 100%; margin-top: 4px; border-radius: 8px; background: var(--bg-secondary); border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.3); max-height: 192px; overflow-y: auto; }
-.search-empty { padding: 8px; font-size: 14px; color: var(--text-secondary); text-align: center; }
-.search-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 12px; text-align: left; background: none; border: none; cursor: pointer; font-size: 14px; }
-.search-item:hover { background: var(--bg-tertiary); }
-.search-symbol { font-family: monospace; color: var(--accent); }
-.search-name { color: var(--text-primary); }
 .error-msg { padding: 12px; border-radius: 8px; background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.2); font-size: 14px; color: var(--danger); }
 .progress-card { padding: 24px; border-radius: 12px; background: var(--bg-secondary); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 16px; }
 .progress-header { display: flex; align-items: center; justify-content: space-between; font-size: 14px; }

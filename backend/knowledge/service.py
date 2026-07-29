@@ -13,9 +13,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.adapters.embedding import create_embedding
+from core.interfaces import EmbeddingModel, VectorStore
 from core.adapters.reranker import create_reranker
 from core.adapters.vector_store import create_vector_store
 from core.event_service import EventLogger
+from core.logging import logger
 import jieba
 from document.models import Document, DocumentChunk
 
@@ -32,16 +34,28 @@ class SearchResult:
     doc_type: str
 
 
+# Module-level BM25 cache (shared across requests, rebuilt on TTL expiry).
+# This avoids loading all chunks from DB on every search request.
+_bm25_cache: dict[str, "BM25Index"] = {}
+_bm25_cache_time: dict[str, float] = {}
+BM25_CACHE_TTL = 300  # seconds before rebuild
+
+
 class KnowledgeService:
     """Hybrid RAG retrieval — dense (vector) + sparse (BM25)."""
 
-    def __init__(self, session: AsyncSession, use_reranker: bool = False) -> None:
+    def __init__(
+        self, session: AsyncSession,
+        use_reranker: bool = False,
+        embedder: EmbeddingModel | None = None,
+        vector_store: VectorStore | None = None,
+        reranker = None,
+    ) -> None:
         self.session = session
         self.events = EventLogger(session)
-        self.embedder = create_embedding()
-        self.vector_store = create_vector_store()
-        self._bm25_index: dict[str, "BM25Index"] = {}  # lazy per-collection
-        self._reranker = create_reranker() if use_reranker else None
+        self.embedder = embedder or create_embedding()
+        self.vector_store = vector_store or create_vector_store()
+        self._reranker = reranker or (create_reranker() if use_reranker else None)
 
     async def search(
         self,
@@ -100,7 +114,8 @@ class KnowledgeService:
                     for score, content, meta in reranked
                 ]
             except Exception:
-                pass  # Fall back to RRF results if reranker fails
+                logger.warning("Reranker failed, falling back to RRF")
+                pass
 
         # Log query
         await self.events.record(
@@ -166,16 +181,22 @@ class KnowledgeService:
         return results
 
     async def _get_bm25(self, collection: str):
-        """Build BM25 index from database chunks (lazy)."""
-        if collection in self._bm25_index:
-            return self._bm25_index[collection]
+        """Build BM25 index from database chunks (module-level cache with TTL)."""
+        import time as _time
 
+        now = _time.time()
+        cache_age = now - _bm25_cache_time.get(collection, 0) if collection in _bm25_cache_time else float("inf")
+
+        if collection in _bm25_cache and cache_age < BM25_CACHE_TTL:
+            return _bm25_cache[collection]
+
+        logger.info("BM25 cache miss for '%s' (age=%.1fs) — rebuilding from DB", collection, cache_age)
         from rank_bm25 import BM25Okapi
 
         result = await self.session.execute(
-            select(DocumentChunk).where(
-                DocumentChunk.embedding_id.isnot(None)
-            )
+            select(DocumentChunk)
+            .where(DocumentChunk.embedding_id.isnot(None))
+            .limit(10000)  # safety cap
         )
         chunks = list(result.scalars().all())
         if not chunks:
@@ -192,7 +213,8 @@ class KnowledgeService:
             for c in chunks
         ]
 
-        self._bm25_index[collection] = bm25  # type: ignore[assignment]
+        _bm25_cache[collection] = bm25  # type: ignore[assignment]
+        _bm25_cache_time[collection] = now
         return bm25
 
     def _rrf_fusion(
@@ -224,17 +246,25 @@ class KnowledgeService:
         if not fused:
             return []
 
+        # Batch query: one IN fetch instead of N individual queries
+        embedding_ids = [item["id"] for item in fused]
+        result = await self.session.execute(
+            select(DocumentChunk, Document)
+            .join(Document, DocumentChunk.document_id == Document.id)
+            .where(DocumentChunk.embedding_id.in_(embedding_ids))
+        )
+        rows = result.all()
+
+        # Build lookup: embedding_id → (chunk, doc)
+        chunk_map: dict[str, tuple] = {}
+        for chunk, doc in rows:
+            chunk_map[chunk.embedding_id] = (chunk, doc)
+
         enriched = []
         for item in fused:
-            embedding_id = item["id"]
-            result = await self.session.execute(
-                select(DocumentChunk, Document)
-                .join(Document, DocumentChunk.document_id == Document.id)
-                .where(DocumentChunk.embedding_id == embedding_id)
-            )
-            row = result.one_or_none()
-            if row:
-                chunk, doc = row
+            pair = chunk_map.get(item["id"])
+            if pair:
+                chunk, doc = pair
                 enriched.append(
                     SearchResult(
                         content=chunk.content,

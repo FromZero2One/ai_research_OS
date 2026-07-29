@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useQueryClient } from '@tanstack/vue-query'
-import { useWatchlists, useHoldings, useStockSearch } from '@/stores/api'
+import { useWatchlists, useHoldings } from '@/stores/api'
+import StockSearch from '@/components/StockSearch.vue'
 
 const queryClient = useQueryClient()
 const { data: watchlists, isLoading: wlLoading } = useWatchlists()
@@ -30,16 +31,7 @@ async function handleCreateHolding() {
 
 // WatchlistCard component
 const adding = ref(false)
-const searchQ = ref('')
-const showDrop = ref(false)
 const names = ref<Record<string, string>>({})
-const searchRef = ref<HTMLDivElement | null>(null)
-const { data: searchData } = useStockSearch(searchQ)
-const searchResults = computed(() => searchData.value?.results || [])
-
-function onClick(e: MouseEvent) { if (searchRef.value && !searchRef.value.contains(e.target as Node)) showDrop.value = false }
-onMounted(() => document.addEventListener('mousedown', onClick))
-onUnmounted(() => document.removeEventListener('mousedown', onClick))
 
 watch(activeWL, async (wl: any) => {
   if (!wl?.items?.length) return
@@ -50,10 +42,10 @@ watch(activeWL, async (wl: any) => {
   }
 }, { immediate: true })
 
-async function handleSelect(symbol: string) {
+async function onStockSelect(item: { symbol: string; name: string }) {
   const wl = activeWL.value
   if (!wl) return
-  try { const resp = await fetch(`/api/portfolio/watchlists/${wl.id}/items`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticker: symbol }) }); if (!resp.ok) throw new Error(await resp.text()); searchQ.value = ''; showDrop.value = false; adding.value = false; refresh(); showMsg('success', `${symbol} 已添加`) } catch (e: any) { showMsg('error', e.message || '添加失败') }
+  try { const resp = await fetch(`/api/portfolio/watchlists/${wl.id}/items`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticker: item.symbol }) }); if (!resp.ok) throw new Error(await resp.text()); adding.value = false; refresh(); showMsg('success', `${item.symbol} 已添加`) } catch (e: any) { showMsg('error', e.message || '添加失败') }
 }
 
 async function handleRemove(itemId: string, ticker: string) {
@@ -73,22 +65,17 @@ async function handleRemove(itemId: string, ticker: string) {
         <div v-if="wlLoading" class="loading-state">加载中...</div>
         <div v-else-if="activeWL" class="wl-card">
           <div class="wl-header"><span class="text-xs text-secondary">{{ activeWL.items?.length || 0 }} 只关注股票</span><el-button @click="adding = !adding" type="primary" size="small">{{ adding ? '取消' : '+ 添加股票' }}</el-button></div>
-          <div v-if="adding" ref="searchRef" class="wl-search">
-            <el-input v-model="searchQ" placeholder="搜索股票代码或名称..." size="small" @focus="showDrop = true" @input="showDrop = true" />
-            <div v-if="showDrop && searchQ" class="search-dropdown">
-              <div v-if="!searchResults.length" class="search-empty">无匹配结果</div>
-              <button v-for="r in searchResults" :key="r.symbol" class="search-item" @click="handleSelect(r.symbol)">
-                <span class="search-symbol">{{ r.symbol }}</span>
-                <span v-if="r.name" class="search-name">{{ r.name }}</span>
-              </button>
-            </div>
+          <div v-show="adding" class="wl-search">
+            <StockSearch size="small" @select="onStockSelect" />
           </div>
-          <div v-if="activeWL.items?.length" class="wl-items">
-            <div v-for="item in activeWL.items" :key="item.id" class="wl-item">
-              <div><span class="wl-ticker">{{ item.ticker }}</span><span v-if="names[item.ticker]" class="wl-name">{{ names[item.ticker] }}</span></div>
-              <el-button text size="small" @click="handleRemove(item.id, item.ticker)" style="color:var(--danger)">✕ 移除</el-button>
+          <template v-if="activeWL.items?.length">
+            <div class="wl-items">
+              <div v-for="item in activeWL.items" :key="item.id" class="wl-item">
+                <div><span class="wl-ticker">{{ item.ticker }}</span><span v-if="names[item.ticker]" class="wl-name">{{ names[item.ticker] }}</span></div>
+                <el-button text size="small" @click="handleRemove(item.id, item.ticker)" style="color:var(--danger)">✕ 移除</el-button>
+              </div>
             </div>
-          </div>
+          </template>
           <div v-else class="wl-empty">点击「添加股票」开始关注</div>
         </div>
         <el-empty v-else description="暂无自选列表" />
@@ -131,13 +118,6 @@ async function handleRemove(itemId: string, ticker: string) {
 .holding-cost { font-size: 14px; color: var(--text-secondary); margin-top: 4px; }
 .wl-card { padding: 16px; border-radius: 12px; background: var(--bg-secondary); border: 1px solid var(--border); }
 .wl-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.wl-search { position: relative; margin-bottom: 12px; }
-.search-dropdown { position: absolute; z-index: 10; width: 100%; margin-top: 4px; border-radius: 8px; background: var(--bg-secondary); border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.3); max-height: 192px; overflow-y: auto; }
-.search-empty { padding: 8px; font-size: 14px; color: var(--text-secondary); text-align: center; }
-.search-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 12px; text-align: left; background: none; border: none; cursor: pointer; font-size: 14px; }
-.search-item:hover { background: var(--bg-tertiary); }
-.search-symbol { font-family: monospace; color: var(--accent); }
-.search-name { color: var(--text-primary); }
 .wl-items { display: flex; flex-direction: column; gap: 6px; }
 .wl-item { display: flex; align-items: center; justify-content: space-between; padding: 8px; border-radius: 6px; background: var(--bg-tertiary); }
 .wl-item:hover .wl-item button { opacity: 1; }

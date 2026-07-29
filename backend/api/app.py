@@ -2,6 +2,15 @@
 
 from __future__ import annotations
 
+# ── Strip proxy BEFORE any httpx import ──────────────────────────
+# httpx caches proxy config at its own import time, so this must
+# run before any adapter module is loaded.
+from core.proxy_cleanup import clean_proxy_env
+
+clean_proxy_env()
+# ─────────────────────────────────────────────────────────────────
+
+import asyncio
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -25,15 +34,14 @@ from core.logging import configure_logging, logger
 
 from ai.routes import router as ai_router
 from company.routes import router as company_router
+from core.event_routes import router as event_router
 from core.scheduler_routes import router as scheduler_router
 from dashboard.routes import router as dashboard_router
 from document.routes import router as document_router
 from knowledge.routes import router as knowledge_router
 from market.routes import router as market_router
 from portfolio.routes import router as portfolio_router
-from research.quick import router as quick_research_router
 from research.routes import router as research_router
-from research.timeline import router as research_timeline_router
 
 
 @asynccontextmanager
@@ -59,10 +67,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # Pre-warm embedding model (lazy — runs in background, doesn't block startup)
     try:
         embedder = create_embedding()
-        _ = embedder.dimension
+        _ = await embedder.embed(["warmup"])
         logger.info("Embedding model ready: dim=%d", embedder.dimension)
     except Exception as e:
         logger.debug("Embedding model lazy-load deferred: %s", e)
+
+    # Start background task worker (persistent task queue)
+    from core.task_manager import _recover_interrupted_tasks, _task_worker_loop, stop_worker
+
+    await _recover_interrupted_tasks()
+    worker_task = asyncio.create_task(_task_worker_loop())
+    logger.info("Background task worker started")
 
     # Start scheduler
     if settings.SCHEDULER_ENABLED:
@@ -83,7 +98,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # Shutdown
     logger.info("Shutting down %s", settings.APP_NAME)
+    from core.task_manager import stop_worker
     from core.scheduler import stop_scheduler
+
+    stop_worker()  # signal task worker loop to exit
+    if 'worker_task' in locals():
+        worker_task.cancel()
     stop_scheduler()
     await engine.dispose()
 
@@ -195,9 +215,8 @@ def create_app() -> FastAPI:
     app.include_router(research_router, prefix="/api/v1")
     app.include_router(portfolio_router, prefix="/api/v1")
     app.include_router(scheduler_router, prefix="/api/v1")
+    app.include_router(event_router, prefix="/api/v1")
     app.include_router(dashboard_router, prefix="/api/v1")
-    app.include_router(quick_research_router, prefix="/api/v1")
-    app.include_router(research_timeline_router, prefix="/api/v1")
 
     return app
 

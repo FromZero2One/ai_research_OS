@@ -38,7 +38,7 @@ A personal AI-powered investment research assistant. Company → Knowledge → A
    └────────────────────────────────┘
 ```
 
-> **关于 MySQL**: 本项目数据库为 PostgreSQL（docker-compose 内）。代码中引用的 MySQL 属于外部 [akshare MCP 服务](mcp-company/server.py) 自管的数据库，非本项目 docker-compose 的一部分。A 股行情需要额外配置该外部 MySQL 连接。
+> **关于 MySQL**: 本项目数据库为 PostgreSQL（docker-compose 内）。代码中引用的 MySQL 属于外部 akshare 数据源自管的数据库，非本项目 docker-compose 的一部分。A 股行情需要额外配置该外部 MySQL 连接。
 
 ## 7 Business Centers
 
@@ -76,25 +76,42 @@ Portfolio
 # 1. Start infrastructure
 make dev-db
 
-# 2. Create tables and seed data
+# 2. Install backend dependencies (install uv first if not present: curl -LsSf https://astral.sh/uv/install.sh | sh)
 cd backend
-pip install -e ".[dev]"
-python scripts/seed_data.py
+uv venv --python 3.13 .venv
+uv pip install --python .venv/bin/python \
+  "fastapi>=0.115" "uvicorn[standard]>=0.30" "pydantic>=2.0" "pydantic-settings>=2.0" \
+  "sqlalchemy[asyncio]>=2.0" "asyncpg>=0.29" "alembic>=1.13" "pgvector>=0.3" \
+  "ollama>=0.4" "openai>=1.0" "langgraph>=0.2" \
+  "qdrant-client>=1.11" "rank-bm25>=0.2" \
+  "pymupdf>=1.24" "markdown>=3.0" "apscheduler>=3.10" \
+  "redis[hiredis]>=5.0" "httpx>=0.27" "python-multipart>=0.0.12" \
+  "python-jose[cryptography]>=3.3" "passlib[bcrypt]>=1.7" \
+  "structlog>=24.0" "opentelemetry-api>=1.25" "opentelemetry-sdk>=1.25" \
+  "pytest>=8.0" "pytest-asyncio>=0.24" "pytest-cov>=5.0" "ruff>=0.6" "mypy>=1.11"
+uv pip install --python .venv/bin/python jieba pymysql
+# Optional: sentence-transformers (CUDA ~3GB, fallback when Ollama unavailable)
+# uv pip install --python .venv/bin/python "sentence-transformers>=3.0"
 
-# 3. Start backend
-ALL_PROXY= all_proxy= PYTHONPATH=. uvicorn api.app:app --reload --host 0.0.0.0 --port 8000
+# 3. Create tables and seed data
+source .venv/bin/activate
+PYTHONPATH=. alembic upgrade head
+PYTHONPATH=. python scripts/seed_data.py
 
-# 4. Start frontend (separate terminal)
+# 4. Start backend
+ALL_PROXY= all_proxy= PYTHONPATH=. .venv/bin/python -m uvicorn api.app:app --reload --host 0.0.0.0 --port 8000
+
+# 5. Start frontend (separate terminal)
 cd frontend
-npm install
-npm run dev
+npm install   # first time only
+npm run dev   # starts on http://localhost:5173
 ```
 
 > **LLM config**: By default the system uses **DeepSeek V4 Flash** (cloud API).
 > Set `OPENAI_API_KEY` in `backend/.env` before using AI features.
 > See [USAGE.md](USAGE.md) for alternative providers (Ollama, other OpenAI-compatible APIs).
 
-Visit **http://localhost:3000** — the Research Workspace dashboard.
+Visit **http://localhost:5173** — the Research Workspace dashboard.
 
 ## API (when backend is running)
 
@@ -122,3 +139,7 @@ Visit **http://localhost:3000** — the Research Workspace dashboard.
 | Portfolio | Watchlist + Journal | + Thesis Panel | + P&L Tracking | + Execution |
 | Research | Manual + Assist | + One Click + Timeline | + Auto Research | + Trading Agents |
 | Workspace | Module pages | Dashboard + Observations | — | — |
+| **Infra** | asyncio.create_task | **Persistent Tasks** + Worker | — | — |
+| **Infra** | Raw SQL in routes | **Service Layer** + Unified Routers | — | — |
+| **Infra** | EventLog write-only | **Read API** + Frontend Type Gen | — | — |
+| **Infra** | — | **Data Freshness** Tracking | — | — |

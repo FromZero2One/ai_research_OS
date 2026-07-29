@@ -8,7 +8,9 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
-from research.models import ResearchSession
+from research.evidence_service import EvidenceService
+from research.gather_service import GatherService
+from research.report_service import ReportService
 from research.schemas import (
     EvidenceCreate,
     EvidenceResponse,
@@ -19,7 +21,7 @@ from research.schemas import (
     ResearchSessionResponse,
     ResearchSessionUpdate,
 )
-from research.service import ResearchPlanner, ResearchService
+from research.session_service import SessionService
 
 router = APIRouter(prefix="/research", tags=["Research Center"])
 
@@ -31,8 +33,8 @@ async def create_session(
     data: ResearchSessionCreate,
     db: AsyncSession = Depends(get_db),
 ):
-    svc = ResearchService(db)
-    session = await svc.create_session(**data.model_dump())
+    svc = SessionService(db)
+    session = await svc.create(**data.model_dump())
     return session
 
 
@@ -45,8 +47,8 @@ async def list_sessions(
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
 ):
-    svc = ResearchService(db)
-    sessions, total = await svc.list_sessions(
+    svc = SessionService(db)
+    sessions, total = await svc.list(
         status=status,
         company_id=uuid.UUID(company_id) if company_id else None,
         query=query,
@@ -61,8 +63,8 @@ async def get_session(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    svc = ResearchService(db)
-    session = await svc.get_session(session_id, eager=True)
+    svc = SessionService(db)
+    session = await svc.get(session_id, eager=True)
     return session
 
 
@@ -72,8 +74,8 @@ async def update_session(
     data: ResearchSessionUpdate,
     db: AsyncSession = Depends(get_db),
 ):
-    svc = ResearchService(db)
-    session = await svc.update_session(session_id, **data.model_dump(exclude_unset=True))
+    svc = SessionService(db)
+    session = await svc.update(session_id, **data.model_dump(exclude_unset=True))
     return session
 
 
@@ -82,8 +84,8 @@ async def delete_session(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    svc = ResearchService(db)
-    await svc.delete_session(session_id)
+    svc = SessionService(db)
+    await svc.delete(session_id)
 
 
 # ── Evidence ────────────────────────────────────────────────────────
@@ -94,8 +96,8 @@ async def add_evidence(
     data: EvidenceCreate,
     db: AsyncSession = Depends(get_db),
 ):
-    svc = ResearchService(db)
-    evidence = await svc.add_evidence(session_id, **data.model_dump())
+    svc = EvidenceService(db)
+    evidence = await svc.add(session_id, **data.model_dump())
     return evidence
 
 
@@ -104,8 +106,8 @@ async def list_evidences(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    svc = ResearchService(db)
-    return await svc.get_evidences(session_id)
+    svc = EvidenceService(db)
+    return await svc.list(session_id)
 
 
 @router.delete("/evidences/{evidence_id}", status_code=204)
@@ -113,8 +115,8 @@ async def delete_evidence(
     evidence_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    svc = ResearchService(db)
-    await svc.remove_evidence(evidence_id)
+    svc = EvidenceService(db)
+    await svc.remove(evidence_id)
 
 
 # ── Reports ─────────────────────────────────────────────────────────
@@ -128,10 +130,8 @@ async def create_report(
     is_final: bool = False,
     db: AsyncSession = Depends(get_db),
 ):
-    svc = ResearchService(db)
-    report = await svc.create_report(
-        session_id, title, content, format_=format, is_final=is_final
-    )
+    svc = ReportService(db)
+    report = await svc.create(session_id, title, content, format_=format, is_final=is_final)
     return report
 
 
@@ -140,8 +140,8 @@ async def list_reports(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    svc = ResearchService(db)
-    return await svc.get_reports(session_id)
+    svc = ReportService(db)
+    return await svc.list(session_id)
 
 
 # ── Research Plan ────────────────────────────────────────────────────
@@ -151,8 +151,7 @@ async def generate_research_plan(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate (or regenerate) an AI research plan for a session."""
-    svc = ResearchService(db)
+    svc = SessionService(db)
     plan = await svc.generate_plan(session_id)
     return plan
 
@@ -162,19 +161,8 @@ async def get_research_plan(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get the current research plan for a session."""
-    from sqlalchemy import select
-    result = await db.execute(
-        select(ResearchSession).where(ResearchSession.id == session_id)
-    )
-    session = result.scalar_one_or_none()
-    if not session:
-        from core.exceptions import NotFoundError
-        raise NotFoundError("ResearchSession", str(session_id))
-
-    plan = (session.extra_metadata or {}).get(ResearchPlanner.PLAN_KEY)
-    if not plan:
-        return None
+    svc = SessionService(db)
+    plan = await svc.get_plan(session_id)
     return plan
 
 
@@ -186,9 +174,8 @@ async def generate_report(
     is_final: bool = False,
     db: AsyncSession = Depends(get_db),
 ):
-    """Auto-generate a research report from collected evidence using AI."""
-    svc = ResearchService(db)
-    report = await svc.auto_generate_report(session_id, is_final=is_final)
+    svc = ReportService(db)
+    report = await svc.auto_generate(session_id, is_final=is_final)
     return report
 
 
@@ -202,8 +189,9 @@ async def finalize_research(
     confidence: float = Query(..., ge=0.0, le=1.0),
     db: AsyncSession = Depends(get_db),
 ):
-    svc = ResearchService(db)
-    return await svc.finalize_thesis(session_id, thesis, decision, confidence)
+    from research.thesis_service import ThesisService
+    svc = ThesisService(db)
+    return await svc.finalize(session_id, thesis, decision, confidence)
 
 
 # ── AI-Assisted ─────────────────────────────────────────────────────
@@ -214,11 +202,15 @@ async def auto_gather(
     use_plan: bool = True,
     db: AsyncSession = Depends(get_db),
 ):
-    """Auto-search knowledge base and market data for evidence.
-
-    When use_plan=True (default), uses research plan sub-questions
-    for targeted searches across multiple dimensions.
-    """
-    svc = ResearchService(db)
-    result = await svc.auto_gather_evidence(session_id, db, use_plan=use_plan)
+    svc = GatherService(db)
+    result = await svc.auto_gather(session_id, db, use_plan=use_plan)
     return result
+
+
+# ── Include sub-routers (quick research + timeline) ─────────────────────
+
+from research.quick import router as _quick_router  # noqa: E402
+from research.timeline import router as _timeline_router  # noqa: E402
+
+router.include_router(_quick_router, prefix="/quick")
+router.include_router(_timeline_router)

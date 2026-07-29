@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     QDRANT_PREFER_GRPC: bool = True
     EMBEDDING_PROVIDER: str = "ollama"
     EMBEDDING_MODEL: str = "BAAI/bge-m3"
-    EMBEDDING_DIMENSION: int = 1024
+    EMBEDDING_DIMENSION: int = 768  # matches nomic-embed-text (default Ollama model); BGE-M3 = 1024
     EMBEDDING_DEVICE: str = "cpu"
 
     # --- LLM ---
@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
 
     # --- Redis ---
-    REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_URL: str = "redis://localhost:6380/0"  # docker-compose exposes 6380→6379
     REDIS_TTL: int = 3600
 
     # --- Security ---

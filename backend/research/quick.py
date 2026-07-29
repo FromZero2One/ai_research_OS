@@ -1,7 +1,9 @@
-"""Quick Research — one-click research with async background execution.
+"""Quick Research — one-click research with persistent background task.
 
-POST  → creates session + fires background task → returns immediately
+POST  → creates session + creates TaskRecord (persistent) → returns immediately
 SSE  → streams progress from DB as the background task runs
+Worker  → picks up pending TaskRecord, runs plan→gather→report chain
+Supports retry on failure, survives process restart.
 """
 
 from __future__ import annotations
@@ -10,23 +12,17 @@ import asyncio
 import json
 import time
 import uuid
-from typing import Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
-from research.models import ResearchSession
 from core.logging import logger
-from core.task_manager import track, untrack
-from research.service import ResearchService
+from core.task_manager import register_handler, run_in_background
 
-router = APIRouter(prefix="/research/quick", tags=["Quick Research"])
-
-PROGRESS_KEY = "quick_research_progress"
+router = APIRouter(tags=["Quick Research"])
 
 
 class QuickResearchRequest(BaseModel):
@@ -40,112 +36,82 @@ class QuickResearchResponse(BaseModel):
     status: str = "started"
 
 
-async def _get_company_by_ticker(ticker: str, db: AsyncSession) -> uuid.UUID | None:
-    """Resolve ticker to company_id."""
-    from company.models import Company
-    result = await db.execute(
-        select(Company).where(Company.ticker == ticker.upper()).limit(1)
-    )
-    company = result.scalar_one_or_none()
-    return company.id if company else None
+# ── Handler (registered at import time) ──────────────────────────────────
 
 
-async def _get_progress(session_id: uuid.UUID, db: AsyncSession) -> dict[str, Any]:
-    """Get current research progress from session metadata."""
-    result = await db.execute(
-        select(ResearchSession).where(ResearchSession.id == session_id)
-    )
-    session = result.scalar_one_or_none()
-    if not session:
-        return {"step": "error", "error": "Session not found"}
+async def _run_research_chain(payload: dict) -> dict | None:
+    """Registered handler for 'quick_research' tasks.
 
-    progress = (session.extra_metadata or {}).get(PROGRESS_KEY, {})
-    return {
-        "step": progress.get("step", "starting"),
-        "message": progress.get("message", ""),
-        "status": session.status,
-        "session_id": str(session.id),
-        "report_id": progress.get("report_id"),
-        "error": progress.get("error"),
-    }
+    Receives payload from TaskRecord, runs plan→gather→report.
+    Progress is persisted in session extra_metadata (survives restart).
+    """
+    session_id = uuid.UUID(payload["session_id"])
+    from core.database import managed_session
 
+    async with managed_session() as bg_session:
+        from research.session_service import SessionService
+        from research.gather_service import GatherService
+        from research.report_service import ReportService
 
-async def _update_progress(
-    session_id: uuid.UUID,
-    step: str,
-    message: str,
-    db: AsyncSession,
-    **extra,
-) -> None:
-    """Update progress in session metadata."""
-    result = await db.execute(
-        select(ResearchSession).where(ResearchSession.id == session_id)
-    )
-    session = result.scalar_one_or_none()
-    if not session:
-        return
-
-    session.extra_metadata = session.extra_metadata or {}
-    session.extra_metadata[PROGRESS_KEY] = {
-        "step": step,
-        "message": message,
-        **extra,
-    }
-    await db.flush()
-
-
-async def _run_research_task(
-    session_id: uuid.UUID,
-) -> None:
-    """Background task: run full research chain. Uses its own DB session."""
-    from core.database import async_session_factory
-
-    async with async_session_factory() as bg_session:
-        svc = ResearchService(bg_session)
+        sessions_svc = SessionService(bg_session)
+        gather_svc = GatherService(bg_session)
+        report_svc = ReportService(bg_session)
 
         try:
             # Step 1: Generate Plan
-            await _update_progress(session_id, "planning", "AI 正在生成研究计划...", bg_session)
+            await sessions_svc.update_progress(session_id, "planning", "AI 正在生成研究计划...")
             await bg_session.commit()
             logger.info("  [research] planning %s", session_id)
-            await svc.generate_plan(session_id)
+            await sessions_svc.generate_plan(session_id)
             await bg_session.commit()
 
             # Step 2: Gather Evidence
-            await _update_progress(session_id, "searching", "正在搜索知识库和市场数据...", bg_session)
+            await sessions_svc.update_progress(session_id, "searching", "正在搜索知识库和市场数据...")
             await bg_session.commit()
             logger.info("  [research] gathering %s", session_id)
-            await svc.auto_gather_evidence(session_id, bg_session, use_plan=True)
+            await gather_svc.auto_gather(session_id, bg_session, use_plan=True)
             await bg_session.commit()
 
             # Step 3: Generate Report
-            await _update_progress(session_id, "generating", "AI 正在生成研究报告...", bg_session)
+            await sessions_svc.update_progress(session_id, "generating", "AI 正在生成研究报告...")
             await bg_session.commit()
             logger.info("  [research] generating %s", session_id)
-            report = await svc.auto_generate_report(session_id, is_final=False)
+            report = await report_svc.auto_generate(session_id, is_final=False)
             await bg_session.commit()
 
             # Done
-            await _update_progress(
-                session_id, "completed", "研究完成！",
-                bg_session, report_id=str(report.id),
-            )
+            await sessions_svc.update_progress(session_id, "completed", "研究完成！",
+                                                report_id=str(report.id))
             await bg_session.commit()
             logger.info("  [research] completed %s (report=%s)", session_id, report.id)
+            return {"report_id": str(report.id)}
 
         except asyncio.CancelledError:
             logger.warning("  [research] cancelled %s", session_id)
-            await _update_progress(session_id, "error", "研究任务被取消", bg_session)
+            await sessions_svc.update_progress(session_id, "error", "研究任务被取消")
             await bg_session.commit()
+            return None
         except Exception as e:
             logger.error("  [research] failed %s: %s", session_id, e, exc_info=True)
-            await _update_progress(
-                session_id, "error", f"研究过程出错: {str(e)[:200]}",
-                bg_session, error=str(e),
-            )
+            await sessions_svc.update_progress(session_id, "error", f"研究过程出错: {str(e)[:200]}",
+                                                error=str(e))
             await bg_session.commit()
-        finally:
-            untrack(str(session_id))
+            raise  # Re-raise so TaskRecord tracks the failure
+
+
+# Register handler (import-time side effect — safe, no IO)
+register_handler("quick_research", _run_research_chain)
+
+
+# ── Helper ────────────────────────────────────────────────────────────────
+
+
+async def _get_company_by_ticker(ticker: str, db: AsyncSession) -> uuid.UUID | None:
+    """Resolve ticker to company_id."""
+    from company.service import CompanyService
+    company_svc = CompanyService(db)
+    company = await company_svc.get_by_ticker(ticker)
+    return company.id if company else None
 
 
 # ── API Endpoints ─────────────────────────────────────────────────────
@@ -158,15 +124,17 @@ async def quick_research(
 ):
     """Start one-click research. Returns immediately; runs in background.
 
-    The research chain (plan → gather → generate) executes as an asyncio
-    background task. Progress is streamed via SSE at GET /{id}/stream.
+    The research chain (plan → gather → report) runs via the background
+    task worker. Progress is streamed via SSE at GET /{id}/stream.
+    The task is persistent — survives server restart.
     """
     ticker = data.ticker.upper()
     title = data.title or f"{ticker} 快速研究"
     company_id = await _get_company_by_ticker(ticker, db)
 
-    svc = ResearchService(db)
-    session = await svc.create_session(
+    from research.session_service import SessionService
+    sessions_svc = SessionService(db)
+    session = await sessions_svc.create(
         title=title,
         question=data.question,
         company_id=company_id,
@@ -174,11 +142,17 @@ async def quick_research(
     )
     await db.commit()
 
-    # Fire background task — the POST returns immediately
+    # Create persistent task — the POST returns immediately
     sid = str(session.id)
-    track(sid)
-    asyncio.create_task(_run_research_task(session.id))
-    logger.info("  [research] fired background task %s", sid)
+    created = await run_in_background(
+        task_type="quick_research",
+        task_key=sid,
+        payload={"session_id": sid},
+    )
+    if created:
+        logger.info("  [research] created persistent task %s", sid)
+    else:
+        logger.warning("  [research] task %s already running (dedup)", sid)
 
     return QuickResearchResponse(
         session_id=sid,
@@ -195,13 +169,16 @@ async def stream_research_progress(session_id: uuid.UUID):
       event: complete\n data: {"session_id": "...", "report_id": "..."}
       event: error\ndata: {"error": "..."}
     """
-    from core.database import async_session_factory
+    from core.database import managed_session
 
     async def event_generator():
-        async with async_session_factory() as db:
+        async with managed_session() as db:
+            from research.session_service import SessionService
+            sessions_svc = SessionService(db)
+
             deadline = time.time() + 120  # 2-minute timeout
             while time.time() < deadline:
-                progress = await _get_progress(session_id, db)
+                progress = await sessions_svc.get_progress(session_id)
 
                 if progress.get("error"):
                     yield f"event: error\ndata: {json.dumps(progress)}\n\n"
@@ -231,5 +208,7 @@ async def stream_research_progress(session_id: uuid.UUID):
 @router.get("/{session_id}/status")
 async def get_quick_research_status(session_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     """Poll current research progress (non-SSE fallback)."""
-    progress = await _get_progress(session_id, db)
+    from research.session_service import SessionService
+    svc = SessionService(db)
+    progress = await svc.get_progress(session_id)
     return progress

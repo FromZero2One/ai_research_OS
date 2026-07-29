@@ -21,6 +21,9 @@ from ai.models import *  # noqa: F401, F403
 from research.models import *  # noqa: F401, F403
 from portfolio.models import *  # noqa: F401, F403
 from core.event_log import *  # noqa: F401, F403
+from core.morning_brief import *  # noqa: F401, F403
+from core.observation import *  # noqa: F401, F403
+from core.task_manager import *  # noqa: F401, F403
 
 config = context.config
 if config.config_file_name is not None:

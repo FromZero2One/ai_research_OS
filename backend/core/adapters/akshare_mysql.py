@@ -259,3 +259,19 @@ class AkshareMySQLAdapter:
         """
         rows = await self._fetch_all(sql, (symbol,))
         return rows[0]["stock_name"] if rows else None
+
+    async def get_sector(self, symbol: str) -> str | None:
+        """Get sector/industry for a symbol from stock_yjbb_em."""
+        sql = """
+            SELECT `所处行业` FROM stock_yjbb_em WHERE `股票代码` = %s LIMIT 1
+        """
+        rows = await self._fetch_all(sql, (symbol,))
+        return rows[0]["所处行业"] if rows else None
+
+    async def has_kline(self, symbol: str) -> bool:
+        """Check if K-line data exists for a symbol."""
+        sql = """
+            SELECT COUNT(*) AS cnt FROM stock_zh_a_hist WHERE symbol = %s
+        """
+        rows = await self._fetch_all(sql, (symbol,))
+        return rows and rows[0]["cnt"] > 0

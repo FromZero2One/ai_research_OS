@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from core.adapters.embedding import create_embedding
+from core.interfaces import DocumentParser, EmbeddingModel, VectorStore
 from core.adapters.pdf_parser import (
     PDFEncryptedError,
     PDFParserError,
@@ -28,12 +29,17 @@ from document.models import Document, DocumentChunk
 class DocumentService:
     """Full document lifecycle: ingest → parse → chunk → embed → index."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self, session: AsyncSession,
+        embedder: EmbeddingModel | None = None,
+        vector_store: VectorStore | None = None,
+        pdf_parser: DocumentParser | None = None,
+    ) -> None:
         self.session = session
         self.events = EventLogger(session)
-        self.embedder = create_embedding()
-        self.vector_store = create_vector_store()
-        self.pdf_parser = PyMuPDFParser()
+        self.embedder = embedder or create_embedding()
+        self.vector_store = vector_store or create_vector_store()
+        self.pdf_parser = pdf_parser or PyMuPDFParser()
 
     # ── CRUD ──────────────────────────────────────────────────────
 
@@ -270,13 +276,15 @@ class DocumentService:
         if not chunks:
             return
 
-        # Ensure collection exists
-        dimension = self.embedder.dimension
-        await self.vector_store.create_collection("documents", dimension)
-
-        # Batch embed
+        # Batch embed first — this auto-discovers the real dimension
+        # from the Ollama (or other provider) response.
         texts = [c.content for c in chunks]
         vectors = await self.embedder.embed(texts)
+
+        # Now create the collection with the (now-correct) dimension.
+        # If the collection already exists, this is a no-op.
+        dimension = self.embedder.dimension
+        await self.vector_store.create_collection("documents", dimension)
 
         # Upsert to Qdrant
         from core.interfaces import VectorRecord

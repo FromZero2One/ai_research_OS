@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Date, Float, ForeignKey, String, Text, func
+from sqlalchemy import Date, DateTime, Float, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -52,3 +52,33 @@ class MacroIndicator(Base, UUIDMixin, TimestampMixin):
     value: Mapped[float] = mapped_column(Float, nullable=False)
     unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
     source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class DataFreshness(Base, UUIDMixin, TimestampMixin):
+    """Per-ticker data freshness tracking — when was each data type last fetched.
+
+    One row per (ticker, data_type) combination, upserted on each successful fetch.
+    """
+
+    __tablename__ = "data_freshness"
+    __table_args__ = (
+        {"schema": "market"},
+    )
+
+    ticker: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    data_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    """prices | financials | profile | news"""
+
+    checked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    """When the data was last successfully fetched."""
+
+    record_count: Mapped[int | None] = mapped_column(nullable=True)
+    """How many records were fetched (e.g. number of price rows)."""
+
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="ok")
+    """ok | stale | error | never_fetched"""
+
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

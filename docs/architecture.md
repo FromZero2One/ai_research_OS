@@ -1,6 +1,6 @@
 # AI Research OS — 系统架构与数据流文档
 
-> 最后更新: 2026-07-26  
+> 最后更新: 2026-07-29  
 > 项目定位: 个人 AI 驱动的投资研究助理  
 > 架构原则: **Research First, not AI First** — AI 是研究流程中的能力，不是中心
 
@@ -17,7 +17,6 @@
 7. [AI 能力](#7-ai-能力)
 8. [数据库与存储](#8-数据库与存储)
 9. [前端路由与组件](#9-前端路由与组件)
-10. [开发与部署](#10-开发与部署)
 
 ---
 
@@ -25,8 +24,8 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                  前端 (Next.js 15)                       │
-│  React 19 · Tailwind CSS 4 · ECharts · React Query v5  │
+│                  前端 (Vue 3 + Vite)                     │
+│  TypeScript · Element Plus · ECharts · TanStack VueQuery│
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
 │  │ 工作台    │ │ 研究     │ │ 行情     │ │ 公司     │  │
 │  │ Dashboard│ │ Research │ │ Market   │ │ Companies│  │
@@ -35,7 +34,10 @@
 │  │ 文档     │ │ 知识库   │ │ AI 中心  │ │ 投资组合 │  │
 │  │ Documents│ │ Knowledge│ │ AI       │ │ Portfolio│  │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘  │
-│                   │ Next.js Rewrite Proxy               │
+│  ┌──────────────────────────────────────┐              │
+│  │ 系统 System (调度器/观测/API健康)     │              │
+│  └──────────────────────────────────────┘              │
+│                   │ Vite Dev Proxy                       │
 │           /api/* → localhost:8000/api/v1/*              │
 └──────────────────────┬──────────────────────────────────┘
                        │ HTTP
@@ -53,7 +55,9 @@
 │                                                         │
 │  ┌──────────────────────────────────────────────────┐   │
 │  │              Core 基础设施                        │   │
-│  │  Config · Database · Event Bus · Embedding · MCP │   │
+│  │  Config · Database · EventLog · Embedding · LLM  │   │
+│  │  Scheduler · ObservationEngine · CRUD · Security │   │
+│  │  Adapters: AkshareMySQL · Ollama · Qdrant · Redis│   │
 │  └──────────────────────────────────────────────────┘   │
 └──────────────────────┬──────────────────────────────────┘
                        │
@@ -74,6 +78,8 @@
 └─────────────────────────────────────────────────────────┘
 ```
 
+**mcp_company 模块**: `backend/mcp_company/service.py` 是 MCP 公司工具的**内部实现**，直接调用后端服务函数（`CompanyService`、`SearchService`、`ProfileService`），共享同一 DB session 生命周期。不再有单独的 MCP 服务器入口 — 功能已完全被前端 UI 覆盖。
+
 ---
 
 ## 2. 技术栈
@@ -82,26 +88,30 @@
 
 | 技术 | 用途 | 版本 |
 |------|------|------|
-| Python | 运行时 | 3.10 |
-| FastAPI | Web 框架 | latest |
+| Python | 运行时 | 3.13 |
+| FastAPI | Web 框架 | 0.115+ |
 | SQLAlchemy 2.0 | ORM (async) | 2.0+ |
 | Alembic | 数据库迁移 | latest |
 | PostgreSQL + pgvector | 主数据库 + 向量搜索 | 16 |
-| Qdrant | 向量数据库 (备用) | latest |
+| Qdrant | 向量数据库 | latest |
 | Redis | 缓存 | 7-alpine |
 | akshare | A股/港股数据源 | latest |
-| MCP (Model Context Protocol) | 数据采集通道 | latest |
+| pymysql | MySQL 适配器 | 1.0+ |
+| Ollama | 本地嵌入 (BGE-M3) | latest |
+| APScheduler | 定时任务 | 3.10+ |
 
 ### 前端
 
-| 技术 | 用途 | 版本 |
-|------|------|------|
-| Next.js | 框架 | 15.5 |
-| React | UI | 19 |
-| Tailwind CSS | 样式 | 4 |
-| ECharts | 图表 (K线/财务) | 6.1 |
-| TanStack React Query | 数据请求 | 5.60 |
-| TypeScript | 类型安全 | 5.x |
+| 技术 | 用途 |
+|------|------|
+| Vue 3 | 框架 (Composition API) |
+| Vite | 构建工具 (dev 默认端口 5173) |
+| TypeScript | 类型安全 |
+| Element Plus | UI 组件库 |
+| ECharts | 图表 (K线/财务趋势图) |
+| TanStack Vue Query | 数据请求 + 缓存 |
+| Pinia | 状态管理 |
+| Vue Router | 路由 |
 
 ### 基础设施
 
@@ -112,6 +122,8 @@
 | Redis | 6380 | 缓存 |
 | MySQL (外部) | 3306 | akshare 行情库 |
 | Ollama | 11434 | 嵌入模型服务 |
+| 前端 (Vite) | 5173 | 开发服务器 |
+| 后端 (FastAPI) | 8000 | API 服务 |
 
 ---
 
@@ -120,37 +132,83 @@
 ```
 ai_research_OS/
 ├── backend/                    # Python FastAPI 后端
-│   ├── api/                    # 应用入口
-│   │   └── app.py              # FastAPI app factory
-│   ├── ai/                     # AI 模块
+│   ├── api/
+│   │   └── app.py              # FastAPI app factory (11 routers)
+│   ├── ai/                     # AI 中心 (prompt模板/生成/摘要/工作流)
 │   ├── alembic/                # 数据库迁移
-│   ├── company/                # 公司模块
+│   ├── company/                # 公司中心 (CRUD+标签+Thesis)
 │   ├── core/                   # 核心基础设施
 │   │   ├── adapters/           # 外部适配器
-│   │   │   ├── akshare_mysql.py    # akshare MySQL 适配器
-│   │   │   └── embedding.py        # 嵌入模型适配
-│   │   ├── config.py           # 配置
-│   │   ├── database.py         # 数据库连接
-│   │   ├── event_service.py    # 事件日志
-│   │   └── exceptions.py       # 异常定义
-│   ├── dashboard/              # 工作台模块
-│   ├── data/                   # 上传目录
-│   ├── document/               # 文档模块
-│   ├── knowledge/              # 知识库模块
-│   ├── market/                 # 行情模块
-│   ├── portfolio/              # 投资组合模块
-│   ├── research/               # 研究模块
-│   ├── scripts/                # 脚本工具
+│   │   │   ├── akshare_mysql.py    # akshare MySQL 适配器(读)
+│   │   │   ├── embedding.py        # Ollama BGE-M3 嵌入
+│   │   │   ├── llm.py             # LLM 适配器 (DeepSeek/Ollama)
+│   │   │   ├── vector_store.py     # Qdrant 向量存储
+│   │   │   └── cache.py           # Redis 缓存
+│   │   ├── config.py           # pydantic-settings 配置
+│   │   ├── database.py         # 异步 SQLAlchemy 引擎
+│   │   ├── crud.py             # 通用 CRUD
+│   │   ├── security.py         # JWT + bcrypt
+│   │   ├── exceptions.py       # 异常体系 (6种)
+│   │   ├── event_log.py        # 审计日志模型
+│   │   ├── event_service.py    # 事件读写服务 (read + query + write)
+│   │   ├── event_routes.py     # 事件日志查询 API (4 个端点)
+│   │   ├── logging.py          # structlog 配置
+│   │   ├── scheduler.py        # APScheduler
+│   │   ├── scheduler_jobs.py   # 定时任务 (3个)
+│   │   ├── scheduler_routes.py # 调度器 API (含后台任务查询/重试)
+│   │   ├── task_manager.py     # 持久化后台任务 (TaskRecord + Worker循环 + 启动恢复)
+│   │   └── observation_engine.py # 自选股观测
+│   ├── dashboard/              # 工作台 (聚合数据,只读)
+│   ├── document/               # 文档中心 (上传/解析/索引)
+│   ├── knowledge/              # 知识库 (RAG: Dense+Sparse+RRF)
+│   ├── market/                 # 行情中心 (K线/财务/搜索)
+│   ├── portfolio/              # 投资组合 (自选/持仓/日记)
+│   ├── research/               # 研究中心 (会话/证据/报告)
+│   │   ├── quick.py            # 快速研究 (SSE 流式)
+│   │   ├── timeline.py         # 研究时间线 (路由层)
+│   │   ├── timeline_service.py # 时间线聚合查询 (TimelineService)
+│   │   └── session_service.py  # 研究会话CRUD + 进度追踪
+│   ├── scripts/                # 工具脚本
+│   │   ├── seed_data.py        # 种子数据
+│   │   └── seed_market_data.py # 行情种子
 │   └── tests/                  # 测试
-├── frontend/                   # Next.js 前端
+├── frontend/                   # Vue 3 + Vite 前端
 │   └── src/
-│       ├── app/                # 页面路由
+│       ├── main.ts             # 应用入口
+│       ├── App.vue             # 根组件
+│       ├── router/index.ts     # 13 个路由
+│       ├── stores/api.ts       # TanStack VueQuery hooks
+│       ├── types/              # 自动生成的 API 类型
+│       │   ├── api.ts          # openapi-typescript (npm run gen)
+│       │   └── helpers.ts      # ApiResponse<T> 便捷类型
 │       ├── components/         # 共享组件
-│       └── lib/                # API 钩子 + 工具
-├── docker/                     # Docker Compose 配置
+│       │   ├── CommandPalette.vue  # ⌘K 命令面板
+│       │   ├── Sidebar.vue         # 侧边栏导航
+│       │   ├── StockChart.vue      # ECharts K 线图
+│       │   └── StockSearch.vue     # 可复用股票搜索 (v-model + 防抖 + 键盘导航)
+│       ├── views/              # 页面视图
+│       │   ├── Dashboard.vue   # 工作台首页
+│       │   ├── Companies.vue   # 公司列表
+│       │   ├── CompanyDetail.vue # 公司详情
+│       │   ├── Market.vue      # 行情中心
+│       │   ├── ResearchList.vue  # 研究会话列表
+│       │   ├── ResearchQuick.vue # 快速研究
+│       │   ├── ResearchDetail.vue # 研究详情
+│       │   ├── ResearchTimeline.vue # 时间线
+│       │   ├── Documents.vue   # 文档管理
+│       │   ├── Knowledge.vue   # 知识库
+│       │   ├── AICenter.vue    # AI 中心
+│       │   ├── Portfolio.vue   # 投资组合
+│       │   └── System.vue      # 系统状态
+│       └── styles/             # 全局样式
+├── docker/
+│   ├── docker-compose.yml      # PostgreSQL + Qdrant + Redis
+│   └── init.sql                # 初始化 SQL
+├── backend/mcp_company/        # MCP 工具内部实现 (直接调用后端服务)
 ├── docs/                       # 文档
-├── mcp-company/                # MCP 公司数据采集 (备用)
-└── scripts/                    # 项目脚本
+├── scripts/                    # 项目脚本
+├── README.md                   # 快速开始
+└── USAGE.md                    # 完整使用手册
 ```
 
 ---
@@ -225,15 +283,14 @@ Company
         POST /market/profile/{ticker}/ingest  (拉取概览)
         POST /market/financials/{ticker}/ingest (拉取财务)
 
-查看公司
-  → GET /companies/{id} → 基本信息
-  → GET /companies/by-ticker/{ticker}/workspace → 观点 + 研究时间线
-
-刷新公司概览
-  → POST /market/profile/{ticker}/ingest
-    → A 股: stock_profile_cninfo (巨潮)
-    → 港股: stock_hk_company_profile_em (东财)
-    → 更新 sector, industry, description, website, headquarters, founded_year, employees
+mcp-company 创建公司 (AI 工具入口)
+  工具 call create_company("600519")
+    → server.py → backend.mcp_company.service.create_company()
+    → ProfileService.get_stock_profile()  (直接调用, 无HTTP)
+    → CompanyService.create()              (直接调用, 无HTTP)
+    → 后台 task: 刷新财务+profile
+  (注: 不再 HTTP 自调用后端 API — 直接调用内部服务层)
+  新增 StockSearch 组件: 5 个视图共享同一搜索组件
 ```
 
 ---
@@ -272,19 +329,21 @@ FinancialMetric
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | /api/v1/market/prices/{ticker} | K 线数据 |
-| POST | /api/v1/market/prices/{ticker}/ingest | 采集行情 |
+| POST | /api/v1/market/prices/{ticker}/ingest | 采集行情到 PG |
 | GET | /api/v1/market/financials/{ticker} | 财务指标 |
 | POST | /api/v1/market/financials/{ticker}/ingest | 采集财务(港股) |
 | POST | /api/v1/market/profile/{ticker}/ingest | 采集公司概览 |
-| GET | /api/v1/market/search?query=xxx | 搜索股票(代码/名称) |
-| GET | /api/v1/market/info/{ticker} | A 股基本信息 |
+| GET | /api/v1/market/stock-profile/{ticker} | 股票基础信息(名称/行业/K线) |
+| GET | /api/v1/market/search?query=xxx | 搜索股票 |
+| GET | /api/v1/market/info/{ticker} | A 股基本信息+估值 |
 | GET | /api/v1/market/symbols | 有 K 线数据的股票列表 |
+| GET | /api/v1/market/news/{ticker} | 股票新闻 |
 
 **数据流** (详见第 6 节行情数据链路)
 
 ---
 
-### 4.3 Document — 文档管理
+### 4.3 Document — 文档中心
 
 **数据模型** (`backend/document/models.py`)
 
@@ -293,12 +352,12 @@ Document
 ├── id: UUID (PK)
 ├── company_id: UUID (FK → company.companies)
 ├── title: String(256)
-├── file_type: String(32)
+├── doc_type: String(32)          ← report/transcript/article/other
 ├── file_path: String(512)
 ├── file_size: Int?
-├── content_type: String(128)?
-├── uploaded_at
-├── processed: Bool                ← 是否已处理
+├── is_indexed: Bool              ← 是否已嵌入向量库
+├── chunk_count: Int?             ← 切片数
+├── created_at
 └── tags: [DocumentTag]
 ```
 
@@ -307,9 +366,8 @@ Document
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | /api/v1/documents | 文档列表 |
-| POST | /api/v1/documents/upload | 上传文档(多格式) |
+| POST | /api/v1/documents/upload | 上传文档(自动解析+索引) |
 | DELETE | /api/v1/documents/{id} | 删除 |
-| POST | /api/v1/documents/{id}/parse | 解析文档内容 |
 
 **数据流**
 
@@ -318,10 +376,7 @@ Document
   → POST /documents/upload (multipart)
   → 保存文件到 backend/data/uploads/
   → 创建 Document 记录
-  → (可选) POST /documents/{id}/parse
-    → 提取文本内容
-    → 生成嵌入向量 → 存入 Qdrant / PostgreSQL pgvector
-    → 关联到知识库
+  → 自动解析: PDF→文本→切片(chunk)→Ollama BGE-M3→存入Qdrant
 ```
 
 ---
@@ -332,63 +387,63 @@ Document
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | /api/v1/knowledge/search?q=xxx | 语义搜索知识库 |
-| GET | /api/v1/knowledge/search/bm25?q=xxx | BM25 关键词搜索 |
+| GET | /api/v1/knowledge/search?query=xxx&top_k=10 | 混合 RAG 搜索 |
 
-**数据流**
+**搜索策略: 3 路融合**
 
 ```
-语义搜索
-  → GET /knowledge/search?q=xxx
-  → create_embedding(query) → Ollama BGE-M3
-  → Qdrant / pgvector 相似度搜索
-  → 返回匹配的文档片段 + 分数
-
-BM25 搜索
-  → GET /knowledge/search/bm25?q=xxx
-  → PostgreSQL 全文检索
-  → 返回匹配的文档片段 + 分数
+query → create_embedding(query) → Ollama BGE-M3 (768维)
+  ├→ Dense: Qdrant 向量相似度搜索
+  ├→ Sparse: BM25 关键词搜索 (jieba分词)
+  └→ RRF 融合排序 → 返回最终结果
 ```
 
 ---
 
 ### 4.5 AI — AI 能力中心
 
+**数据模型** (`backend/ai/models.py`)
+
+```
+PromptTemplate
+├── name: String(64) UNIQUE          ← 模板名称
+├── system_prompt: Text              ← 系统提示词
+├── user_prompt_template: Text       ← 用户提示词模板 (含 {{var}})
+├── temperature: Float?              ← 覆盖温度
+├── max_tokens: Int?
+├── output_schema: JSONB?            ← 结构化输出 schema
+└── is_active: Bool
+
+AIWorkflow
+├── name: String(128) UNIQUE
+├── steps: JSONB                     ← [{"type": "llm", "prompt": ...}, ...]
+└── is_active: Bool
+```
+
 **API 端点**
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | /api/v1/ai/chat | 对话 (流式) |
-| POST | /api/v1/ai/research | 研究分析 |
+| GET/POST | /api/v1/ai/templates | 模板列表/创建 |
+| GET/PATCH/DELETE | /api/v1/ai/templates/{id} | 模板 CRUD |
+| POST | /api/v1/ai/generate | 执行模板 (变量替换→LLM) |
+| POST | /api/v1/ai/summarize | 文本摘要 |
+| POST | /api/v1/ai/extract | 结构化提取 |
+| POST | /api/v1/ai/workflows | 创建工作流 |
+| POST | /api/v1/ai/workflows/{id}/execute | 执行工作流 |
 
-**LLM 配置** (`backend/core/config.py`)
+**LLM 配置** (默认: DeepSeek V4 Flash)
 
-```python
-LLM_PROVIDER = "deepseek"              # 主 LLM
-LLM_MODEL = "deepseek-chat"
-LLM_API_BASE = "https://api.deepseek.com"
-EMBEDDING_PROVIDER = "ollama"          # 嵌入模型
-EMBEDDING_MODEL = "bge-m3:latest"
-OLLAMA_BASE_URL = "http://localhost:11434"
-```
-
-**数据流**
-
-```
-AI 对话
-  → POST /ai/chat { messages, stream }
-  → 调 LLM API (流式返回)
-  → 可附带知识库上下文 (RAG)
-
-AI 研究分析
-  → POST /ai/research { ticker, query }
-  → 收集相关财务数据 + 知识库内容
-  → LLM 分析 → 返回研究报告
+```env
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-your-deepseek-api-key
+OPENAI_BASE_URL=https://api.deepseek.com
+OPENAI_MODEL=deepseek-v4-flash
 ```
 
 ---
 
-### 4.6 Research — 研究引擎
+### 4.6 Research — 研究中心 (核心)
 
 **数据模型** (`backend/research/models.py`)
 
@@ -397,46 +452,58 @@ ResearchSession
 ├── id: UUID (PK)
 ├── company_id: UUID (FK)
 ├── title: String(256)
-├── status: String(32)               ← draft/in_progress/completed
-├── plan: JSON?                      ← 研究计划
-├── decision: String(16)?            ← 投资决策 (buy/sell/hold/watch/pass)
-├── confidence: Float?               ← 置信度
-├── started_at
-├── completed_at
-└── created_at
+├── question: Text?                ← 研究问题
+├── status: String(32)             ← draft/researching/completed
+├── thesis: Text?                  ← 投资观点
+├── decision: String(16)?          ← buy/sell/hold/watch/pass
+├── confidence: Float?             ← 0-1
+├── plan: JSONB?                   ← 研究计划
+├── created_at
+└── updated_at
 
-TimelineEvent (研究时间线)
+ResearchEvidence
 ├── id: UUID (PK)
 ├── session_id: UUID (FK)
-├── event_type: String(64)           ← research_note/analysis/evidence...
 ├── content: Text
-└── created_at
+├── source_type: String(32)        ← document/market_data/web/ai_generated
+├── evidence_type: String(16)      ← supporting/opposing/neutral
+├── relevance_score: Float?
+└── source_title: String(256)?
+
+ResearchReport
+├── id: UUID (PK)
+├── session_id: UUID (FK)
+├── content: Text
+├── version: Int                   ← 自动递增
+└── is_final: Bool
 ```
 
 **API 端点**
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | /api/v1/research/sessions | 研究会话列表 |
-| POST | /api/v1/research/sessions | 创建会话 |
-| GET | /api/v1/research/sessions/{id} | 会话详情 |
-| POST | /api/v1/research/quick | 快速研究 |
-| GET | /api/v1/research/timeline | 研究时间线 |
+| GET/POST | /api/v1/research/sessions | 列表/创建 |
+| GET/PATCH/DELETE | /api/v1/research/sessions/{id} | 会话 CRUD |
+| POST | /api/v1/research/sessions/{id}/plan | 生成研究计划 |
+| POST | /api/v1/research/sessions/{id}/auto-gather | 自动搜集证据 |
+| GET/POST | /api/v1/research/sessions/{id}/evidences | 证据管理 |
+| GET/POST | /api/v1/research/sessions/{id}/reports | 报告管理 |
+| POST | /api/v1/research/sessions/{id}/finalize | 最终化 |
+| POST | /api/v1/research/quick | 一键快速研究 |
+| GET | /api/v1/research/quick/{id}/stream | SSE 进度流 |
+| GET | /api/v1/research/timeline | 时间线 |
+| GET | /api/v1/research/sessions/{id}/timeline | 会话时间线 |
+| GET | /api/v1/research/reports/{id}/diff | 报告 diff |
 
-**数据流**
+**标准研究流程**
 
 ```
-快速研究
-  → POST /research/quick { ticker, query }
-  → 收集: 行情数据 + 财务指标 + 知识库内容
-  → LLM 分析生成报告
-  → 创建 ResearchSession + TimelineEvent
-  → 更新 Company 投资观点
-
-研究时间线
-  → GET /research/timeline?company_id=xxx
-  → 返回该公司的所有研究事件(按时间排序)
-  → 前端 Timeline 展示
+1. 选择公司 → 提出研究问题
+2. 创建研究会话 (POST /research/sessions)
+3. 生成研究计划 (AI: 6个子问题/6个分析维度)
+4. 收集证据: 自动搜索知识库 + 手动添加
+5. 生成研究报告 (AI 综合计划+证据)
+6. 最终化: thesis + decision(buy/sell/hold/watch/pass) + confidence
 ```
 
 ---
@@ -446,404 +513,75 @@ TimelineEvent (研究时间线)
 **数据模型** (`backend/portfolio/models.py`)
 
 ```
-Portfolio
-├── id: UUID (PK)
-├── name: String(256)
-├── description: Text?
-├── created_at
-└── updated_at
-
-PortfolioHolding
-├── id: UUID (PK)
-├── portfolio_id: UUID (FK)
-├── company_id: UUID (FK)
-├── ticker: String(16)
-├── shares: Float?                   ← 持仓股数
-├── avg_cost: Float?                 ← 平均成本
-├── target_weight: Float?            ← 目标权重
-└── added_at
-```
-
-**API 端点**
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | /api/v1/portfolio | 组合列表 |
-| POST | /api/v1/portfolio | 创建组合 |
-| GET | /api/v1/portfolio/{id} | 组合详情(含持仓) |
-| POST | /api/v1/portfolio/{id}/holdings | 添加持仓 |
-
-**数据流**
-
-```
-查看组合
-  → GET /portfolio/{id}
-  → 返回组合信息 + 持仓列表
-  → 每个持仓关联 Company + 最新股价
-  → 计算市值/盈亏/权重
-```
-
----
-
-### 4.8 AI Center — AI 能力中心
-
-**数据模型** (`backend/ai/models.py`, schema `ai`)
-
-```
-PromptTemplate
-├── name: String(64) UNIQUE          ← 模板名称
-├── description: Text?
-├── system_prompt: Text              ← 系统提示词
-├── user_prompt_template: Text       ← 用户提示词模板 (含变量 {{var}})
-├── model: String(64)?               ← 覆盖模型
-├── temperature: Float?              ← 覆盖温度
-├── max_tokens: Int?
-├── output_schema: JSONB?            ← 结构化输出 schema
-└── is_active: Bool
-
-AIWorkflow
-├── name: String(128) UNIQUE
-├── description: Text?
-├── workflow_type: String(32)        ← summarization/extraction/research/...
-├── config: JSONB
-├── steps: JSONB                     ← [{"type": "llm", "prompt": ...}, ...]
-└── is_active: Bool
-```
-
-**API 端点**
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | /api/v1/ai/templates | 创建 Prompt 模板 |
-| GET | /api/v1/ai/templates | 模板列表 |
-| GET | /api/v1/ai/templates/{id} | 模板详情 |
-| PATCH | /api/v1/ai/templates/{id} | 更新模板 |
-| DELETE | /api/v1/ai/templates/{id} | 删除模板 |
-| POST | /api/v1/ai/generate | 执行模板 (变量替换 → LLM) |
-| POST | /api/v1/ai/summarize | 文本摘要 |
-| POST | /api/v1/ai/extract | 结构化提取 |
-| POST | /api/v1/ai/workflows | 创建工作流 |
-| POST | /api/v1/ai/workflows/{id}/execute | 执行工作流 |
-
----
-
-### 4.9 Research — 研究引擎（详细）
-
-**数据模型** (`backend/research/models.py`, schema `research`)
-
-```
-ResearchSession
-├── id: UUID (PK)
-├── title: String(256)
-├── question: Text?                  ← 研究问题
-├── context: Text?                   ← 上下文
-├── company_id: UUID (FK)
-├── status: String(32)               ← draft/researching/reviewing/completed/archived
-├── thesis: Text?                    ← 投资观点
-├── decision: String(16)?            ← buy/sell/hold/watch/pass
-├── confidence: Float?               ← 0-1
-├── tags: JSONB
-├── extra_metadata: JSONB            ← 含研究计划、进度等
-├── created_at
-└── updated_at
-
-ResearchEvidence
-├── id: UUID (PK)
-├── session_id: UUID (FK)
-├── content: Text
-├── source_type: String(32)          ← document/market_data/web/ai_generated
-├── source_id: String(128)?
-├── source_title: String(256)?
-├── relevance_score: Float?
-├── evidence_type: String(16)        ← supporting/opposing/neutral
-├── summary: Text?
-└── extra_metadata: JSONB
-
-ResearchReport
-├── id: UUID (PK)
-├── session_id: UUID (FK)
-├── title: String(256)
-├── content: Text
-├── format: String(16)               ← markdown/html/pdf
-├── version: Int                     ← 自动递增
-├── is_final: Bool
-└── extra_metadata: JSONB
-```
-
-**完整研究流程**
-
-```
-用户提交问题
-  │
-  ├→ 1. ResearchService.create_session()
-  │   → 创建 ResearchSession (status=draft)
-  │   → 可选 auto_plan: 同时生成研究计划
-  │
-  ├→ 2. ResearchPlanner.generate_plan()
-  │   → LLM 生成结构化研究计划
-  │   → { research_goal, sub_questions[], analysis_dimensions[], data_requirements[] }
-  │
-  ├→ 3. ResearchService.auto_gather_evidence()
-  │   → 按研究计划搜索:
-  │     • KnowledgeService.search() — 知识库语义搜索
-  │     • MarketService.get_prices() — 行情数据
-  │     • MarketService.get_financials() — 财务数据
-  │   → 对每条证据分类 (supporting/opposing/neutral)
-  │
-  ├→ 4. ResearchService.auto_generate_report()
-  │   → 收集所有证据 + 计划 → LLM → markdown 报告
-  │   → 版本自动递增
-  │
-  └→ 5. ResearchService.finalize_thesis()
-      → 设置 thesis + decision + confidence
-      → status = completed
-      → EventLog 记录每一步
-```
-
-**快速研究（一键）**
-
-```
-POST /research/quick { ticker, question }
-  │
-  ├→ 1. 解析 ticker → company_id
-  ├→ 2. 创建 ResearchSession
-  ├→ 3. LLM 生成研究计划
-  ├→ 4. 自动收集证据 (知识库 + 行情)
-  ├→ 5. LLM 生成报告
-  │
-  └→ 进度通过 SSE 流推送:
-      GET /research/quick/{id}/stream
-      → EventSource 监听 progress/complete/error 事件
-```
-
-**研究时间线**
-
-```
-研究时间线聚合所有研究活动:
-  ├→ ResearchSession 创建/状态变更
-  ├→ ResearchReport 生成/版本更新
-  ├→ EventLog 事件 (证据添加、观点更新...)
-  └→ ReportDiff 版本对比
-
-API:
-  GET /research/timeline?ticker=xxx      → 公司维度时间线
-  GET /research/sessions/{id}/timeline   → 会话维度时间线
-  GET /research/reports/{id}/diff?other_version=N → 报告 diff
-```
-
----
-
-### 4.10 Dashboard — 工作台
-
-**无数据模型** — 只读聚合，从其他模块读取数据
-
-**Service** (`DashboardService`)
-```
-get_dashboard()
-  ├→ get_latest_brief()       → EventLog 中取最新的 morning_brief
-  ├→ get_watchlist_summary()  → 组合 watchlist + 股价 + 研究状态
-  ├→ get_research_reminders() → >30天未研究的标的
-  └→ 最近 5 个研究会话
-```
-
-**API 端点**
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | /api/v1/dashboard | 完整工作台数据 |
-| GET | /api/v1/dashboard/brief | 最新晨间简报 |
-| GET | /api/v1/dashboard/watchlist | 自选股概览 |
-
----
-
-### 4.11 Portfolio — 投资组合（详细）
-
-**数据模型** (`backend/portfolio/models.py`, schema `portfolio`)
-
-```
 Watchlist
 ├── id: UUID (PK)
 ├── name: String(256)
 ├── description: Text?
 ├── items: [WatchlistItem]
 │   ├── ticker: String(16)
+│   ├── company_id: UUID (FK)
+│   ├── priority: Int (1-5, default 3)
 │   ├── notes: Text?
 │   ├── target_price: Float?
-│   ├── reason: Text?
-│   └── priority: Int (1-5, default 3)
+│   └── status: String ← normal/attention/need_research
 └── created_at
 
 Holding
 ├── id: UUID (PK)
-├── ticker: String(16)
-├── shares: Float?
-├── avg_cost_basis: Float?
-├── sector: String(128)?
-├── notes: Text?
+├── company_id: UUID (FK)
+├── quantity: Float?
+├── avg_cost: Float?
 ├── is_active: Bool
 └── created_at
 
 InvestmentJournal
 ├── id: UUID (PK)
-├── entry_type: String(16)      ← idea/analysis/reflection/lesson
-├── ticker: String(16)?
 ├── title: String(256)
 ├── content: Text
-├── tags: JSONB
-└── research_session_id: UUID? (FK)
+├── company_id: UUID? (FK)
+├── session_id: UUID? (FK)
+└── created_at
 ```
 
 **API 端点**
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST/GET | /api/v1/portfolio/watchlists | 创建/列表自选股 |
-| GET/PATCH/DELETE | /api/v1/portfolio/watchlists/{id} | 自选股 CRUD |
-| POST | /api/v1/portfolio/watchlists/{id}/items | 添加自选项目 |
-| DELETE | /api/v1/portfolio/watchlists/items/{id} | 移除项目 |
-| POST/GET | /api/v1/portfolio/holdings | 创建/列表持仓 |
+| GET/POST | /api/v1/portfolio/watchlists | 自选列表 |
+| GET/DELETE | /api/v1/portfolio/watchlists/{id} | 列表详情 |
+| POST | /api/v1/portfolio/watchlists/{id}/items | 添加自选 |
+| DELETE | /api/v1/portfolio/watchlists/items/{id} | 移除自选 |
+| GET/POST | /api/v1/portfolio/holdings | 持仓 |
 | PATCH | /api/v1/portfolio/holdings/{id} | 更新持仓 |
 | POST | /api/v1/portfolio/holdings/{id}/close | 平仓 |
-| POST/GET | /api/v1/portfolio/journal | 创建/列表投资日志 |
-| GET | /api/v1/portfolio/journal/{id} | 日志详情 |
+| GET/POST | /api/v1/portfolio/journal | 投资日记 |
 
----
+### 4.8 Dashboard — 工作台
 
-## 5. 核心基础设施
-
-### 5.1 配置系统 (`backend/core/config.py`)
-
-```python
-class Settings(BaseSettings):
-    # 应用
-    APP_NAME: str = "AI Research OS"
-    APP_VERSION: str = "0.1.0"
-    ENV: str = "development"
-
-    # 数据库
-    DATABASE_URL: str = "postgresql+asyncpg://airesearch:airesearch_dev@localhost:5432/airesearch"
-    DB_POOL_SIZE: int = 10
-    DB_MAX_OVERFLOW: int = 20
-
-    # 向量
-    QDRANT_HOST: str = "localhost"
-    QDRANT_PORT: int = 6333
-    EMBEDDING_PROVIDER: str = "ollama"
-    EMBEDDING_MODEL: str = "bge-m3:latest"
-    EMBEDDING_DIMENSION: int = 1024
-
-    # LLM
-    LLM_PROVIDER: str = "deepseek"
-    LLM_MODEL: str = "deepseek-chat"
-    LLM_API_KEY: str = ""
-    LLM_API_BASE: str = "https://api.deepseek.com"
-    OLLAMA_BASE_URL: str = "http://localhost:11434"
-
-    # Redis
-    REDIS_URL: str = "redis://localhost:6380/0"
-    REDIS_TTL: int = 3600
-
-    # 文档
-    UPLOAD_DIR: str = "data/uploads"
-    MAX_UPLOAD_SIZE_MB: int = 50
-    CHUNK_SIZE: int = 512
-    CHUNK_OVERLAP: int = 64
-
-    # 调度
-    SCHEDULER_ENABLED: bool = True
-    MARKET_DATA_SCHEDULE: str = "0 2 * * 1-5"
-    REPORT_SCHEDULE: str = "0 6 * * 1-5"
-    OBSERVATION_SCHEDULE: str = "30 5 * * 1-5"
-```
-
-### 5.2 事件系统 (`core/event_log.py` + `core/event_service.py`)
+**无数据模型** — 只读聚合
 
 ```
-EventLog (schema: core)
-├── source: String(32)        ← market/research/scheduler/ai/company
-├── event_type: String(64)    ← prices.ingested/financials.ingested/research.completed/...
-├── entity_type: String(32)   ← stock_price/financial_metric/research_session/...
-├── entity_id: String(64)
-├── actor: String(64)?
-├── payload: JSONB            ← 事件详情
-├── summary: String(256)?
-└── occurred_at: DateTime
-
-写操作 → EventLogger.record() → INSERT EventLog (只追加)
-用于: 审计追踪 + Dashboard 聚合 + 时间线
+GET /api/v1/dashboard
+  ├→ morning_brief (最新AI生成简报)
+  ├→ watchlist (自选股+最新股价+研究状态)
+  ├→ research_reminders (>30天未研究标红)
+  └→ recent_research (最近5条研究会话)
 ```
 
-### 5.3 调度器 (`core/scheduler.py` + `core/scheduler_jobs.py`)
+### 4.9 Scheduler — 调度器
 
 基于 APScheduler (AsyncIOScheduler)，时区 Asia/Shanghai
 
 ```
 3 个定时任务:
-├── market_data_update (工作日 2:00)
-│   → 遍历所有 active 公司的 ticker
-│   → 调用 MarketService.get_prices() 拉取最新行情
-│
-├── morning_brief (工作日 6:00)
-│   → 收集最新股价 + 未完成研究
-│   → LLM 生成晨间简报
-│   → 写入 EventLog
-│
-└── observation_cycle (工作日 5:30)
-    → 检查自选股: 距上次研究>30天 → "need_research"
-    → 检查股价: 波动>5% → 标记关注
-    → 写入 EventLog
-```
-
-### 5.4 观察引擎 (`core/observation_engine.py`)
-
-```
-扫描自选股列表，产出观测:
-├── 时间维度: 距上次研究 >14天 → "attention"
-│              >30天 → "need_research"
-├── 价格维度: 波动 >5% → 价格异动
-└── 写入 EventLog (source="observation")
-```
-
-### 5.5 安全模块 (`core/security.py`)
-
-```
-JWT 认证 (HS256)
-├── create_access_token(subject, expires_delta)
-└── decode_access_token(token)
-
-密码哈希 (bcrypt via passlib)
-├── hash_password(password)
-└── verify_password(password, hash)
-```
-
-### 5.6 异常体系 (`core/exceptions.py`)
-
-```
-AIResearchOSError (基类)
-├── NotFoundError → 404
-├── ValidationError → 422
-├── ConfigurationError → 500
-├── ExternalServiceError → 502
-├── DocumentParsingError → 422
-├── AuthenticationError → 401
-├── AuthorizationError → 403
-└── DuplicateError → 409
-```
-
-### 5.7 通用 CRUD (`core/crud.py`)
-
-```python
-CRUDBase[ModelT]
-├── get(db, id) → ModelT | None
-├── list(db, filters, skip, limit) → (items, total)
-├── create(db, data) → ModelT
-├── update(db, id, data) → ModelT
-└── delete(db, id) → None
+├── market_data_update (工作日 2:00) — 遍历公司拉取最新行情
+├── morning_brief (工作日 6:00)      — AI 生成晨间简报
+└── observation_cycle (工作日 5:30)  — 自选股观测(14天/30天提醒)
 ```
 
 ---
 
-## 6. 数据流详解
+## 5. 数据流详解
 
 ### 5.1 数据流总图
 
@@ -851,7 +589,7 @@ CRUDBase[ModelT]
 外部数据源                        内部存储                    前端展示
 ┌────────────┐   采集    ┌──────────────┐   查询    ┌──────────────┐
 │ akshare    │ ───────→ │ PostgreSQL   │ ←────── │ 行情中心     │
-│ 腾讯源     │  Layer 2 │ StockPrice   │         │ K线图/财务   │
+│ 腾讯源     │  3层降级  │ StockPrice   │         │ K线图/财务   │
 │ 新浪源     │          │ FinancialMetric│        │              │
 │ 东财港股   │          │              │         │              │
 └────────────┘          └──────────────┘         └──────────────┘
@@ -861,12 +599,12 @@ CRUDBase[ModelT]
 │ (本地3306) │          │ CompanyTag   │         │ 编辑/搜索    │
 └────────────┘          └──────────────┘         └──────────────┘
 ┌────────────┐   嵌入    ┌──────────────┐   搜索    ┌──────────────┐
-│ Ollama     │ ───────→ │ Qdrant/pgvec │ ←────── │ 知识库       │
+│ Ollama     │ ───────→ │ Qdrant       │ ←────── │ 知识库       │
 │ BGE-M3     │ 向量化   │ 文档嵌入     │         │ 语义搜索     │
 └────────────┘          └──────────────┘         └──────────────┘
 ┌────────────┐   调用    ┌──────────────┐   对话    ┌──────────────┐
 │ DeepSeek   │ ←──────→ │ AI 服务      │ ←────── │ AI 中心      │
-│ LLM API    │ 流式     │ Chat/Research│         │ 研究助手     │
+│ LLM API    │ 流式     │ Chat/Search  │         │ 研究助手     │
 └────────────┘          └──────────────┘         └──────────────┘
 ```
 
@@ -882,350 +620,238 @@ CRUDBase[ModelT]
                    profile/ingest  {id}/workspace  sessions?company=
      │               │              │               │
      │  useStockSearch()            │               │
-     │  → 搜索 A股/港股/美股       │               │
+     │  → GET /market/search       │               │
      │  → 自动填充 ticker+name     │               │
      │               │              │               │
-     │               ▼              ▼               ▼
-     │          stock_profile_    Company +       ResearchSession
-     │          cninfo (A) /      Thesis +        + TimelineEvent
-     │          stock_hk_company_ Timeline
-     │          profile_em (HK)
-```
-
-### 5.3 行情数据流
-
-```
-┌─────────┐   ┌──────────┐   ┌───────────┐   ┌──────────┐
-│ 用户打开  │ → │ 搜索股票  │ → │ GET /market│ → │ 渲染 K线图│
-│ 行情中心  │   │          │   │ /prices   │   │ (ECharts) │
-└──────────┘   └──────────┘   └─────┬─────┘   └──────────┘
-                                     │
-                          ┌──────────▼──────────┐
-                          │  get_prices()        │
-                          │  1. 查 PostgreSQL    │
-                          │     → 有数据 → 返回   │
-                          │     → 无数据 ↓       │
-                          │  2. A 股? → 查 MySQL  │
-                          │     → 有数据 → 返回   │
-                          │     → 无数据 ↓       │
-                          │  3. 自动采集          │
-                          │     → fetch via       │
-                          │       akshare         │
-                          │     → 写入 PG → 返回  │
-                          └──────────────────────┘
-                                     │
-                           数据采集链路
-                          ┌──────────▼──────────┐
-                          │ _fetch_akshare()     │
-                          │  Layer1: MySQL 本地库 │
-                          │  Layer2: 腾讯/新浪源  │
-                          │  Layer3: 云 MCP      │
-                          └──────────────────────┘
-```
-
-### 5.4 财务数据流
-
-```
-┌──────────┐   ┌──────────────┐   ┌────────────┐
-│ 财务 Tab  │ → │ GET /market  │ → │ 显示营收/  │
-│ 点击      │   │ /financials  │   │ 净利润趋势 │
-└──────────┘   └──────┬───────┘   └────────────┘
-                       │
-            ┌──────────▼──────────┐
-            │ get_financials()     │
-            │  A 股: → MySQL      │
-            │  (stock_yjbb_em)    │
-            │   → eps/revenue/    │
-            │     net_income/     │
-            │     op_margin       │
-            │                     │
-            │  港股: → akshare    │
-            │  stock_financial_hk │
-            │  _report_em         │
-            │   → revenue/        │
-            │     net_income/eps/ │
-            │     gross_profit/   │
-            │     operating_      │
-            │     profit/rd_exp   │
-            └─────────────────────┘
+     ▼               ▼              ▼               ▼
+  Company +        stock_profile_  Company +       ResearchSession
+  CompanyTag       cninfo (A股)    Thesis +        + EventLog
+                   cninfo (港股)    Timeline
 ```
 
 ---
 
-## 7. 行情数据链路
+## 6. 行情数据链路
 
 ### 6.1 三层降级采集链
 
-```
-                     ┌─ Layer 1: MySQL (10ms) ─────────────────┐
-                     │  AkshareMySQLAdapter                    │
-                     │  host: 127.0.0.1:3306                  │
-                     │  database: akshare                      │
-                     │  表: stock_zh_a_hist (日K线)            │
-                     │      stock_yjbb_em (财务指标)           │
-                     │      stock_name_entity (名称映射)        │
-                     │  → 覆盖约 37 只 A 股                     │
-                     └────────────────────────────────────────┘
-                                ↓ 无数据
-                     ┌─ Layer 2: 本地 akshare (3-10s) ─────────┐
-                     │  _fetch_akshare_local()                  │
-                     │  → uv run --directory akshare_mcp        │
-                     │        python -c "akshare.code()"        │
-                     │                                         │
-                     │  A 股: stock_zh_a_hist_tx (腾讯源)        │
-                     │  港股: stock_hk_daily (新浪源)            │
-                     │  财务: stock_financial_hk_report_em      │
-                     │        (东财港股API)                     │
-                     │  → 覆盖任意 A 股 + 港股                   │
-                     └────────────────────────────────────────┘
-                                ↓ 无数据
-                     ┌─ Layer 3: 云 MCP (1-3s) ────────────────┐
-                     │  8.137.104.120:8088/mcp                 │
-                     │  通过 MCP ClientSession 调用             │
-                     │  → 备用 (可能同网段被屏蔽)                │
-                     └────────────────────────────────────────┘
-                                ↓ 全失败
-                          返回 [] (空)
-```
-
-### 6.2 价格数据采集流程
+整个系统只有**后端 MarketService** 维护采集链路，mcp-company 不再直连 MySQL。
 
 ```
-POST /market/prices/{ticker}/ingest
-  │
-  ├→ fetch_and_store_prices()
-  │   │
-  │   └→ _fetch_akshare(ticker)
-  │       ├→ Layer 1: MySQL → 有数据? → return
-  │       ├→ Layer 2: 本地 ak → 有数据? → return
-  │       └→ Layer 3: 云 MCP → 有数据? → return
-  │
-  └→ upsert_prices(ticker, prices)
-      ├→ 逐行检查 PostgreSQL 是否已存在
-      ├→ 不存在则 INSERT StockPrice
-      └→ flush → 记录 event log
+                    ┌─ Layer 1: MySQL (10ms) ─────────────────┐
+                    │  AkshareMySQLAdapter                    │
+                    │  host: 127.0.0.1:3306                  │
+                    │  database: akshare                      │
+                    │  表: stock_zh_a_hist (日K线)            │
+                    │      stock_yjbb_em (财务指标)           │
+                    │      stock_name_entity (名称映射)        │
+                    └────────────────────────────────────────┘
+                               ↓ 无数据
+                    ┌─ Layer 2: 本地 akshare (3-10s) ─────────┐
+                    │  subprocess → uv run → akshare          │
+                    │  A 股: stock_zh_a_hist_tx (腾讯源)       │
+                    │  港股: stock_hk_daily (新浪源)           │
+                    └────────────────────────────────────────┘
+                               ↓ 无数据
+                    ┌─ Layer 3: 云 MCP (1-3s) ────────────────┐
+                    │  8.137.104.120:8088/mcp                 │
+                    │  MCP ClientSession → 备用               │
+                    └────────────────────────────────────────┘
 ```
 
-### 6.3 前端聚合
+### 6.2 核心数据路径
 
 ```
-日K → 原始数据 (API 返回最新在前, StockChart 自动逆序)
-周K → aggregateOHLC(prices, "weekly")
-月K → aggregateOHLC(prices, "monthly")
-      按 ISO 周/月分组:
-      open = 第一根 bar 的 open
-      close = 最后一根 bar 的 close
-      high = 期间最高
-      low = 期间最低
-      volume = 期间总和
-```
+价格查询: GET /market/prices/{ticker}
+  → 1. 查 PostgreSQL (已采集数据)
+  → 2. A股 → MySQL (Layer 1)
+  → 3. 自动采集 3 层降级 → 写入 PG → 返回
 
-### 6.4 股票搜索数据流
+股票搜索: GET /market/search?query=xxx
+  → 1. PostgreSQL Company 表 (A股/港股/美股)
+  → 2. MySQL stock_name_entity (A股)
+  → 合并去重返回
 
-```
-GET /market/search?query=xxx
-  │
-  ├→ PostgreSQL companies 表
-  │   → Company.ticker ILIKE %query%
-  │   → Company.name ILIKE %query%
-  │
-  └→ MySQL akshare stock_name_entity
-      → symbol LIKE %query%
-      → stock_name LIKE %query%
-  │
-  └→ 合并去重 (由 ticker symbol 去重)
-  │
-  → 返回 [{symbol, name}] 最多 20 条
+股票信息: GET /market/stock-profile/{ticker}
+  → MySQL: stock_name_entity → name
+  → MySQL: stock_yjbb_em → sector
+  → MySQL: stock_zh_a_hist → has_kline
+  → 用于 mcp-company 创建公司
 ```
 
 ---
 
-## 8. AI 能力
+## 7. AI 能力
 
 ### 7.1 嵌入模型
 
 ```
-                 ┌─────────────────────┐
-                 │  create_embedding()  │
-                 │  core/adapters/      │
-                 │  embedding.py        │
-                 └──────────┬──────────┘
-                            │
-              ┌─────────────▼─────────────┐
-              │ EMBEDDING_PROVIDER =      │
-              │ "ollama" (默认)           │
-              │                           │
-              │ 1. OllamaEmbedding        │
-              │    → Ollama BGE-M3        │
-              │    → http://local:11434   │
-              │    → 768 维向量            │
-              │                           │
-              │ 2. SentenceTransformer    │
-              │    (offline fallback)     │
-              │    → HF_HUB_OFFLINE=1     │
-              │    → 国内不可用             │
-              └───────────────────────────┘
+create_embedding(text) → float[768]
+  └→ EMBEDDING_PROVIDER = "ollama"
+      → Ollama API: /api/embed (BGE-M3)
+      → HTTP POST to http://127.0.0.1:11434
+      → 768 维向量
+      → 备用: sentence-transformers (需 pip install embedding)
 ```
 
-### 7.2 LLM 对话
+### 7.2 LLM 配置
 
+默认使用 DeepSeek V4 Flash (云端 API)：
+
+```env
+LLM_PROVIDER=openai
+OPENAI_BASE_URL=https://api.deepseek.com
+OPENAI_MODEL=deepseek-v4-flash
+OPENAI_API_KEY=sk-your-key
 ```
-POST /ai/chat { messages, stream: true }
-  │
-  ├→ 从配置读取 LLM_PROVIDER / LLM_MODEL
-  ├→ 调用 DeepSeek API (流式 SSE)
-  │   → 支持知识库上下文注入 (RAG)
-  └→ 流式返回给前端
-```
+
+备用选项:
+- Ollama 本地 (qwen3.5)
+- 通义千问 / Moonshot (OpenAI 兼容)
 
 ---
 
-## 9. 数据库与存储
+## 8. 数据库与存储
 
 ### 8.1 PostgreSQL (主数据库)
 
-Schema: `public` (默认) + `company` (公司模块专用)
+Schema: `public` + `company` + `market` + `document` + `research` + `portfolio` + `ai` + `knowledge` + `event_log`
 
 | 表 | Schema | 用途 |
 |----|--------|------|
 | companies | company | 公司信息 |
 | company_tags | company | 公司标签 |
-| stock_prices | public | 日K线数据 |
-| financial_metrics | public | 财务指标 |
-| documents | public | 文档元数据 |
-| research_sessions | public | 研究会话 |
-| timeline_events | public | 研究时间线 |
-| portfolios | public | 投资组合 |
-| portfolio_holdings | public | 持仓记录 |
-| events | public | 事件日志 |
+| stock_prices | market | 日K线数据 |
+| financial_metrics | market | 财务指标 |
+| documents | document | 文档元数据 |
+| document_chunks | document | 文档切片 |
+| knowledge_entries | knowledge | 知识库条目 |
+| prompt_templates | ai | AI 提示词模板 |
+| ai_workflows | ai | AI 工作流 |
+| research_sessions | research | 研究会话 |
+| research_evidences | research | 研究证据 |
+| research_reports | research | 研究报告 |
+| watchlists | portfolio | 自选列表 |
+| watchlist_items | portfolio | 自选项目 |
+| holdings | portfolio | 持仓记录 |
+| journal_entries | portfolio | 投资日记 |
+| event_log | core | 审计日志 (只追加) |
+| task_records | core | 持久化后台任务队列 |
+| morning_briefs | core | AI 晨间简报 |
+| observations | core | 自选股观察记录 |
+| data_freshness | market | 数据新鲜度追踪 (每个ticker+data_type) |
 
 ### 8.2 MySQL (外部 akshare 行情库)
 
 | 表 | 用途 |
 |----|------|
-| stock_zh_a_hist | A 股日 K 线 |
+| stock_zh_a_hist | A 股日 K 线 (腾讯数据源) |
 | stock_yjbb_em | A 股财务指标 |
 | stock_value_em | A 股估值 (PE/PB) |
 | stock_name_entity | A 股代码-名称映射 |
 
+> 此 MySQL 由外部 akshare MCP 服务维护，不在本项目 docker-compose 中。
+
 ### 8.3 Qdrant (向量数据库)
 
-存储文档嵌入向量，用于语义搜索。
+存储文档嵌入向量 (768维 BGE-M3)，用于知识库语义搜索。
 
 ### 8.4 Redis (缓存)
 
-用于缓存和任务队列。
+缓存热点数据，默认 TTL 3600s。
 
 ---
 
-## 10. 前端路由与组件
+## 9. 前端路由与组件
 
 ### 9.1 页面路由
 
 | 路径 | 页面 | 说明 |
 |------|------|------|
-| `/` | 工作台 | 总览仪表盘 |
-| `/companies` | 公司中心 | 公司列表+创建+编辑+删除 |
-| `/companies/[id]` | 公司详情 | 概览/观点/财务/研究/文档 Tab |
-| `/market` | 行情中心 | 搜索+K线图+财务图表 |
-| `/research` | 研究中心 | 研究会话列表 |
-| `/research/quick` | 快速研究 | 输入 ticker+问题→AI 分析 |
-| `/research/timeline` | 研究时间线 | 按时间轴展示研究过程 |
-| `/research/[id]` | 研究详情 | 单次研究会话详情 |
-| `/documents` | 文档管理 | 上传/查看/删除文档 |
-| `/knowledge` | 知识库 | 搜索文档片段 |
-| `/ai` | AI 中心 | AI 对话界面 |
-| `/portfolio` | 投资组合 | 组合+持仓管理 |
-| `/system` | 系统状态 | 系统运行状态 |
+| `/` | Dashboard | 工作台 (Morning Brief + 自选股 + 研究提醒) |
+| `/companies` | Companies | 公司列表 + 创建/搜索 |
+| `/companies/:id` | CompanyDetail | 公司详情 (概览/观点/财务/研究/文档) |
+| `/market` | Market | 行情中心 (搜索+K线+财务) |
+| `/research` | ResearchList | 研究会话列表 |
+| `/research/quick` | ResearchQuick | 快速研究 (输入→AI分析→报告) |
+| `/research/:id` | ResearchDetail | 研究会话详情 |
+| `/research/timeline` | ResearchTimeline | 研究时间线 (按公司/按会话) |
+| `/documents` | Documents | 文档管理 (上传/查看/删除) |
+| `/knowledge` | Knowledge | 知识库搜索 |
+| `/ai` | AICenter | AI 中心 (对话/模板/工作流) |
+| `/portfolio` | Portfolio | 投资组合 (自选/持仓/日记) |
+| `/system` | System | 系统状态 (调度器/观测/API健康) |
 
 ### 9.2 共享组件
 
-| 组件 | 路径 | 用途 |
-|------|------|------|
-| StockChart | components/StockChart.tsx | ECharts K 线图 (MA5/MA20/成交量/dataZoom) |
-| (内联) MiniBar | market/page.tsx, companies/[id]/page.tsx | 财务柱状图 |
+| 组件 | 用途 |
+|------|------|
+| Sidebar.vue | 侧边栏导航 (当前路由高亮) |
+| StockChart.vue | ECharts K 线图 (MA5/MA20/成交量/dataZoom) |
+| CommandPalette.vue | ⌘K 全局命令面板 (11 条命令) |
 
-### 9.3 API 钩子 (`frontend/src/lib/api.ts`)
+### 9.3 API 连接
 
-| 钩子 | 端点 | 用途 |
-|------|------|------|
-| useGet / useList | 通用 | GET 请求封装 |
-| useCreate | 通用 | POST 请求封装 |
-| useCompany | /companies/{id} | 公司详情 |
-| useCompanies | /companies | 公司列表 |
-| useCompanyWorkspace | /companies/by-ticker/{ticker}/workspace | 公司工作区 |
-| useMarketPrices | /market/prices/{ticker} | K 线数据 |
-| useFinancialMetrics | /market/financials/{ticker} | 财务指标 |
-| useStockSearch | /market/search | 股票搜索 |
-| useDocuments | /documents | 文档列表 |
-| useResearchSessions | /research/sessions | 研究会话 |
-| useUpdateThesis | /companies/by-ticker/{ticker}/thesis | 更新观点 |
+前端通过 Vite proxy (`vite.config.ts`) 将 `/api` 代理到 `http://localhost:8000/api/v1`。
+
+```
+/api/companies        → /api/v1/companies
+/api/market/prices/X  → /api/v1/market/prices/X
+/api/research/...     → /api/v1/research/...
+```
+
+TanStack VueQuery hooks (`stores/api.ts`) 提供类型安全的 API 调用:
+
+| Hook | 端点 |
+|------|------|
+| useCompanies | GET /companies |
+| useCompany(id) | GET /companies/{id} |
+| useCreateCompany | POST /companies |
+| useMarketPrices(ticker) | GET /market/prices/{ticker} |
+| useStockSearch(query) | GET /market/search |
+| useFinancialMetrics(ticker) | GET /market/financials/{ticker} |
+| useResearchSessions | GET /research/sessions |
+| useQuickResearch | POST /research/quick |
+| useDashboard | GET /dashboard |
+| useCompanyThesis(ticker) | GET /companies/by-ticker/{ticker}/thesis |
+| useUpdateThesis | POST /companies/by-ticker/{ticker}/thesis |
+| useCompanyWorkspace(ticker) | GET /companies/by-ticker/{ticker}/workspace |
+| useWatchlists | GET /portfolio/watchlists |
+| useHoldings | GET /portfolio/holdings |
+| useDocuments | GET /documents |
+| useUploadDocument | POST /documents/upload |
 
 ---
 
-## 11. 开发与部署
+## 附录: 关键配置
 
-### 10.1 启动流程
+```env
+# backend/.env
+LLM_PROVIDER=openai
+OPENAI_BASE_URL=https://api.deepseek.com
+OPENAI_MODEL=deepseek-v4-flash
 
-```bash
-# 1. 启动基础设施 (PostgreSQL + Qdrant + Redis)
-docker compose -f docker/docker-compose.yml up -d
+QDRANT_HOST=localhost
+QDRANT_PORT=6333
 
-# 2. 清除代理 (socks 代理会干扰本地服务)
-export no_proxy="localhost,127.0.0.0/8,::1"
+EMBEDDING_PROVIDER=ollama
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_EMBEDDING_MODEL=bge-m3
 
-# 3. 启动后端
-cd backend && ALL_PROXY= all_proxy= PYTHONPATH=. uvicorn api.app:app --reload --host 0.0.0.0 --port 8000
-
-# 4. 启动前端
-cd frontend && npm run dev
-
-# Makefile 一键启动
-make dev        # 全部启动
-make dev-db     # 仅数据库
-make migrate   # 运行迁移
+REDIS_URL=redis://localhost:6380/0
+SCHEDULER_ENABLED=false
 ```
 
-### 10.2 已知问题
-
-1. **SOCKS 代理** — `all_proxy=socks://...` 会干扰 Qdrant httpx 客户端和 akshare 本地子进程，需 `ALL_PROXY= all_proxy=` 前缀
-2. **东方财富 API 屏蔽** — `stock_zh_a_hist()` (eastmoney) 在当前环境下被 IP 封锁，改用腾讯源 `stock_zh_a_hist_tx()`
-3. **HuggingFace 无法访问** — `HF_HUB_OFFLINE=1` 强制离线，sentence-transformers fallback 不可用
-4. **SQLAlchemy selectinload** — `research/timeline.py` 中 `selectinload().order_by()` 不兼容，用 Python 排序代替
-5. **异步任务** — `research/quick.py` 的 POST 处理器同步跑研究链，会导致前端代理超时，需重构为后台任务
-
----
-
-## 附: 关键配置
-
-```python
-# backend/core/config.py
-class Settings(BaseSettings):
-    # 数据库
-    DATABASE_URL: str = "postgresql+asyncpg://airesearch:airesearch_dev@localhost:5432/airesearch"
-    REDIS_URL: str = "redis://localhost:6380/0"
-
-    # LLM
-    LLM_PROVIDER: str = "deepseek"
-    LLM_MODEL: str = "deepseek-chat"
-    LLM_API_KEY: str = ""
-    LLM_API_BASE: str = "https://api.deepseek.com"
-
-    # 嵌入模型
-    EMBEDDING_PROVIDER: str = "ollama"
-    EMBEDDING_MODEL: str = "bge-m3:latest"
-    OLLAMA_BASE_URL: str = "http://localhost:11434"
-
-    # Qdrant
-    QDRANT_HOST: str = "localhost"
-    QDRANT_PORT: int = 6333
-```
-
-```javascript
-// frontend/next.config.js
-// API 代理 /api/* → http://localhost:8000/api/v1/*
+```typescript
+// frontend/vite.config.ts
+server: {
+  proxy: {
+    '/api': { target: 'http://localhost:8000', rewrite: p => p.replace(/^\/api/, '/api/v1') },
+    '/health': { target: 'http://localhost:8000' },
+  },
+}
 ```
 
 ---
 
-> 本文档由 Claude Code 自动生成，基于对项目代码的全面分析。
+> 本文档基于对项目代码的全面分析。文档由 Claude Code 维护，项目迭代时需同步更新。

@@ -3,26 +3,29 @@
 from __future__ import annotations
 
 import json
-import os
-
-# Strip proxy env vars that interfere with local Ollama connections.
-# Must run BEFORE any httpx client is created, as httpx caches proxy
-# config from env vars at import time.
-for _var in ("all_proxy", "ALL_PROXY", "http_proxy", "HTTP_PROXY",
-              "https_proxy", "HTTPS_PROXY", "ftp_proxy", "FTP_PROXY"):
-    os.environ.pop(_var, None)
-os.environ["no_proxy"] = "localhost,127.0.0.0/8,::1"
-os.environ["NO_PROXY"] = "localhost,127.0.0.0/8,::1"
 
 import httpx
-from httpx import AsyncHTTPTransport
 
 from core.config import settings
 from core.interfaces import LLM, LLMMessage, LLMResponse
 
+# Shared httpx client with connection pooling — avoids TCP handshake per call
+_shared_client: httpx.AsyncClient | None = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    global _shared_client
+    if _shared_client is None:
+        _shared_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(120.0),
+            limits=httpx.Limits(max_keepalive_connections=5, max_connections=20),
+            proxy=None,  # explicit — avoid env proxy leaks
+        )
+    return _shared_client
+
 
 class OllamaLLM:
-    """Ollama-based LLM adapter."""
+    """Ollama-based LLM adapter using /api/chat (preserves multi-turn context)."""
 
     def __init__(
         self,
@@ -43,47 +46,24 @@ class OllamaLLM:
         max_tokens: int = 4096,
         stream: bool = False,
     ) -> LLMResponse:
-        # Convert chat messages to prompt for Ollama /api/generate
-        system_msgs = [m.content for m in messages if m.role == "system"]
-        user_msgs = [m.content for m in messages if m.role == "user"]
-        prompt_parts = []
-        if system_msgs:
-            prompt_parts.append(system_msgs[0])
-        if user_msgs:
-            prompt_parts.append(user_msgs[0])
-        prompt = "\n\n".join(prompt_parts) + "\n\nGenerate your response now:"
-
+        # Use /api/chat — supports multi-turn, preserves all messages
         payload = {
             "model": self._model,
-            "prompt": prompt,
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
             "options": {"temperature": temperature, "num_predict": max_tokens},
             "stream": stream,
         }
-        # Use subprocess curl to bypass proxy issues + combine all streaming lines
-        import asyncio as _asyncio
-        import json as _json
-        import os as _os
-        _os.environ.pop("all_proxy", None)
-        _os.environ.pop("ALL_PROXY", None)
-        _cmd = [
-            "curl", "--noproxy", "*", "-s", "--max-time", "120",
-            "-H", "Content-Type: application/json",
-            "-d", _json.dumps({**payload, "stream": False}),
-            f"{self._base_url}/api/generate",
-        ]
-        _proc = await _asyncio.create_subprocess_exec(
-            *_cmd, stdout=_asyncio.subprocess.PIPE, stderr=_asyncio.subprocess.PIPE,
+
+        client = _get_client()
+        resp = await client.post(
+            f"{self._base_url}/api/chat",
+            json={**payload, "stream": False},
         )
-        _stdout, _stderr = await _proc.communicate()
-        if _proc.returncode != 0:
-            raise RuntimeError(f"Ollama request failed (exit={_proc.returncode}): {_stderr.decode()[:200]}")
-        # Debug: write raw response to /tmp/llm_debug.log
-        with open("/tmp/llm_debug.log", "a") as _f:
-            _f.write(f"\n--- LLM Response ({len(_stdout)} bytes) ---\n{_stdout.decode()[:1000]}\n")
-        # The /api/generate endpoint with stream=false returns a single JSON object
-        data = _json.loads(_stdout.decode().strip())
+        resp.raise_for_status()
+        data = resp.json()
+
         return LLMResponse(
-            content=data["response"],
+            content=data["message"]["content"],
             model=self._model,
             usage=data.get("usage"),
         )
@@ -94,6 +74,12 @@ class OllamaLLM:
         schema: dict,
         temperature: float = 0.3,
     ) -> dict:
+        """Generate structured JSON output.
+
+        Appends JSON schema to the last user message and parses response.
+        Note: /api/chat does not natively support structured output — this
+        uses prompt-based enforcement + json.loads parsing.
+        """
         system_msg = messages[0].content if messages and messages[0].role == "system" else ""
         format_instruction = (
             f"\n\nYou MUST respond with valid JSON conforming to this schema:\n"
@@ -104,7 +90,13 @@ class OllamaLLM:
             *(m for m in messages if m.role != "system"),
         ]
         resp = await self.generate(updated_messages, temperature=temperature)
-        return json.loads(resp.content)
+        try:
+            return json.loads(resp.content)
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"Ollama returned invalid JSON for structured output: {e}\n"
+                f"Raw response: {resp.content[:200]}"
+            )
 
 
 class OpenAILLM:
@@ -154,14 +146,31 @@ class OpenAILLM:
     ) -> dict:
         import openai
 
+        system_msg = messages[0].content if messages and messages[0].role == "system" else ""
+        format_hint = (
+            f"\n\nRespond with JSON conforming to this schema:\n"
+            f"{json.dumps(schema, indent=2)}"
+        )
+        updated = [
+            LLMMessage(role="system", content=system_msg + format_hint),
+            *(m for m in messages if m.role != "system"),
+        ]
+
         client = openai.AsyncOpenAI(api_key=self._api_key, base_url=self._base_url)
         resp = await client.chat.completions.create(
             model=self._model,
-            messages=[{"role": m.role, "content": m.content} for m in messages],
+            messages=[{"role": m.role, "content": m.content} for m in updated],
             temperature=temperature,
             response_format={"type": "json_object"},
         )
-        return json.loads(resp.choices[0].message.content or "{}")
+        raw = resp.choices[0].message.content or "{}"
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"OpenAI returned invalid JSON for structured output: {e}\n"
+                f"Raw response: {raw[:200]}"
+            )
 
 
 def create_llm() -> LLM:
