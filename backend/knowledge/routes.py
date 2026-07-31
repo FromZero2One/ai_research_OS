@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.database import get_db
-from knowledge.service import KnowledgeService
+from core.container import Container
+from core.database import get_container
 
 router = APIRouter(prefix="/knowledge", tags=["Knowledge Center"])
 
@@ -17,10 +16,10 @@ async def search(
     top_k: int = Query(10, ge=1, le=50),
     doc_type: str | None = Query(None, description="Filter by document type"),
     min_score: float = Query(0.0, ge=0.0),
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
     """Hybrid RAG search — dense (vector) + sparse (BM25) fusion."""
-    svc = KnowledgeService(db)
+    svc = container.knowledge_service
     results = await svc.search(
         query=query,
         top_k=top_k,
@@ -49,10 +48,10 @@ async def search_in_document(
     document_id: str,
     query: str = Query(..., min_length=1),
     top_k: int = Query(5, ge=1, le=20),
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
     """Search within a specific document."""
-    svc = KnowledgeService(db)
+    svc = container.knowledge_service
     results = await svc.search_by_document(
         query=query, document_id=document_id, top_k=top_k
     )

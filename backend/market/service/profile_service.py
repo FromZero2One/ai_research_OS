@@ -145,7 +145,7 @@ class ProfileService:
             logger.info("  [profile] updated %s: %s", ticker, list(update_data.keys()))
 
         # Record freshness (even if no profile data, the fetch was attempted)
-        from market.freshness_service import FreshnessService
+        from market.service.freshness_service import FreshnessService
         freshness = FreshnessService(self.session)
         count = len(update_data) if update_data else 0
         status = "ok" if profile else "error"

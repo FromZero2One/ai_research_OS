@@ -24,8 +24,8 @@ async def create_company(symbol: str) -> str:
         symbol: 股票代码（如 600519、000001）
     """
     from company.service import CompanyService
-    from market.profile_service import ProfileService
-    from market.search_service import SearchService
+    from market.service.profile_service import ProfileService
+    from market.service.search_service import SearchService
 
     async with managed_session() as session:
         search_svc = SearchService(session)
@@ -74,7 +74,7 @@ async def search_stocks(query: str, limit: int = 10) -> str:
         query: 搜索关键词（代码或名称）
         limit: 返回结果数量上限
     """
-    from market.search_service import SearchService
+    from market.service.search_service import SearchService
 
     async with managed_session() as session:
         svc = SearchService(session)
@@ -96,7 +96,7 @@ async def import_stocks(limit: int = 50) -> str:
         limit: 本次导入数量上限（默认 50）
     """
     from company.service import CompanyService
-    from market.search_service import SearchService
+    from market.service.search_service import SearchService
 
     async with managed_session() as session:
         search_svc = SearchService(session)
@@ -150,7 +150,7 @@ async def import_stocks(limit: int = 50) -> str:
 
 async def _search_hint(symbol: str, search_svc=None) -> str:
     """搜索相似股票代码，返回提示信息。"""
-    from market.search_service import SearchService
+    from market.service.search_service import SearchService
 
     if search_svc is None:
         async with managed_session() as session:
@@ -173,8 +173,8 @@ async def _run_background_refresh(payload: dict) -> dict | None:
         return None
     try:
         async with managed_session() as session:
-            from market.profile_service import ProfileService
-            from market.financial_service import FinancialService
+            from market.service.profile_service import ProfileService
+            from market.service.financial_service import FinancialService
 
             profile_svc = ProfileService(session)
             fin_svc = FinancialService(session)

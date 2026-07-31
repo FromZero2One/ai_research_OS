@@ -15,6 +15,9 @@ from api.app import create_app
 from core.config import settings
 from core.database import get_db
 
+# Tests don't need a real embedding model — skip the 20-30s startup warmup.
+settings.EMBEDDING_PREWARM = False
+
 # ── Test async engine with NullPool (avoids asyncpg event-loop conflict) ─
 
 test_async_engine = create_async_engine(
@@ -65,13 +68,18 @@ def clean_env(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture(autouse=True)
 def clean_tables():
-    """Truncate all project tables after each test."""
-    yield
+    """Truncate all project tables before each test.
+
+    Runs in setup (before the app/test starts) so no app-held DB
+    transactions/locks can block the TRUNCATE.
+    """
     with cleanup_engine.begin() as conn:
         conn.execute(text("SET session_replication_role = 'replica'"))
-        for table in ALL_TABLES:
-            conn.execute(text(f"TRUNCATE TABLE {table} CASCADE"))
+        conn.execute(text("SET lock_timeout = '5s'"))
+        tables = ", ".join(ALL_TABLES)
+        conn.execute(text(f"TRUNCATE TABLE {tables} CASCADE"))
         conn.execute(text("SET session_replication_role = 'origin'"))
+    yield
 
 
 @pytest.fixture
@@ -79,7 +87,8 @@ def client() -> TestClient:
     """FastAPI synchronous test client with NullPool DB override."""
     app = create_app()
     app.dependency_overrides[get_db] = _get_test_db
-    return TestClient(app)
+    with TestClient(app) as c:
+        yield c
 
 
 @pytest.fixture

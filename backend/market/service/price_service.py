@@ -12,7 +12,6 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import and_, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.adapters.akshare_mysql import AkshareMySQLAdapter
@@ -24,7 +23,8 @@ from market.akshare_executor import (
     run_akshare,
     tx_symbol,
 )
-from market.models import StockPrice
+from market.domain import PriceEntry
+from market.repositories import PriceRepository
 
 
 class PriceService:
@@ -33,6 +33,7 @@ class PriceService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.events = EventLogger(session)
+        self.prices = PriceRepository(session)
         self._mysql: AkshareMySQLAdapter | None = None
 
     async def _get_mysql(self) -> AkshareMySQLAdapter:
@@ -48,10 +49,10 @@ class PriceService:
         start_date: date | None = None,
         end_date: date | None = None,
         limit: int = 100,
-    ) -> list[StockPrice]:
+    ) -> list[PriceEntry]:
         """Get prices — PG first, MySQL for A-stocks, akshare for HK/all."""
         ticker_upper = ticker.upper()
-        result: list[StockPrice] | None = None
+        result: list[PriceEntry] | None = None
 
         # Layer 1: PostgreSQL cache
         result = await self._get_prices_from_pg(ticker_upper, start_date, end_date, limit)
@@ -81,10 +82,10 @@ class PriceService:
         return []
 
     async def _record_and_return(
-        self, ticker: str, prices: list[StockPrice]
-    ) -> list[StockPrice]:
+        self, ticker: str, prices: list[PriceEntry]
+    ) -> list[PriceEntry]:
         """Record freshness and return prices."""
-        from market.freshness_service import FreshnessService
+        from market.service.freshness_service import FreshnessService
         freshness = FreshnessService(self.session)
         await freshness.record_fetch(ticker, "prices", record_count=len(prices))
         return prices
@@ -95,15 +96,8 @@ class PriceService:
         start_date: date | None,
         end_date: date | None,
         limit: int,
-    ) -> list[StockPrice]:
-        stmt = select(StockPrice).where(StockPrice.ticker == ticker)
-        if start_date:
-            stmt = stmt.where(StockPrice.date >= start_date)
-        if end_date:
-            stmt = stmt.where(StockPrice.date <= end_date)
-        stmt = stmt.order_by(desc(StockPrice.date)).limit(limit)
-        result = await self.session.execute(stmt)
-        return list(result.scalars().all())
+    ) -> list[PriceEntry]:
+        return await self.prices.get_for_ticker(ticker, start_date, end_date, limit)
 
     async def _get_prices_from_mysql(
         self,
@@ -111,11 +105,11 @@ class PriceService:
         start_date: date | None,
         end_date: date | None,
         limit: int,
-    ) -> list[StockPrice]:
+    ) -> list[PriceEntry]:
         mysql = await self._get_mysql()
         rows = await mysql.get_prices(ticker, start_date, end_date, limit)
         return [
-            StockPrice(ticker=ticker, date=r.date, open=r.open, high=r.high,
+            PriceEntry(date=r.date, open=r.open, high=r.high,
                        low=r.low, close=r.close, volume=r.volume)
             for r in rows
         ]
@@ -134,32 +128,17 @@ class PriceService:
         count = await self.upsert_prices(ticker, prices)
         return count, warnings
 
-    async def upsert_prices(self, ticker: str, prices: list[dict]) -> int:
+    async def upsert_prices(
+        self, ticker: str, prices: list[dict] | list[PriceEntry]
+    ) -> int:
         """Bulk upsert stock prices into PostgreSQL."""
-        count = 0
-        for row in prices:
-            existing = await self.session.execute(
-                select(StockPrice).where(
-                    StockPrice.ticker == ticker.upper(),
-                    StockPrice.date == row["date"],
-                )
-            )
-            if existing.scalar_one_or_none():
-                continue
-            self.session.add(StockPrice(
-                ticker=ticker.upper(),
-                date=row["date"],
-                open=row.get("open"),
-                high=row.get("high"),
-                low=row.get("low"),
-                close=row.get("close"),
-                volume=row.get("volume"),
-                adjusted_close=row.get("adjusted_close"),
-            ))
-            count += 1
+        entries = [
+            p if isinstance(p, PriceEntry) else PriceEntry.from_row(p)
+            for p in prices
+        ]
+        count = await self.prices.upsert(ticker, entries)
 
         if count:
-            await self.session.flush()
             await self.events.record(
                 source="market", event_type="prices.ingested",
                 entity_type="stock_price", entity_id=ticker,
@@ -167,7 +146,7 @@ class PriceService:
             )
 
         # Record freshness
-        from market.freshness_service import FreshnessService
+        from market.service.freshness_service import FreshnessService
         freshness = FreshnessService(self.session)
         status = "ok" if count > 0 else "ok"
         await freshness.record_fetch(ticker, "prices", record_count=count, status=status)

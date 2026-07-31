@@ -32,8 +32,8 @@ class GatherService:
     ) -> dict:
         """Auto-gather evidence from Knowledge Center and Market Center."""
         from knowledge.service import KnowledgeService
-        from market.price_service import PriceService
-        from market.financial_service import FinancialService
+        from market.service.price_service import PriceService
+        from market.service.financial_service import FinancialService
 
         session = await self.sessions.get(session_id)
         question = session.question

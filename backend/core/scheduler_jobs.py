@@ -20,7 +20,7 @@ async def market_data_update() -> dict:
     a future yfinance/API integration.
     """
     from core.database import managed_session
-    from market.price_service import PriceService
+    from market.service.price_service import PriceService
 
     async with managed_session() as session:
         market = PriceService(session)

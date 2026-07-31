@@ -80,3 +80,4 @@ include = ["ai*", "api*", "core*", "company*", "market*", "document*", "knowledg
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["."]

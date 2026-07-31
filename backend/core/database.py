@@ -54,6 +54,17 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
+async def get_container() -> AsyncGenerator["Container", None]:
+    """FastAPI dependency that yields a DI container for the request.
+
+    Builds on top of ``get_db`` so the session is managed automatically.
+    """
+    from core.container import create_container
+
+    async for session in get_db():
+        yield create_container(session)
+
+
 @asynccontextmanager
 async def managed_session() -> AsyncIterator[AsyncSession]:
     """Safe session lifecycle for background tasks.

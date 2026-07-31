@@ -7,6 +7,33 @@ class AIResearchOSError(Exception):
     """Base exception for all application errors."""
 
 
+class DomainError(AIResearchOSError):
+    """Base exception for business/domain rule violations.
+
+    Subclass this per domain (e.g. ``MarketDataError``) and raise typed
+    errors from services. Handlers map domain errors to HTTP responses.
+    """
+
+    http_status: int = 400
+
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)
+
+
+class DataSourceError(DomainError):
+    """An upstream data source could not be reached or returned bad data.
+
+    http_status: 502 (bad gateway — the source, not the app, is broken).
+    """
+
+    http_status: int = 502
+
+    def __init__(self, source: str, detail: str) -> None:
+        self.source = source
+        super().__init__(f"{source} data source error: {detail}")
+
+
 class NotFoundError(AIResearchOSError):
     """Resource not found."""
 

@@ -27,19 +27,20 @@ class Settings(BaseSettings):
     DATA_DIR: Path = PROJECT_ROOT.parent / "data"
 
     # --- Database ---
-    DATABASE_URL: str = "postgresql+asyncpg://airesearch:airesearch_dev@localhost:5432/airesearch"
+    DATABASE_URL: str = "postgresql+asyncpg://airesearch:airesearch_dev@127.0.0.1:5432/airesearch"
     DATABASE_ECHO: bool = False
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 20
 
     # --- Vector Store ---
-    QDRANT_HOST: str = "localhost"
+    QDRANT_HOST: str = "127.0.0.1"
     QDRANT_PORT: int = 6333
     QDRANT_PREFER_GRPC: bool = True
     EMBEDDING_PROVIDER: str = "ollama"
     EMBEDDING_MODEL: str = "BAAI/bge-m3"
     EMBEDDING_DIMENSION: int = 768  # matches nomic-embed-text (default Ollama model); BGE-M3 = 1024
     EMBEDDING_DEVICE: str = "cpu"
+    EMBEDDING_PREWARM: bool = True  # pre-warm the embedding model at startup (set False in tests)
 
     # --- LLM ---
     LLM_PROVIDER: Literal["ollama", "openai"] = "ollama"
@@ -51,7 +52,7 @@ class Settings(BaseSettings):
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
 
     # --- Redis ---
-    REDIS_URL: str = "redis://localhost:6380/0"  # docker-compose exposes 6380→6379
+    REDIS_URL: str = "redis://127.0.0.1:6380/0"  # docker-compose exposes 6380→6379
     REDIS_TTL: int = 3600
 
     # --- Security ---

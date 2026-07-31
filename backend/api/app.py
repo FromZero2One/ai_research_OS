@@ -23,6 +23,7 @@ from core.exceptions import (
     AIResearchOSError,
     AuthenticationError,
     AuthorizationError,
+    DomainError,
     DuplicateError,
     ExternalServiceError,
     NotFoundError,
@@ -39,7 +40,12 @@ from core.scheduler_routes import router as scheduler_router
 from dashboard.routes import router as dashboard_router
 from document.routes import router as document_router
 from knowledge.routes import router as knowledge_router
-from market.routes import router as market_router
+from market.routes.financial_routes import router as market_financial_router
+from market.routes.freshness_routes import router as market_freshness_router
+from market.routes.news_routes import router as market_news_router
+from market.routes.price_routes import router as market_price_router
+from market.routes.profile_routes import router as market_profile_router
+from market.routes.search_routes import router as market_search_router
 from portfolio.routes import router as portfolio_router
 from research.routes import router as research_router
 
@@ -53,7 +59,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # Startup: verify DB connection, create vector collections, schedule jobs
     from core.adapters.embedding import create_embedding
     from core.adapters.vector_store import create_vector_store
-    from core.database import engine
+    from core.database import async_session_factory, engine
 
     try:
         async with engine.connect() as conn:
@@ -65,12 +71,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         logger.warning("Database not available at startup: %s", e)
 
     # Pre-warm embedding model (lazy — runs in background, doesn't block startup)
-    try:
-        embedder = create_embedding()
-        _ = await embedder.embed(["warmup"])
-        logger.info("Embedding model ready: dim=%d", embedder.dimension)
-    except Exception as e:
-        logger.debug("Embedding model lazy-load deferred: %s", e)
+    if settings.EMBEDDING_PREWARM:
+        try:
+            embedder = create_embedding()
+            _ = await embedder.embed(["warmup"])
+            logger.info("Embedding model ready: dim=%d", embedder.dimension)
+        except Exception as e:
+            logger.debug("Embedding model lazy-load deferred: %s", e)
 
     # Start background task worker (persistent task queue)
     from core.task_manager import _recover_interrupted_tasks, _task_worker_loop, stop_worker
@@ -78,6 +85,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     await _recover_interrupted_tasks()
     worker_task = asyncio.create_task(_task_worker_loop())
     logger.info("Background task worker started")
+
+    # DI container — routes use `request.app.state.container` or the
+    # `get_container` dependency to resolve services.
+    from core.container import create_container
+
+    app.state.container_factory = create_container
+    app.state.engine = engine
+    app.state.session_factory = async_session_factory
 
     # Start scheduler
     if settings.SCHEDULER_ENABLED:
@@ -194,6 +209,13 @@ def create_app() -> FastAPI:
             content={"error": "internal_error", "detail": str(exc)},
         )
 
+    @app.exception_handler(DomainError)
+    async def domain_handler(request: Request, exc: DomainError):
+        return JSONResponse(
+            status_code=exc.http_status,
+            content={"error": "domain_error", "detail": exc.detail},
+        )
+
     # ── Health ────────────────────────────────────────────────────
 
     @app.get("/health")
@@ -208,7 +230,12 @@ def create_app() -> FastAPI:
     # ── Register module routers ───────────────────────────────────
 
     app.include_router(company_router, prefix="/api/v1")
-    app.include_router(market_router, prefix="/api/v1")
+    app.include_router(market_price_router, prefix="/api/v1")
+    app.include_router(market_financial_router, prefix="/api/v1")
+    app.include_router(market_profile_router, prefix="/api/v1")
+    app.include_router(market_news_router, prefix="/api/v1")
+    app.include_router(market_search_router, prefix="/api/v1")
+    app.include_router(market_freshness_router, prefix="/api/v1")
     app.include_router(document_router, prefix="/api/v1")
     app.include_router(knowledge_router, prefix="/api/v1")
     app.include_router(ai_router, prefix="/api/v1")

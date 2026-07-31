@@ -6,15 +6,13 @@ and by the dashboard/freshness API to report data staleness.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.logging import logger
-from market.models import DataFreshness
-
+from market.repositories import FreshnessRepository
 
 # How old is "stale" for each data type (in hours)
 STALE_THRESHOLD_HOURS: dict[str, int] = {
@@ -30,6 +28,7 @@ class FreshnessService:
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
+        self.repo = FreshnessRepository(session)
 
     async def record_fetch(
         self,
@@ -38,33 +37,12 @@ class FreshnessService:
         record_count: int | None = None,
         status: str = "ok",
         error_message: str | None = None,
-    ) -> DataFreshness:
+    ) -> Any:
         """Upsert freshness record after a successful (or failed) fetch."""
-        stmt = select(DataFreshness).where(
-            DataFreshness.ticker == ticker.upper(),
-            DataFreshness.data_type == data_type,
+        return await self.repo.upsert(
+            ticker, data_type, record_count=record_count,
+            status=status, error_message=error_message,
         )
-        result = await self.session.execute(stmt)
-        existing = result.scalar_one_or_none()
-
-        if existing:
-            existing.checked_at = datetime.now(timezone.utc)
-            existing.status = status
-            existing.record_count = record_count
-            existing.error_message = error_message
-        else:
-            existing = DataFreshness(
-                ticker=ticker.upper(),
-                data_type=data_type,
-                checked_at=datetime.now(timezone.utc),
-                record_count=record_count,
-                status=status,
-                error_message=error_message,
-            )
-            self.session.add(existing)
-
-        await self.session.flush()
-        return existing
 
     async def get_freshness(
         self,
@@ -74,18 +52,9 @@ class FreshnessService:
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """Query freshness records, optionally filtered."""
-        stmt = select(DataFreshness).order_by(DataFreshness.checked_at.desc())
-
-        if ticker:
-            stmt = stmt.where(DataFreshness.ticker == ticker.upper())
-        if data_type:
-            stmt = stmt.where(DataFreshness.data_type == data_type)
-        if status:
-            stmt = stmt.where(DataFreshness.status == status)
-
-        stmt = stmt.limit(limit)
-        result = await self.session.execute(stmt)
-        entries = list(result.scalars().all())
+        entries = await self.repo.list_all(
+            ticker=ticker, data_type=data_type, status=status, limit=limit,
+        )
 
         now = datetime.now(timezone.utc)
         output = []
@@ -133,23 +102,15 @@ class FreshnessService:
 
     async def get_overall_stats(self) -> dict[str, Any]:
         """Aggregate freshness stats across all tickers."""
-        result = await self.session.execute(
-            select(
-                DataFreshness.data_type,
-                func.count(DataFreshness.id).label("count"),
-                func.max(DataFreshness.checked_at).label("newest"),
-                func.min(DataFreshness.checked_at).label("oldest"),
-            ).group_by(DataFreshness.data_type)
-        )
-        rows = result.all()
+        rows = await self.repo.stats()
         stats = {}
         now = datetime.now(timezone.utc)
-        for row in rows:
-            max_age = (now - row.newest).total_seconds() / 3600 if row.newest else None
-            min_age = (now - row.oldest).total_seconds() / 3600 if row.oldest else None
-            stats[row.data_type] = {
-                "count": row.count,
-                "newest_checked_at": row.newest.isoformat() if row.newest else None,
+        for data_type, count, newest, oldest in rows:
+            max_age = (now - newest).total_seconds() / 3600 if newest else None
+            min_age = (now - oldest).total_seconds() / 3600 if oldest else None
+            stats[data_type] = {
+                "count": count,
+                "newest_checked_at": newest.isoformat() if newest else None,
                 "newest_age_hours": round(max_age, 1) if max_age else None,
                 "oldest_age_hours": round(min_age, 1) if min_age else None,
             }

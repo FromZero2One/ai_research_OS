@@ -5,12 +5,9 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.database import get_db
-from research.evidence_service import EvidenceService
-from research.gather_service import GatherService
-from research.report_service import ReportService
+from core.container import Container
+from core.database import get_container
 from research.schemas import (
     EvidenceCreate,
     EvidenceResponse,
@@ -21,7 +18,6 @@ from research.schemas import (
     ResearchSessionResponse,
     ResearchSessionUpdate,
 )
-from research.session_service import SessionService
 
 router = APIRouter(prefix="/research", tags=["Research Center"])
 
@@ -31,9 +27,9 @@ router = APIRouter(prefix="/research", tags=["Research Center"])
 @router.post("/sessions", response_model=ResearchSessionResponse, status_code=201)
 async def create_session(
     data: ResearchSessionCreate,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
-    svc = SessionService(db)
+    svc = container.research_session_service
     session = await svc.create(**data.model_dump())
     return session
 
@@ -45,9 +41,9 @@ async def list_sessions(
     query: str | None = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
-    svc = SessionService(db)
+    svc = container.research_session_service
     sessions, total = await svc.list(
         status=status,
         company_id=uuid.UUID(company_id) if company_id else None,
@@ -61,9 +57,9 @@ async def list_sessions(
 @router.get("/sessions/{session_id}", response_model=ResearchSessionDetail)
 async def get_session(
     session_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
-    svc = SessionService(db)
+    svc = container.research_session_service
     session = await svc.get(session_id, eager=True)
     return session
 
@@ -72,9 +68,9 @@ async def get_session(
 async def update_session(
     session_id: uuid.UUID,
     data: ResearchSessionUpdate,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
-    svc = SessionService(db)
+    svc = container.research_session_service
     session = await svc.update(session_id, **data.model_dump(exclude_unset=True))
     return session
 
@@ -82,9 +78,9 @@ async def update_session(
 @router.delete("/sessions/{session_id}", status_code=204)
 async def delete_session(
     session_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
-    svc = SessionService(db)
+    svc = container.research_session_service
     await svc.delete(session_id)
 
 
@@ -94,9 +90,9 @@ async def delete_session(
 async def add_evidence(
     session_id: uuid.UUID,
     data: EvidenceCreate,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
-    svc = EvidenceService(db)
+    svc = container.research_evidence_service
     evidence = await svc.add(session_id, **data.model_dump())
     return evidence
 
@@ -104,18 +100,18 @@ async def add_evidence(
 @router.get("/sessions/{session_id}/evidences", response_model=list[EvidenceResponse])
 async def list_evidences(
     session_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
-    svc = EvidenceService(db)
+    svc = container.research_evidence_service
     return await svc.list(session_id)
 
 
 @router.delete("/evidences/{evidence_id}", status_code=204)
 async def delete_evidence(
     evidence_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
-    svc = EvidenceService(db)
+    svc = container.research_evidence_service
     await svc.remove(evidence_id)
 
 
@@ -128,9 +124,9 @@ async def create_report(
     content: str,
     format: str = "markdown",
     is_final: bool = False,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
-    svc = ReportService(db)
+    svc = container.research_report_service
     report = await svc.create(session_id, title, content, format_=format, is_final=is_final)
     return report
 
@@ -138,9 +134,9 @@ async def create_report(
 @router.get("/sessions/{session_id}/reports", response_model=list[ReportResponse])
 async def list_reports(
     session_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
-    svc = ReportService(db)
+    svc = container.research_report_service
     return await svc.list(session_id)
 
 
@@ -149,9 +145,9 @@ async def list_reports(
 @router.post("/sessions/{session_id}/plan", response_model=ResearchPlan)
 async def generate_research_plan(
     session_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
-    svc = SessionService(db)
+    svc = container.research_session_service
     plan = await svc.generate_plan(session_id)
     return plan
 
@@ -159,9 +155,9 @@ async def generate_research_plan(
 @router.get("/sessions/{session_id}/plan", response_model=ResearchPlan | None)
 async def get_research_plan(
     session_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
-    svc = SessionService(db)
+    svc = container.research_session_service
     plan = await svc.get_plan(session_id)
     return plan
 
@@ -172,9 +168,9 @@ async def get_research_plan(
 async def generate_report(
     session_id: uuid.UUID,
     is_final: bool = False,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
-    svc = ReportService(db)
+    svc = container.research_report_service
     report = await svc.auto_generate(session_id, is_final=is_final)
     return report
 
@@ -187,10 +183,10 @@ async def finalize_research(
     thesis: str,
     decision: str = Query(..., pattern="^(buy|sell|hold|watch|pass)$"),
     confidence: float = Query(..., ge=0.0, le=1.0),
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
     from research.thesis_service import ThesisService
-    svc = ThesisService(db)
+    svc = ThesisService(container.session)
     return await svc.finalize(session_id, thesis, decision, confidence)
 
 
@@ -200,10 +196,11 @@ async def finalize_research(
 async def auto_gather(
     session_id: uuid.UUID,
     use_plan: bool = True,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
-    svc = GatherService(db)
-    result = await svc.auto_gather(session_id, db, use_plan=use_plan)
+    from research.gather_service import GatherService
+    svc = GatherService(container.session)
+    result = await svc.auto_gather(session_id, container.session, use_plan=use_plan)
     return result
 
 

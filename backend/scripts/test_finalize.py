@@ -3,7 +3,7 @@ import httpx
 import asyncio
 
 async def test():
-    async with httpx.AsyncClient(base_url="http://localhost:8000", proxies=None, transport=httpx.AsyncHTTPTransport()) as client:
+    async with httpx.AsyncClient(base_url="http://localhost:8000", transport=httpx.AsyncHTTPTransport()) as client:
         # Get a draft session
         resp = await client.get("/api/v1/research/sessions")
         sessions = resp.json()
