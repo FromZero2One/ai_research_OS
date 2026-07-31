@@ -52,12 +52,32 @@ backend/
 ```
 
 ## 4. 迁移路线
-1. **阶段 1** – 拆分 `market` 子 Service 与 Interface、Router。保留 `MarketFacade` 兼容旧调用。
-2. **阶段 2** – 实现 Domain DTO 与 Repository，Service 改为使用 DTO。
-3. **阶段 3** – 引入 DI 容器，所有 Service 通过容器获取依赖。
-4. **阶段 4** – 统一异常为 `DomainError` 系列并注册 handler。
-5. **阶段 5** – 将相同模式推广至 `research`, `portfolio`, `knowledge` 等域。
-6. **阶段 6** – 配置 `ruff`/`mypy`/`pre‑commit`，完善单元测试覆盖。
+
+> 状态图例：✅ 已完成 ｜ 🔄 进行中 ｜ ⬜ 未开始
+
+| # | 阶段 | 范围 | 状态 |
+|---|------|------|------|
+| 1 | 拆分 `market` 子 Service、Interface、Router；保留 `MarketFacade` 兼容旧调用 | `market/` | ✅ 完成 |
+| 2 | 实现 Domain DTO 与 Repository，Service 改为使用 DTO | `market/domain.py`, `market/repositories.py` | ✅ 完成 |
+| 3 | 引入 DI 容器，所有 Service 通过容器获取依赖 | `core/container.py` + 各域 routes | 🔄 部分完成 |
+| 4 | 统一异常为 `DomainError` 系列并注册 handler | `core/exceptions.py`, `api/app.py` | ✅ 完成 |
+| 5 | 将相同模式推广至 `research`, `portfolio`, `knowledge` 等域 | `research/`, `portfolio/`, `knowledge/` | 🔄 部分完成 |
+| 6 | 配置 `ruff`/`mypy`/`pre-commit`，完善单元测试覆盖 | `pyproject.toml`, CI | ⬜ 未开始 |
+
+### 4.1 阶段 3 & 5 细分状态
+
+| 域 | 子 Service 拆分 | Domain DTO | Repository | 容器注册 | Facade | routes 用容器 |
+|----|:---:|:---:|:---:|:---:|:---:|:---:|
+| `market` | ✅ `service/` 6 个 | ✅ `domain.py` | ✅ `repositories.py` (3) | ✅ 6 服务 | ✅ `MarketFacade` | ✅ 6 子 router + `aggregate.py` |
+| `research` | ✅ `session_service.py` / `evidence_service.py` / `report_service.py` | ⬜ | ⬜ | ✅ 3 服务 | ✅ `ResearchFacade` | ✅ |
+| `portfolio` | ✅ `service/` 3 个 (watchlist/holding/journal) | ⬜ | ⬜ | ✅ 3 服务 | ✅ `PortfolioFacade` | ✅ |
+| `knowledge` | ✅ 单 Service（无拆分必要） | ⬜ | ⬜ | ✅ `knowledge_service` | ✅ `KnowledgeFacade` | ✅ |
+| `document` | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ 仍用 `get_db` |
+| `ai` | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ 仍用 `get_db` |
+| `company` | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ 仍用 `get_db` |
+| `dashboard` | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ 仍用 `get_db` |
+
+> `research`/`portfolio`/`knowledge` 复用「Protocols + 容器 + Facade + routes 容器化」模式；其 Domain DTO / Repository 层是否引入视后续需要决定。
 
 ## 5. 迁移风险与应对
 - **兼容性破坏**：在 `market/__init__.py` 保留旧函数的代理实现。
@@ -65,16 +85,34 @@ backend/
 - **异常遗漏**：迁移完成后运行脚本搜索 `raise`，确保全部映射至 `DomainError`。
 - **测试基准变更**：先保持旧返回结构，逐步改为 DTO 再更新测试。
 
-## 6. 实施计划（时间估算）
-| 周 | 任务 |
-|----|------|
-| 1 | 完成 `market` 子 Service 拆分、Interface、Router |
-| 2 | 实现 `market` Domain DTO 与 Repository |
-| 3 | 引入 DI 容器并迁移 `market` Service |
-| 4 | 统一 `market` 异常并注册 handler |
-| 5‑6 | 在其他域复用相同模式 |
-| 7 | 配置代码质量工具，完成全套测试 |
-| 8 | 文档审查、PR 合并 |
+## 6. 实施进度快照
+
+### ✅ 已完成
+- **market 域（阶段 1-4 全量）**：`market/service/`（6 个聚焦 Service）、`market/routes/`（6 子 router + `aggregate.py` + 聚合导出）、`market/domain.py`（`PriceEntry`/`FinancialMetricEntry`/`FreshnessEntry`/`MacroIndicatorEntry`）、`market/repositories.py`（`PriceRepository`/`FinancialRepository`/`FreshnessRepository`）、`market/service.py` deprecated shim、`MarketFacade` 兼容层。
+- **DI 容器**：`core/container.py`（`Container` + `create_container`），懒加载 13 个服务属性；`core/database.py` 新增 `get_container` 依赖。
+- **Protocols**：`core/interfaces.py` 新增 12 个域服务 Protocol（market 5 + research 3 + portfolio 3 + knowledge 1），容器懒加载 13 个服务属性（含 market `FreshnessService` 直接用具体类型）。
+- **异常体系**：`core/exceptions.py` 定义 `AIResearchOSError` → `DomainError` 层级；`api/app.py` 注册 8 个 handler（`NotFoundError`/`ValidationError`/`DuplicateError`/`AuthenticationError`/`AuthorizationError`/`ExternalServiceError`/`AIResearchOSError`/`DomainError`）。全库 `raise` 扫描确认全部为结构化异常。
+- **research 域**：3 个 Protocol + 容器注册 + `ResearchFacade` + routes 容器化。
+- **portfolio 域**：`PortfolioService` 拆分为 `service/` 3 个子服务 + `PortfolioFacade` + 容器注册 + routes 容器化；`service/__init__.py` 保留 `PortfolioService` 后向兼容别名。
+- **knowledge 域**：`KnowledgeService` Protocol + 容器注册 + `KnowledgeFacade` + routes 容器化。
+- **测试基线**：全量 `91 passed / 7 failed`，7 个失败全部为环境依赖（6× market 依赖 akshare MySQL、1× knowledge 依赖 Ollama embedding），与重构前基线一致，无回归。
+
+### 🔄 进行中
+- **阶段 3/5 收尾**：`document` / `ai` / `company` / `dashboard` 4 个域仍用 `get_db` 直连，尚未接入容器（待 B7）。
+
+### ⬜ 未开始
+- **阶段 6（C8）**：配置 `[tool.mypy]`（当前仅 `[tool.ruff]`）、接入 pre-commit、完善单元测试覆盖。
+
+## 7. 实施计划（原时间估算）
+| 周 | 任务 | 状态 |
+|----|------|------|
+| 1 | 完成 `market` 子 Service 拆分、Interface、Router | ✅ |
+| 2 | 实现 `market` Domain DTO 与 Repository | ✅ |
+| 3 | 引入 DI 容器并迁移 `market` Service | ✅ |
+| 4 | 统一 `market` 异常并注册 handler | ✅ |
+| 5-6 | 在其他域复用相同模式 | 🔄 部分（research/portfolio/knowledge 完成，document/ai/company/dashboard 待接入） |
+| 7 | 配置代码质量工具，完成全套测试 | ⬜ |
+| 8 | 文档审查、PR 合并 | ⬜ |
 
 ## 7. 文档化与后续
 - 本设计文档已提交至 `docs/superpowers/specs/2024-07-31-arch-optimisation-design.md`。
