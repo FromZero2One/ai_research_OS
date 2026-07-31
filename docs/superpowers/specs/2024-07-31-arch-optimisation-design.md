@@ -102,6 +102,10 @@ backend/
 
 ### ⬜ 未开始
 - **阶段 6（C8）**：配置 `[tool.mypy]`（当前仅 `[tool.ruff]`）、接入 pre-commit、完善单元测试覆盖。
+- **环境依赖测试失败（非代码缺陷，需环境修复后归零）**：
+  - 6× `test_market`：依赖 akshare MySQL 本地数据（600519/000001 等），需初始化对应标的本地 K 线/财务数据。
+  - 1× `test_knowledge`：依赖本地 Ollama embedding 服务运行（未启动时 embedding 返回零向量 → 检索 count=0）。
+- **发布收尾**：`refactor/vue3-rewrite` 分支尚未合并/创建 PR；周 8 任务（文档审查、PR 合并）待做。
 
 ## 7. 实施计划（原时间估算）
 | 周 | 任务 | 状态 |
@@ -114,7 +118,7 @@ backend/
 | 7 | 配置代码质量工具，完成全套测试 | ⬜ |
 | 8 | 文档审查、PR 合并 | ⬜ |
 
-## 7. 文档化与后续
+## 8. 文档化与后续
 - 本设计文档已提交至 `docs/superpowers/specs/2024-07-31-arch-optimisation-design.md`。
 - 实现计划将通过 `writing-plans` skill 自动生成，并在 PR 中链接。
 - CI 将在 PR 合并前检查设计文件是否为最新版本，防止实现脱离设计。
