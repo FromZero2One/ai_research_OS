@@ -4,7 +4,7 @@ Data sources (3-layer fallback):
   1. PostgreSQL (already ingested data)
   2. Akshare MySQL (A-stocks, Layer 1)
   3. Local akshare subprocess (Layer 2, Tencent/Sina)
-  4. Cloud MCP (Layer 3, 8.137.104.120)
+  4. Cloud MCP (Layer 3, configurable via AKSHARE_CLOUD_MCP_URL)
 """
 
 from __future__ import annotations
@@ -185,8 +185,7 @@ class PriceService:
         from market.service.freshness_service import FreshnessService
 
         freshness = FreshnessService(self.session)
-        status = "ok" if count > 0 else "ok"
-        await freshness.record_fetch(ticker, "prices", record_count=count, status=status)
+        await freshness.record_fetch(ticker, "prices", record_count=count, status="ok")
 
         return count
 

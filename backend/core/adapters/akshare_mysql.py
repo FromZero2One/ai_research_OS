@@ -24,6 +24,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
+from core.config import settings
+
 
 @dataclass
 class PriceRow:
@@ -50,11 +52,11 @@ class FinancialRow:
 
 
 _DB_CONFIG = {
-    "host": "127.0.0.1",
-    "port": 3306,
-    "user": "root",
-    "password": "root",
-    "database": "akshare",
+    "host": settings.AKSHARE_MYSQL_HOST,
+    "port": settings.AKSHARE_MYSQL_PORT,
+    "user": settings.AKSHARE_MYSQL_USER,
+    "password": settings.AKSHARE_MYSQL_PASSWORD,
+    "database": settings.AKSHARE_MYSQL_DATABASE,
     "charset": "utf8mb4",
 }
 

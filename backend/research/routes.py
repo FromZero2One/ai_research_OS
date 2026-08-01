@@ -209,7 +209,7 @@ async def auto_gather(
     container: Container = Depends(get_container),
 ):
     svc = container.research_gather_service
-    result = await svc.auto_gather(session_id, container.session, use_plan=use_plan)
+    result = await svc.auto_gather(session_id, use_plan=use_plan)
     return result
 
 

@@ -12,6 +12,55 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from document.chunker import chunk_text
+
+
+class TestChunker:
+    """Chunker correctness — full coverage, no data loss, no infinite loop."""
+
+    def test_short_text_single_chunk(self):
+        assert chunk_text("hello world") == ["hello world"]
+
+    def test_exact_size_single_chunk(self):
+        text = "a" * 512
+        assert chunk_text(text) == [text]
+
+    def test_empty_text(self):
+        assert chunk_text("") == []
+        assert chunk_text("   \n\n  ") == []
+
+    def test_long_text_covers_everything(self):
+        """Regression: the old loop-safety check truncated long documents to
+        the first ~2 chunks. Every character must appear in at least one chunk."""
+        text = "".join(f"[{i:05d}]" for i in range(1500))
+        chunks = chunk_text(text, chunk_size=512, chunk_overlap=64)
+
+        assert len(chunks) >= 3
+        assert text.startswith(chunks[0])
+        assert text.endswith(chunks[-1])
+        joined = "".join(chunks)
+        assert sum(len(c) for c in chunks) >= len(text)
+        assert all(f"[{i:05d}]" in joined for i in range(1500))
+
+    def test_long_chinese_text_covers_everything(self):
+        text = "".join(chr(0x4E00 + i) for i in range(2000))
+        chunks = chunk_text(text, chunk_size=512, chunk_overlap=64)
+
+        assert len(chunks) >= 3
+        assert text.startswith(chunks[0])
+        assert text.endswith(chunks[-1])
+        joined = "".join(chunks)
+        assert set(joined) >= set(text)
+
+    def test_degenerate_overlap_terminates(self):
+        text = "".join(f"[{i:05d}]" for i in range(400))
+        chunks = chunk_text(text, chunk_size=50, chunk_overlap=100)
+        assert chunks
+        joined = "".join(chunks)
+        assert text.startswith(chunks[0])
+        assert text.endswith(chunks[-1])
+        assert all(f"[{i:05d}]" in joined for i in range(400))
+
 
 class TestDocumentCRUD:
     """Synchronous DB-only tests — no Qdrant needed."""

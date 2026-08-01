@@ -15,6 +15,20 @@ from core.exceptions import NotFoundError
 from core.interfaces import LLMMessage
 
 
+def apply_variables(text: str, variables: dict) -> str:
+    """Replace ``{name}`` placeholders without breaking literal braces.
+
+    Unlike ``str.format(**variables)`` this never raises on missing keys or
+    literal ``{``/``}`` characters in the template (e.g. JSON examples), and
+    leaves unknown placeholders intact instead of crashing the request.
+    """
+    if not variables or not text:
+        return text
+    for key, value in variables.items():
+        text = text.replace("{" + key + "}", str(value))
+    return text
+
+
 class AIService:
     """AI capability management — prompts, generation, summarization, extraction."""
 
@@ -85,9 +99,8 @@ class AIService:
         user_prompt = template.user_prompt_template or ""
 
         # Apply variables
-        if variables:
-            system = system.format(**variables)
-            user_prompt = user_prompt.format(**variables)
+        system = apply_variables(system, variables or {})
+        user_prompt = apply_variables(user_prompt, variables or {})
 
         messages = [
             LLMMessage(role="system", content=system),

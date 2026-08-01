@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     QDRANT_HOST: str = "127.0.0.1"
     QDRANT_PORT: int = 6333
     QDRANT_PREFER_GRPC: bool = True
+    QDRANT_COLLECTION: str = "documents"
     EMBEDDING_PROVIDER: str = "ollama"
     EMBEDDING_MODEL: str = "BAAI/bge-m3"
     EMBEDDING_DIMENSION: int = 768  # matches nomic-embed-text (default Ollama model); BGE-M3 = 1024
@@ -78,6 +79,21 @@ class Settings(BaseSettings):
     # --- Market ---
     AKSHARE_ENABLED: bool = True
     YFINANCE_ENABLED: bool = True
+
+    # --- External data sources (machine-specific, override in .env) ---
+    # Directory of the akshare_mcp venv used for the subprocess data layer.
+    AKSHARE_MCP_DIR: str = "/home/wsm/codes/akshare_mcp"
+    # Optional cloud MCP endpoint (Layer 3 fallback). Empty disables the layer.
+    AKSHARE_CLOUD_MCP_URL: str = ""
+    # Read-only MySQL mirror maintained by akshare_mcp (A-stock data).
+    AKSHARE_MYSQL_HOST: str = "127.0.0.1"
+    AKSHARE_MYSQL_PORT: int = 3306
+    AKSHARE_MYSQL_USER: str = "root"
+    AKSHARE_MYSQL_PASSWORD: str = "root"
+    AKSHARE_MYSQL_DATABASE: str = "akshare"
+    # NewsNow MCP server script (tsx) + upstream base URL.
+    NEWSNOW_MCP_SERVER_PATH: str = "/home/wsm/codes/newsnow/tools/mcp-server.ts"
+    NEWSNOW_BASE_URL: str = "https://newsnow.busiyi.world"
 
     # --- Scheduling ---
     SCHEDULER_ENABLED: bool = True

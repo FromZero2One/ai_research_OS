@@ -43,6 +43,13 @@ class QdrantVectorStore:
         score_threshold: float | None = None,
         filter_: dict | None = None,
     ) -> list[VectorRecord]:
+        # Searching a collection that was never created (e.g. fresh Qdrant or
+        # an empty test environment) raises a gRPC NotFound — treat it as "no
+        # results" instead of a 500.
+        collections = await self._client.get_collections()
+        if collection not in {c.name for c in collections.collections}:
+            return []
+
         qdrant_filter = None
         if filter_:
             conditions = [

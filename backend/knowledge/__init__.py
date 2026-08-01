@@ -1,19 +1,5 @@
 """Knowledge Center — Hybrid RAG: dense + sparse retrieval.
 
-Facade:
-    KnowledgeFacade — exposes the KnowledgeService so callers can use one
-    entry point.
+The service lives in ``knowledge.service``; the DI container in
+``core.container`` wires it into routes. No facade needed.
 """
-
-from __future__ import annotations
-
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from knowledge.service import KnowledgeService
-
-
-class KnowledgeFacade:
-    """Aggregation facade over the knowledge service."""
-
-    def __init__(self, session: AsyncSession) -> None:
-        self.search_service = KnowledgeService(session)

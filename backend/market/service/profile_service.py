@@ -10,6 +10,57 @@ from core.event_service import EventLogger
 from core.logging import logger
 from market.akshare_executor import is_a_stock
 
+_PROFILE_CODE = """\
+import json, os, sys
+import akshare as ak
+try:
+    ticker = os.environ["AKSHARE_TICKER"]
+    if len(ticker) in (4, 5):
+        df = ak.stock_hk_company_profile_em(symbol=ticker.zfill(5))
+        if df is None or df.empty:
+            print("__R__:{}")
+        else:
+            row = df.iloc[0]
+            emp_raw = row.get("员工人数")
+            try:
+                employees = int(emp_raw)
+            except (ValueError, TypeError):
+                employees = None
+            print("__R__:" + json.dumps({
+                "name": str(row.get("公司名称", "")),
+                "sector": row.get("所属行业"),
+                "industry": row.get("所属行业"),
+                "description": str(row.get("公司介绍", ""))[:2000] if row.get("公司介绍") else None,
+                "website": row.get("公司网址"),
+                "headquarters": row.get("办公地址"),
+                "founded_year": (
+                    int(str(row.get("公司成立日期", ""))[:4])
+                    if row.get("公司成立日期") else None
+                ),
+                "employees": employees,
+            }, ensure_ascii=False, default=str))
+    else:
+        df = ak.stock_profile_cninfo(symbol=ticker)
+        if df is None or df.empty:
+            print("__R__:{}")
+        else:
+            row = df.iloc[0]
+            print("__R__:" + json.dumps({
+                "name": str(row.get("公司名称", "")),
+                "sector": row.get("所属行业"),
+                "industry": row.get("所属行业"),
+                "description": str(row.get("机构简介", ""))[:2000] if row.get("机构简介") else None,
+                "website": row.get("官方网站"),
+                "headquarters": row.get("办公地址"),
+                "founded_year": (
+                    int(str(row.get("成立日期", ""))[:4])
+                    if row.get("成立日期") else None
+                ),
+            }, ensure_ascii=False, default=str))
+except Exception as e:
+    print("__E__:" + str(e), file=sys.stderr)
+"""
+
 
 class ProfileService:
     """Company profile, stock info, and valuation — sourced from akshare MySQL + API."""
@@ -72,62 +123,27 @@ class ProfileService:
         }
 
     async def fetch_and_store_company_profile(self, ticker: str) -> dict:
-        """Fetch company profile data via akshare and update the Company record in PG."""
-        import asyncio as _asyncio
+        """Fetch company profile via the akshare subprocess and update the Company row in PG.
 
-        import akshare as ak
+        Runs akshare in the isolated akshare_mcp venv (ticker passed via env var)
+        instead of importing akshare into the backend process, which is not a
+        declared dependency and would fail with ModuleNotFoundError.
+        """
+        import asyncio as _asyncio
+        import json as _json
 
         from company.models import Company
+        from market.akshare_executor import build_akshare_env, run_akshare
 
         profile: dict[str, str | int | None] = {}
-        is_hk = ticker.strip().isdigit() and len(ticker.strip()) in (4, 5)
-
-        def _fetch_a():
-            df = ak.stock_profile_cninfo(symbol=ticker)
-            if df is None or df.empty:
-                return {}
-            row = df.iloc[0]
-            cn_name = str(row.get("公司名称", ""))
-            return {
-                "name": cn_name if cn_name else None,
-                "sector": row.get("所属行业"),
-                "industry": row.get("所属行业"),
-                "description": str(row.get("机构简介", ""))[:2000] if row.get("机构简介") else None,
-                "website": row.get("官方网站"),
-                "headquarters": row.get("办公地址"),
-                "founded_year": (
-                    int(str(row.get("成立日期", ""))[:4]) if row.get("成立日期") else None
-                ),
-            }
-
-        def _fetch_hk():
-            hk_sym = ticker.zfill(5)
-            df = ak.stock_hk_company_profile_em(symbol=hk_sym)
-            if df is None or df.empty:
-                return {}
-            row = df.iloc[0]
-            emp_raw = row.get("员工人数")
-            try:
-                employees = int(emp_raw)
-            except (ValueError, TypeError):
-                employees = None
-            hk_name = str(row.get("公司名称", ""))
-            return {
-                "name": hk_name if hk_name else None,
-                "sector": row.get("所属行业"),
-                "industry": row.get("所属行业"),
-                "description": str(row.get("公司介绍", ""))[:2000] if row.get("公司介绍") else None,
-                "website": row.get("公司网址"),
-                "headquarters": row.get("办公地址"),
-                "founded_year": (
-                    int(str(row.get("公司成立日期", ""))[:4]) if row.get("公司成立日期") else None
-                ),
-                "employees": employees,
-            }
-
         try:
-            profile = await _asyncio.to_thread(_fetch_hk if is_hk else _fetch_a)
-        except Exception as e:
+            stdout = await _asyncio.to_thread(run_akshare, _PROFILE_CODE, build_akshare_env(ticker))
+            if stdout:
+                for line in stdout.splitlines():
+                    if line.startswith("__R__:"):
+                        profile = _json.loads(line[6:])
+                        break
+        except (_json.JSONDecodeError, ValueError) as e:
             logger.warning("  [profile] fetch failed for %s: %s", ticker, e)
             return {}
 

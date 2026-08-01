@@ -1,7 +1,14 @@
-"""Test fixtures — sync + async TestClient, per-test table cleanup."""
+"""Test fixtures — sync + async TestClient, per-test table cleanup.
+
+Tests run against a dedicated database (default ``airesearch_test``), never
+the development database: the per-test TRUNCATE would destroy real data.
+The test DB is created and migrated on first use; a guard refuses to run
+if the resolved test URL points at the same database as the dev URL.
+"""
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncGenerator
 
 import httpx
@@ -19,10 +26,99 @@ from core.database import get_container, get_db
 # Tests don't need a real embedding model — skip the 20-30s startup warmup.
 settings.EMBEDDING_PREWARM = False
 
+# Isolate tests from the development Qdrant collection: uploaded vectors and
+# searches must never touch the dev "documents" collection (which accumulates
+# stale points across runs and crowds out fresh results).
+settings.QDRANT_COLLECTION = "documents_test"
+
+# ── Dedicated test database ─────────────────────────────────────────────
+
+TEST_DB_NAME = os.getenv("TEST_DATABASE_NAME", "airesearch_test")
+TEST_DATABASE_URL = os.getenv(
+    "TEST_DATABASE_URL",
+    default=f"{settings.DATABASE_URL.rsplit('/', 1)[0]}/{TEST_DB_NAME}",
+)
+
+
+def _db_name(url: str) -> str:
+    """Extract the database name from a SQLAlchemy URL."""
+    return url.rstrip("/").rsplit("/", 1)[-1].split("?")[0]
+
+
+if _db_name(TEST_DATABASE_URL) == _db_name(settings.DATABASE_URL):
+    raise RuntimeError(
+        "Refusing to run tests against the development database "
+        f"({settings.DATABASE_URL!r}). Set TEST_DATABASE_URL (or "
+        "TEST_DATABASE_NAME) to a dedicated test database."
+    )
+
+
+def _sync(url: str) -> str:
+    """Convert an asyncpg URL to the psycopg2 dialect used by sync engines."""
+    return url.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+
+
+def _ensure_test_db() -> None:
+    """Idempotently create the test database, extensions, and schema."""
+    from core.base import Base
+
+    # 1. Create the database if missing (via the postgres maintenance DB).
+    admin_url = _sync(f"{settings.DATABASE_URL.rsplit('/', 1)[0]}/postgres")
+    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT", pool_pre_ping=True)
+    with admin_engine.connect() as conn:
+        exists = conn.execute(
+            text("SELECT 1 FROM pg_database WHERE datname = :name"),
+            {"name": TEST_DB_NAME},
+        ).scalar()
+        if not exists:
+            conn.execute(text(f'CREATE DATABASE "{TEST_DB_NAME}"'))
+    admin_engine.dispose()
+
+    # 2. Extensions + schema. Models are already registered on Base.metadata
+    #    by the `from api.app import create_app` import above.
+    test_engine = create_engine(_sync(TEST_DATABASE_URL), pool_pre_ping=True)
+    with test_engine.begin() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+    Base.metadata.create_all(test_engine)
+    test_engine.dispose()
+
+
+_ensure_test_db()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _clean_test_qdrant_collection():
+    """Drop the test-only Qdrant collection before the session starts.
+
+    Without this, points uploaded by previous test runs linger in Qdrant and
+    crowd out freshly indexed chunks from the top-k dense results.
+    """
+    import asyncio
+
+    from qdrant_client import AsyncQdrantClient
+
+    async def _drop() -> None:
+        client = AsyncQdrantClient(
+            host=settings.QDRANT_HOST,
+            port=settings.QDRANT_PORT,
+        )
+        try:
+            collections = await client.get_collections()
+            names = {c.name for c in collections.collections}
+            if settings.QDRANT_COLLECTION in names:
+                await client.delete_collection(settings.QDRANT_COLLECTION)
+        finally:
+            await client.close()
+
+    asyncio.run(_drop())
+    yield
+
+
 # ── Test async engine with NullPool (avoids asyncpg event-loop conflict) ─
 
 test_async_engine = create_async_engine(
-    settings.DATABASE_URL,
+    TEST_DATABASE_URL,
     echo=False,
     poolclass=NullPool,
 )
@@ -59,7 +155,7 @@ async def _get_test_container() -> AsyncGenerator[Container, None]:
 
 # ── Synchronous engine for table cleanup ───────────────────────────────
 
-sync_url = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+sync_url = _sync(TEST_DATABASE_URL)
 cleanup_engine = create_engine(sync_url, pool_pre_ping=True)
 
 

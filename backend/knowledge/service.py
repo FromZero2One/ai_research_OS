@@ -76,7 +76,7 @@ class KnowledgeService:
         # 1. Dense search
         query_vector = await self.embedder.embed_query(query)
         dense_results = await self.vector_store.search(
-            collection="documents",
+            collection=settings.QDRANT_COLLECTION,
             vector=query_vector,
             top_k=top_k * 2,
             filter_=vector_filter,
@@ -145,7 +145,7 @@ class KnowledgeService:
         """Search within a single document."""
         query_vector = await self.embedder.embed_query(query)
         vector_results = await self.vector_store.search(
-            collection="documents",
+            collection=settings.QDRANT_COLLECTION,
             vector=query_vector,
             top_k=top_k * 2,
             filter_={"document_id": document_id},
@@ -167,7 +167,7 @@ class KnowledgeService:
     ) -> list[dict]:
         """BM25 sparse search over all indexed chunks."""
         # Load BM25 index (lazy, cached per session)
-        bm25 = await self._get_bm25("documents")
+        bm25 = await self._get_bm25(settings.QDRANT_COLLECTION)
 
         if not bm25 or not query:
             return []

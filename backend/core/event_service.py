@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.event_log import EventLog
@@ -69,10 +69,8 @@ class EventLogger:
             stmt = stmt.where(EventLog.occurred_at <= until)
 
         # Count
-        count_result = await self.session.execute(
-            stmt.with_only_columns(EventLog.id).order_by(None)
-        )
-        total = len(count_result.all())
+        count_stmt = stmt.with_only_columns(func.count(EventLog.id)).order_by(None)
+        total = (await self.session.execute(count_stmt)).scalar() or 0
 
         # Fetch
         stmt = stmt.order_by(desc(EventLog.occurred_at)).offset(offset).limit(limit)

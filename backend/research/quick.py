@@ -69,7 +69,7 @@ async def _run_research_chain(payload: dict) -> dict | None:
             )
             await bg_session.commit()
             logger.info("  [research] gathering %s", session_id)
-            await gather_svc.auto_gather(session_id, bg_session, use_plan=True)
+            await gather_svc.auto_gather(session_id, use_plan=True)
             await bg_session.commit()
 
             # Step 3: Generate Report

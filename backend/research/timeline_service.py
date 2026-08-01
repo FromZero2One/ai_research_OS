@@ -52,6 +52,21 @@ class TimelineService:
         # 2. Build flat event list
         events: list[dict[str, Any]] = []
 
+        # Batch-load EventLog entries for all sessions (avoid N+1).
+        session_ids = [str(s.id) for s in sessions]
+        log_map: dict[str, list[Any]] = {}
+        if session_ids:
+            logs_result = await self.session.execute(
+                select(EventLog)
+                .where(
+                    EventLog.entity_id.in_(session_ids),
+                    EventLog.source == "research",
+                )
+                .order_by(EventLog.occurred_at.asc())
+            )
+            for log in logs_result.scalars().all():
+                log_map.setdefault(log.entity_id or "", []).append(log)
+
         for s in sessions:
             # Session created
             events.append(
@@ -66,15 +81,7 @@ class TimelineService:
             )
 
             # Status changes from EventLog
-            log_result = await self.session.execute(
-                select(EventLog)
-                .where(
-                    EventLog.entity_id == str(s.id),
-                    EventLog.source == "research",
-                )
-                .order_by(EventLog.occurred_at.asc())
-            )
-            log_entries = list(log_result.scalars().all())
+            log_entries = log_map.get(str(s.id), [])
 
             for log in log_entries:
                 event_type = log.event_type

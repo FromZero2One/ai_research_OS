@@ -100,7 +100,7 @@ backend/
 - **后台任务容器化**：`scheduler_jobs.market_data_update` 与 `quick_research` 任务处理器改用 `create_container(session)` 工厂，后台与请求路径共用同一依赖图。
 - **安全修复（P0）**：akshare 子进程不再把 ticker 拼进 Python 源码；改由环境变量传参（`build_akshare_env` + `AKSHARE_TICKER`），并加字符白名单纵深防御。新增 `tests/test_akshare_safety.py`（18 个用例，含真实子进程隔离验证）。
 - **测试夹具**：conftest 同步覆盖 `get_container`，所有容器化路由在测试中走每次测试独立的 NullPool 会话，消除了 TestClient 与 pytest 事件循环间连接池串用导致的 "Event loop is closed"。
-- **测试基线**：全量 `116 passed / 0 failed`（`airesearch_test` 独立测试库 + 基础设施在线的环境下），此前 7 个环境依赖失败已全部归零。
+- **测试基线**：全量 `123 passed / 0 failed`（基础设施在线环境下）。测试运行在**专用测试数据库** `airesearch_test`（conftest 自动创建/建表，并加防护拒绝指向开发库）与**隔离的 Qdrant 集合** `documents_test`（会话开始自动清理）上，杜绝测试 TRUNCATE 或向量残留污染开发数据。新增回归测试：chunker 长文档全覆盖、akshare 子进程环境变量往返。
 - **部署边界**：README 新增安全边界章节；`SECRET_KEY` 默认随机生成、CORS 默认指向 5173、`.env` 对齐；research 的 mutation 端点（finalize/generate-report/create report）从 query param 改为请求体（前后端同步）。
 - **数据层**：BM25 语料改为分页全量加载（`BM25_MAX_CHUNKS` 可配置上限，默认不截断）；`PriceRepository`/`FinancialRepository` upsert 改为批量查询；新增 pg_trgm GIN 索引迁移（加速 ILIKE 兜底检索）；embedding/LLM 共享 httpx 客户端改为事件循环感知（修复跨 loop 复用）。
 - **scheduler_jobs 拆分**：拆为 `core/market_sync.py`、`core/news_fetcher.py`、`core/brief_generator.py`，原模块保留为兼容转发层；新增 `core/event_cleanup.py`（事件日志每周保留清理，`EVENT_LOG_RETENTION_DAYS=90`）。

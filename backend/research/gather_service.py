@@ -28,7 +28,6 @@ class GatherService:
     async def auto_gather(
         self,
         session_id: uuid.UUID,
-        db: AsyncSession,
         use_plan: bool = True,
     ) -> dict:
         """Auto-gather evidence from Knowledge Center and Market Center."""
@@ -44,7 +43,7 @@ class GatherService:
         if use_plan and plan:
             search_queries.extend(plan.get("sub_questions", [])[:5])
 
-        knowledge = KnowledgeService(db)
+        knowledge = KnowledgeService(self.session)
         seen_sources: set[str] = set()
         count = 0
 
@@ -74,11 +73,11 @@ class GatherService:
             try:
                 from company.service import CompanyService
 
-                company_svc = CompanyService(db)
+                company_svc = CompanyService(self.session)
                 company = await company_svc.get(session.company_id)
 
-                market_prices = PriceService(db)
-                market_financials = FinancialService(db)
+                market_prices = PriceService(self.session)
+                market_financials = FinancialService(self.session)
 
                 # 2a. Recent prices
                 prices = await market_prices.get_prices(company.ticker, limit=30)

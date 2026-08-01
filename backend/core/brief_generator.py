@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import UTC, datetime
 
@@ -146,6 +147,21 @@ async def morning_brief() -> dict:
                 open_count_map[cid] = cnt
 
         # 3. Assemble stock_data from batch results
+        # Fetch per-ticker news concurrently (each call spawns an akshare
+        # subprocess — sequential calls would add up to minutes).
+        news_results: dict[str, list[dict]] = {}
+        if active_tickers:
+            gathered = await asyncio.gather(
+                *[fetch_news_akshare(t) for t in active_tickers],
+                return_exceptions=True,
+            )
+            for ticker, res in zip(active_tickers, gathered):
+                if isinstance(res, BaseException):
+                    logger.debug("No news for %s (non-critical)", ticker)
+                    news_results[ticker] = []
+                else:
+                    news_results[ticker] = res or []
+
         stock_data: list[dict] = []
         for ticker in active_tickers:
             company = companies_by_ticker.get(ticker)
@@ -176,12 +192,7 @@ async def morning_brief() -> dict:
                     days_since = (datetime.now(UTC) - last_rs.created_at).days
                 open_count = open_count_map.get(company.id, 0)
 
-            news_headlines: list[str] = []
-            try:
-                ns = await fetch_news_akshare(ticker)
-                news_headlines = [n["title"] for n in ns[:3]]
-            except Exception:
-                logger.debug("No news for %s (non-critical)", ticker)
+            news_headlines = [n["title"] for n in news_results.get(ticker, [])[:3]]
 
             stock_data.append(
                 {

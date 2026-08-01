@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -88,10 +88,8 @@ class DocumentService:
             stmt = stmt.where(Document.is_indexed == is_indexed)
 
         # Count
-        count_result = await self.session.execute(
-            stmt.with_only_columns(Document.id).order_by(None)
-        )
-        total = len(count_result.all())
+        count_stmt = stmt.with_only_columns(func.count(Document.id)).order_by(None)
+        total = (await self.session.execute(count_stmt)).scalar() or 0
 
         stmt = stmt.order_by(desc(Document.created_at)).offset(skip).limit(limit)
         result = await self.session.execute(stmt)
@@ -103,7 +101,7 @@ class DocumentService:
         if doc.is_indexed:
             chunk_ids = [c.embedding_id for c in doc.chunks if c.embedding_id]
             if chunk_ids:
-                await self.vector_store.delete("documents", chunk_ids)
+                await self.vector_store.delete(settings.QDRANT_COLLECTION, chunk_ids)
 
         await self.session.delete(doc)
         await self.events.record(
@@ -273,7 +271,7 @@ class DocumentService:
         # Now create the collection with the (now-correct) dimension.
         # If the collection already exists, this is a no-op.
         dimension = self.embedder.dimension
-        await self.vector_store.create_collection("documents", dimension)
+        await self.vector_store.create_collection(settings.QDRANT_COLLECTION, dimension)
 
         # Upsert to Qdrant
         from core.interfaces import VectorRecord
@@ -296,7 +294,7 @@ class DocumentService:
                 )
             )
 
-        await self.vector_store.upsert("documents", records)
+        await self.vector_store.upsert(settings.QDRANT_COLLECTION, records)
 
     # ── Helpers ───────────────────────────────────────────────────
 

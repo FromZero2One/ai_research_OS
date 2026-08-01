@@ -7,6 +7,9 @@ import re as _re
 import subprocess as _sp
 from datetime import date as _date
 
+from core.config import settings
+from core.logging import logger
+
 # Only safe symbol characters may reach the akshare subprocess.
 # Defense in depth: even though tickers are now passed as environment
 # variables (data, never code), reject anything unusual up front so no
@@ -26,10 +29,14 @@ def build_akshare_env(ticker: str) -> dict[str, str]:
     value interpolated into source, which makes code injection impossible.
     The allowlist below is defense in depth: unsupported characters raise
     ``ValueError`` so callers can fall back to the next data layer.
+
+    The returned key is intentionally *unprefixed*: ``run_akshare`` exports
+    every value as ``AKSHARE_<KEY>``, so ``{"TICKER": ...}`` reaches the child
+    as ``AKSHARE_TICKER`` (the key the child code reads).
     """
     if not isinstance(ticker, str) or not _SAFE_TICKER_RE.match(ticker):
         raise ValueError(f"Unsafe ticker for akshare subprocess: {ticker!r}")
-    return {"AKSHARE_TICKER": ticker}
+    return {"TICKER": ticker}
 
 
 def run_akshare(code: str, env_args: dict[str, str] | None = None) -> str | None:
@@ -38,7 +45,10 @@ def run_akshare(code: str, env_args: dict[str, str] | None = None) -> str | None
     ``env_args`` values are exported to the child as ``AKSHARE_<KEY>``
     environment variables — never embedded in ``code``.
     """
-    AKSHARE_MCP_DIR = _os.getenv("AKSHARE_MCP_DIR", "/home/wsm/codes/akshare_mcp")
+    akshare_mcp_dir = _os.getenv("AKSHARE_MCP_DIR") or settings.AKSHARE_MCP_DIR
+    if not akshare_mcp_dir:
+        logger.warning("  [akshare] AKSHARE_MCP_DIR not configured — subprocess layer disabled")
+        return None
     env = {
         "HOME": _os.environ.get("HOME", ""),
         "PATH": _os.environ.get("PATH", ""),
@@ -50,7 +60,7 @@ def run_akshare(code: str, env_args: dict[str, str] | None = None) -> str | None
         env.update({f"AKSHARE_{k}": v for k, v in env_args.items()})
     try:
         result = _sp.run(
-            ["uv", "run", "--directory", AKSHARE_MCP_DIR, "python", "-c", code],
+            ["uv", "run", "--directory", akshare_mcp_dir, "python", "-c", code],
             capture_output=True,
             text=True,
             timeout=60,
@@ -104,15 +114,18 @@ def parse_mcp_table(text: str) -> list[dict]:
 
 async def fetch_prices_via_mcp_cloud(ticker: str) -> list[dict]:
     """Layer 3: call cloud MCP server's stock_zh_a_hist tool."""
+    if not settings.AKSHARE_CLOUD_MCP_URL:
+        return []
     import httpx
     from mcp import ClientSession
     from mcp.client.streamable_http import streamable_http_client
     from mcp.types import TextContent
 
-    CLOUD_MCP_URL = "http://8.137.104.120:8088/mcp"
     http_client = httpx.AsyncClient(verify=False, timeout=30)
     try:
-        async with streamable_http_client(CLOUD_MCP_URL, http_client=http_client) as (
+        async with streamable_http_client(
+            settings.AKSHARE_CLOUD_MCP_URL, http_client=http_client
+        ) as (
             read,
             write,
             _get_id,
@@ -156,15 +169,18 @@ async def fetch_prices_via_mcp_cloud(ticker: str) -> list[dict]:
 
 async def fetch_news_via_mcp_cloud(ticker: str) -> list[dict]:
     """Fetch news via cloud MCP server's stock_news_em tool."""
+    if not settings.AKSHARE_CLOUD_MCP_URL:
+        return []
     import httpx
     from mcp import ClientSession
     from mcp.client.streamable_http import streamable_http_client
     from mcp.types import TextContent
 
-    CLOUD_MCP_URL = "http://8.137.104.120:8088/mcp"
     http_client = httpx.AsyncClient(verify=False, timeout=15)
     try:
-        async with streamable_http_client(CLOUD_MCP_URL, http_client=http_client) as (
+        async with streamable_http_client(
+            settings.AKSHARE_CLOUD_MCP_URL, http_client=http_client
+        ) as (
             read,
             write,
             _get_id,

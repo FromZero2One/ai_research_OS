@@ -25,6 +25,28 @@ HK_METRICS = [
     ("研发费用", "rd_expense"),
 ]
 
+_HK_FINANCIALS_CODE = """\
+import json, os, sys
+import akshare as ak
+try:
+    ticker = os.environ["AKSHARE_TICKER"]
+    df = ak.stock_financial_hk_report_em(stock=ticker.zfill(5), symbol="利润表", indicator="年度")
+    if df is None or df.empty:
+        print("__R__:[]")
+    else:
+        wanted = {"营业额", "股东应占溢利", "每股基本盈利", "毛利", "经营溢利", "研发费用"}
+        rows = []
+        for cn_name in wanted:
+            subset = df[df["STD_ITEM_NAME"] == cn_name]
+            for _, row in subset.iterrows():
+                rd = row["REPORT_DATE"]
+                year = int(str(rd)[:4]) if isinstance(rd, str) else rd.year
+                rows.append({"cn": cn_name, "year": year, "value": float(row["AMOUNT"])})
+        print("__R__:" + json.dumps(rows, ensure_ascii=False, default=str))
+except Exception as e:
+    print("__E__:" + str(e), file=sys.stderr)
+"""
+
 
 class FinancialService:
     """Financial metrics — MySQL (A) / akshare (HK) with PG cache."""
@@ -115,33 +137,45 @@ class FinancialService:
         return count
 
     async def _fetch_akshare_financials(self, ticker: str) -> list[FinancialMetricEntry]:
-        """Fetch HK-stock financial data via akshare (eastmoney HK API)."""
+        """Fetch HK-stock financials via the akshare subprocess (eastmoney HK API).
+
+        Runs in the isolated akshare_mcp venv — importing akshare into the
+        backend process is not possible (not a declared dependency).
+        """
         import asyncio as _asyncio
+        import json as _json
 
-        import akshare as ak
+        from market.akshare_executor import build_akshare_env, run_akshare
 
-        hk_symbol = ticker.zfill(5)
+        try:
+            stdout = await _asyncio.to_thread(
+                run_akshare, _HK_FINANCIALS_CODE, build_akshare_env(ticker)
+            )
+        except Exception:
+            return []
+        if not stdout:
+            return []
 
-        def _fetch():
-            df = ak.stock_financial_hk_report_em(stock=hk_symbol, symbol="利润表", indicator="年度")
-            results: list[FinancialMetricEntry] = []
-            for cn_name, en_name in HK_METRICS:
-                subset = df[df["STD_ITEM_NAME"] == cn_name]
-                for _, row in subset.iterrows():
-                    report_date = row["REPORT_DATE"]
-                    if isinstance(report_date, str):
-                        year = int(report_date[:4])
-                    else:
-                        year = report_date.year
-                    value = float(row["AMOUNT"])
-                    results.append(
-                        FinancialMetricEntry(
-                            fiscal_year=year,
-                            fiscal_period="Annual",
-                            metric_name=en_name,
-                            metric_value=value,
-                        )
+        name_to_en = dict(HK_METRICS)
+        results: list[FinancialMetricEntry] = []
+        for line in stdout.splitlines():
+            if not line.startswith("__R__:"):
+                continue
+            try:
+                rows = _json.loads(line[6:])
+            except _json.JSONDecodeError:
+                return []
+            for r in rows:
+                en_name = name_to_en.get(r.get("cn"))
+                if en_name is None:
+                    continue
+                results.append(
+                    FinancialMetricEntry(
+                        fiscal_year=int(r["year"]),
+                        fiscal_period="Annual",
+                        metric_name=en_name,
+                        metric_value=float(r["value"]),
                     )
-            return results
-
-        return await _asyncio.to_thread(_fetch)
+                )
+            break
+        return results

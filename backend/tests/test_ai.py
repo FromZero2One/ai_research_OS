@@ -2,7 +2,25 @@
 
 from fastapi.testclient import TestClient
 
+from ai.service import apply_variables
 from tests.conftest import SAMPLE_PROMPT_TEMPLATE
+
+
+class TestApplyVariables:
+    """Safe {placeholder} substitution — no str.format crash on literal braces."""
+
+    def test_substitutes_known_keys(self):
+        assert apply_variables("Hello {name}!", {"name": "World"}) == "Hello World!"
+
+    def test_unknown_placeholder_left_intact(self):
+        assert apply_variables("Hi {name}", {"other": "x"}) == "Hi {name}"
+
+    def test_literal_braces_do_not_crash(self):
+        # str.format would raise on this — e.g. JSON examples in templates.
+        assert apply_variables('{"a": 1}', {"a": "x"}) == '{"a": 1}'
+
+    def test_empty_variables_returns_original(self):
+        assert apply_variables("{name} {unused}", {}) == "{name} {unused}"
 
 
 class TestCreateTemplate:

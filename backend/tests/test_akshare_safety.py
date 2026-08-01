@@ -27,10 +27,11 @@ MALICIOUS_TICKERS = [
 
 class TestBuildAkshareEnv:
     def test_normal_a_stock(self) -> None:
-        assert akshare_executor.build_akshare_env("600519") == {"AKSHARE_TICKER": "600519"}
+        # Bare key — run_akshare prefixes it to AKSHARE_TICKER in the child.
+        assert akshare_executor.build_akshare_env("600519") == {"TICKER": "600519"}
 
     def test_us_ticker_with_dot(self) -> None:
-        assert akshare_executor.build_akshare_env("BRK.B") == {"AKSHARE_TICKER": "BRK.B"}
+        assert akshare_executor.build_akshare_env("BRK.B") == {"TICKER": "BRK.B"}
 
     @pytest.mark.parametrize("ticker", MALICIOUS_TICKERS)
     def test_malicious_ticker_rejected(self, ticker: str) -> None:
@@ -90,7 +91,7 @@ class TestNewsServiceWiring:
         news, source = await svc.fetch_news("600519")
 
         assert source == "none"
-        assert captured["env"] == {"AKSHARE_TICKER": "600519"}
+        assert captured["env"] == {"TICKER": "600519"}
         assert '"600519"' not in captured["code"]
         assert "600519" not in captured["code"]
 
@@ -133,3 +134,17 @@ class TestRunAkshareEnvIsolation:
         # as code, this exact string would never appear in the output.
         assert hostile in out
         assert out.strip() == hostile
+
+    def test_build_akshare_env_roundtrip(self) -> None:
+        """Regression: build_akshare_env output must reach the child as AKSHARE_TICKER.
+
+        Previously build_akshare_env returned the already-prefixed key, and
+        run_akshare added a second prefix — the child saw AKSHARE_AKSHARE_TICKER
+        and the whole local akshare layer silently fell back to cloud sources.
+        """
+        code = 'import os\nprint(os.environ.get("AKSHARE_TICKER", "MISSING"))'
+        out = akshare_executor.run_akshare(
+            code, env_args=akshare_executor.build_akshare_env("600519")
+        )
+        assert out is not None
+        assert out.strip() == "600519"

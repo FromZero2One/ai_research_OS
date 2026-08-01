@@ -10,8 +10,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
-
     from ai.models import AIWorkflow, PromptTemplate
     from market.domain import FinancialMetricEntry
     from research.models import ResearchReport, ResearchSession
@@ -254,7 +252,6 @@ class ResearchGatherService(Protocol):
     async def auto_gather(
         self,
         session_id: Any,
-        db: AsyncSession,
         use_plan: bool = True,
     ) -> Any: ...
 

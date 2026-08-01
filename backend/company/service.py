@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -95,20 +95,20 @@ class CompanyService:
             stmt = stmt.where(Company.sector.ilike(f"%{sector}%"))
         if industry:
             stmt = stmt.where(Company.industry.ilike(f"%{industry}%"))
+        if tag:
+            from company.models import CompanyTag
+
+            stmt = stmt.join(CompanyTag, CompanyTag.company_id == Company.id).where(
+                CompanyTag.tag == tag
+            )
 
         # Count total
-        count_stmt = stmt.with_only_columns(Company.id).order_by(None)
-        total_result = await self.session.execute(count_stmt)
-        total = len(total_result.all())
+        count_stmt = stmt.with_only_columns(func.count(Company.id)).order_by(None)
+        total = (await self.session.execute(count_stmt)).scalar() or 0
 
         stmt = stmt.offset(skip).limit(limit).order_by(Company.ticker)
         result = await self.session.execute(stmt)
         companies = list(result.scalars().all())
-
-        # Filter by tag in Python (simple V1 approach)
-        if tag:
-            companies = [c for c in companies if any(t.tag == tag for t in c.tags)]
-            total = len(companies)
 
         return companies, total
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from core.config import settings
 from core.logging import logger
 
 
@@ -21,10 +22,14 @@ class NewsNowMCPClient:
         from mcp import ClientSession
         from mcp.client.stdio import StdioServerParameters, stdio_client
 
+        if not settings.NEWSNOW_MCP_SERVER_PATH:
+            logger.warning("  [newsnow] NEWSNOW_MCP_SERVER_PATH not configured — MCP disabled")
+            return
+
         params = StdioServerParameters(
             command="npx",
-            args=["-y", "tsx", "/home/wsm/codes/newsnow/tools/mcp-server.ts"],
-            env={"BASE_URL": "https://newsnow.busiyi.world"},
+            args=["-y", "tsx", settings.NEWSNOW_MCP_SERVER_PATH],
+            env={"BASE_URL": settings.NEWSNOW_BASE_URL},
         )
 
         try:

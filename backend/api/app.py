@@ -112,10 +112,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # Start scheduler
     if settings.SCHEDULER_ENABLED:
+        from core.brief_generator import morning_brief
         from core.event_cleanup import event_log_cleanup
+        from core.market_sync import market_data_update
         from core.observation_engine import run_observation_cycle
         from core.scheduler import register_job, start_scheduler
-        from core.scheduler_jobs import market_data_update, morning_brief
 
         register_job("market_data_update", market_data_update)
         register_job("morning_brief", morning_brief)

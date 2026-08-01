@@ -28,6 +28,9 @@ def chunk_text(
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = text.strip()
 
+    if chunk_size < 1:
+        return [text]
+
     if len(text) <= chunk_size:
         return [text]
 
@@ -36,19 +39,21 @@ def chunk_text(
 
     while start < len(text):
         end = _find_chunk_end(text, start, chunk_size)
+        if end <= start:
+            break  # Safety: no forward progress (should not happen with valid size)
 
         chunk = text[start:end].strip()
         if chunk:
             chunks.append(chunk)
 
-        # Move start, accounting for overlap
-        start = end - chunk_overlap
-        if start < 0:
-            start = 0
-
-        # Safety: prevent infinite loop on tiny chunks
-        if start >= len(text) or (len(chunks) > 1 and start >= chunks[-2].count("") - 1):
+        # Reached the tail — the final chunk already covers the rest.
+        if end >= len(text):
             break
+
+        # Move start, accounting for overlap
+        next_start = end - chunk_overlap
+        # Guarantee forward progress even with degenerate overlap settings.
+        start = next_start if next_start > start else start + 1
 
     return chunks
 
