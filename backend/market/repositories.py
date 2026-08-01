@@ -6,10 +6,10 @@ Concrete repositories map ORM models to/from the domain DTOs defined in
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, select, tuple_
 
 from core.crud import DomainRepository
 from market.domain import FinancialMetricEntry, FreshnessEntry, PriceEntry
@@ -42,27 +42,30 @@ class PriceRepository(DomainRepository[StockPrice]):
 
     async def upsert(self, ticker: str, entries: list[PriceEntry]) -> int:
         """Insert rows that don't already exist; returns inserted count."""
-        count = 0
-        for entry in entries:
-            existing = await self.session.execute(
-                select(StockPrice).where(
-                    StockPrice.ticker == ticker.upper(),
-                    StockPrice.date == entry.date,
-                )
+        if not entries:
+            return 0
+        ticker_upper = ticker.upper()
+        dates = [e.date for e in entries]
+        # One batch query for all candidate dates instead of N row lookups.
+        existing = await self.session.execute(
+            select(StockPrice.date).where(
+                StockPrice.ticker == ticker_upper,
+                StockPrice.date.in_(dates),
             )
-            if existing.scalar_one_or_none():
-                continue
+        )
+        existing_dates = set(existing.scalars().all())
+        to_insert = [e for e in entries if e.date not in existing_dates]
+        for entry in to_insert:
             self.session.add(entry.to_model(StockPrice, ticker))
-            count += 1
-        if count:
+        if to_insert:
             await self.session.flush()
-        return count
+        return len(to_insert)
 
     async def delete_for_ticker(self, ticker: str) -> int:
         result = await self.session.execute(
             sa_delete(StockPrice).where(StockPrice.ticker == ticker.upper())
         )
-        return result.rowcount or 0
+        return result.rowcount or 0  # type: ignore[attr-defined]
 
 
 class FinancialRepository(DomainRepository[FinancialMetric]):
@@ -86,30 +89,44 @@ class FinancialRepository(DomainRepository[FinancialMetric]):
         if fiscal_year:
             stmt = stmt.where(FinancialMetric.fiscal_year == fiscal_year)
         stmt = stmt.order_by(
-            FinancialMetric.fiscal_year.desc(), FinancialMetric.fiscal_period,
+            FinancialMetric.fiscal_year.desc(),
+            FinancialMetric.fiscal_period,
         ).limit(limit)
         result = await self.session.execute(stmt)
         return [FinancialMetricEntry.from_model(m) for m in result.scalars().all()]
 
     async def upsert(self, ticker: str, entries: list[FinancialMetricEntry]) -> int:
         """Insert financial metrics that don't already exist; returns inserted count."""
-        count = 0
-        for entry in entries:
-            existing = await self.session.execute(
-                select(FinancialMetric).where(
-                    FinancialMetric.ticker == ticker.upper(),
-                    FinancialMetric.fiscal_year == entry.fiscal_year,
-                    FinancialMetric.fiscal_period == entry.fiscal_period,
-                    FinancialMetric.metric_name == entry.metric_name,
-                )
+        if not entries:
+            return 0
+        ticker_upper = ticker.upper()
+        keys = [(e.fiscal_year, e.fiscal_period, e.metric_name) for e in entries]
+        # One batch query for all candidate keys instead of N row lookups.
+        existing = await self.session.execute(
+            select(
+                FinancialMetric.fiscal_year,
+                FinancialMetric.fiscal_period,
+                FinancialMetric.metric_name,
+            ).where(
+                FinancialMetric.ticker == ticker_upper,
+                tuple_(
+                    FinancialMetric.fiscal_year,
+                    FinancialMetric.fiscal_period,
+                    FinancialMetric.metric_name,
+                ).in_(keys),
             )
-            if existing.scalar_one_or_none():
-                continue
+        )
+        existing_keys = set(existing.all())
+        to_insert = [
+            e
+            for e in entries
+            if (e.fiscal_year, e.fiscal_period, e.metric_name) not in existing_keys
+        ]
+        for entry in to_insert:
             self.session.add(entry.to_model(FinancialMetric, ticker))
-            count += 1
-        if count:
+        if to_insert:
             await self.session.flush()
-        return count
+        return len(to_insert)
 
 
 class FreshnessRepository(DomainRepository[DataFreshness]):
@@ -120,9 +137,7 @@ class FreshnessRepository(DomainRepository[DataFreshness]):
     def to_dto(self, obj: DataFreshness) -> FreshnessEntry:
         return FreshnessEntry.from_model(obj)
 
-    async def get_for_ticker_type(
-        self, ticker: str, data_type: str
-    ) -> DataFreshness | None:
+    async def get_for_ticker_type(self, ticker: str, data_type: str) -> DataFreshness | None:
         stmt = select(DataFreshness).where(
             DataFreshness.ticker == ticker.upper(),
             DataFreshness.data_type == data_type,
@@ -139,7 +154,7 @@ class FreshnessRepository(DomainRepository[DataFreshness]):
         error_message: str | None = None,
     ) -> DataFreshness:
         """Insert or update a freshness record; returns the ORM object."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         existing = await self.get_for_ticker_type(ticker, data_type)
         if existing:
             existing.checked_at = now
@@ -187,7 +202,4 @@ class FreshnessRepository(DomainRepository[DataFreshness]):
                 func.min(DataFreshness.checked_at).label("oldest"),
             ).group_by(DataFreshness.data_type)
         )
-        return [
-            (row.data_type, row.count, row.newest, row.oldest)
-            for row in result.all()
-        ]
+        return [(row[0], row[1], row[2], row[3]) for row in result.all()]

@@ -18,10 +18,11 @@ backend_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(backend_dir))
 
 # Must strip proxy env before any imports
-from core.proxy_cleanup import clean_proxy_env
+from core.proxy_cleanup import clean_proxy_env  # noqa: E402
+
 clean_proxy_env()
 
-from api.app import create_app
+from api.app import create_app  # noqa: E402
 
 app = create_app()
 openapi = app.openapi()

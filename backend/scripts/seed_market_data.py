@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """Seed market price data for development companies.
 
 Generates synthetic but realistic daily price data and financial metrics
@@ -7,7 +8,6 @@ for the 8 seed companies in the database.
 from __future__ import annotations
 
 import asyncio
-import math
 import random
 from datetime import date, timedelta
 
@@ -18,13 +18,13 @@ from core.logging import configure_logging, logger
 
 # Realistic base prices and volatility for each ticker
 COMPANY_PRICES = {
-    "AAPL":  {"base": 220},
-    "MSFT":  {"base": 430},
+    "AAPL": {"base": 220},
+    "MSFT": {"base": 430},
     "GOOGL": {"base": 175},
-    "AMZN":  {"base": 195},
-    "NVDA":  {"base": 115},
-    "TSLA":  {"base": 250},
-    "JPM":   {"base": 200},
+    "AMZN": {"base": 195},
+    "NVDA": {"base": 115},
+    "TSLA": {"base": 250},
+    "JPM": {"base": 200},
     "BRK.B": {"base": 430},
 }
 
@@ -74,15 +74,17 @@ async def seed_market_data() -> int:
                     low = price - abs(random.gauss(0, 1) * daily_vol)
                     open_p = random.uniform(low, high)
 
-                    prices.append(StockPrice(
-                        ticker=ticker,
-                        date=current,
-                        open=round(open_p, 2),
-                        high=round(max(high, open_p, price), 2),
-                        low=round(min(low, open_p, price), 2),
-                        close=round(price, 2),
-                        volume=round(random.uniform(10_000_000, 100_000_000)),
-                    ))
+                    prices.append(
+                        StockPrice(
+                            ticker=ticker,
+                            date=current,
+                            open=round(open_p, 2),
+                            high=round(max(high, open_p, price), 2),
+                            low=round(min(low, open_p, price), 2),
+                            close=round(price, 2),
+                            volume=round(random.uniform(10_000_000, 100_000_000)),
+                        )
+                    )
                     day_count += 1
                 current += timedelta(days=1)
 
@@ -102,28 +104,40 @@ async def seed_market_data() -> int:
                     quarter_revenue = revenue_base * random.uniform(0.2, 0.3)
                     quarter_profit = quarter_revenue * random.uniform(0.15, 0.35)
 
-                    metrics_data.extend([
-                        FinancialMetric(
-                            ticker=ticker, fiscal_year=fiscal_year,
-                            fiscal_period=f"Q{q}", metric_name="revenue",
-                            metric_value=round(quarter_revenue, 2),
-                        ),
-                        FinancialMetric(
-                            ticker=ticker, fiscal_year=fiscal_year,
-                            fiscal_period=f"Q{q}", metric_name="net_income",
-                            metric_value=round(quarter_profit, 2),
-                        ),
-                        FinancialMetric(
-                            ticker=ticker, fiscal_year=fiscal_year,
-                            fiscal_period=f"Q{q}", metric_name="operating_margin",
-                            metric_value=round(random.uniform(0.2, 0.5), 3),
-                        ),
-                        FinancialMetric(
-                            ticker=ticker, fiscal_year=fiscal_year,
-                            fiscal_period=f"Q{q}", metric_name="eps",
-                            metric_value=round(quarter_profit / random.uniform(1_000_000, 10_000_000), 2),
-                        ),
-                    ])
+                    metrics_data.extend(
+                        [
+                            FinancialMetric(
+                                ticker=ticker,
+                                fiscal_year=fiscal_year,
+                                fiscal_period=f"Q{q}",
+                                metric_name="revenue",
+                                metric_value=round(quarter_revenue, 2),
+                            ),
+                            FinancialMetric(
+                                ticker=ticker,
+                                fiscal_year=fiscal_year,
+                                fiscal_period=f"Q{q}",
+                                metric_name="net_income",
+                                metric_value=round(quarter_profit, 2),
+                            ),
+                            FinancialMetric(
+                                ticker=ticker,
+                                fiscal_year=fiscal_year,
+                                fiscal_period=f"Q{q}",
+                                metric_name="operating_margin",
+                                metric_value=round(random.uniform(0.2, 0.5), 3),
+                            ),
+                            FinancialMetric(
+                                ticker=ticker,
+                                fiscal_year=fiscal_year,
+                                fiscal_period=f"Q{q}",
+                                metric_name="eps",
+                                metric_value=round(
+                                    quarter_profit / random.uniform(1_000_000, 10_000_000), 2
+                                ),
+                            ),
+                        ]
+                    )
 
             session.add_all(metrics_data)
             await session.flush()
@@ -133,7 +147,9 @@ async def seed_market_data() -> int:
         await session.commit()
         logger.info(
             "Market data seeded: %d prices, %d financials across %d companies",
-            total_prices, total_financials, len(companies),
+            total_prices,
+            total_financials,
+            len(companies),
         )
         return total_prices + total_financials
 

@@ -61,6 +61,7 @@ dev = [
     "httpx>=0.27",
     "ruff>=0.6",
     "mypy>=1.11",
+    "pre-commit>=3.5",
     "psycopg2-binary>=2.9",
 ]
 embedding = [
@@ -81,3 +82,21 @@ include = ["ai*", "api*", "core*", "company*", "market*", "document*", "knowledg
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.mypy]
+python_version = "3.13"
+explicit_package_bases = true
+mypy_path = "."
+# Third-party packages without stubs (jieba, rank_bm25, akshare, ...)
+ignore_missing_imports = true
+# V1 goal: catch real type errors in typed code; full annotation coverage
+# is a later phase (warn_unused_ignores is off for the same reason).
+check_untyped_defs = false
+disallow_untyped_defs = false
+warn_unused_ignores = false
+files = [
+    "core",
+    "market/domain.py",
+    "market/repositories.py",
+    "research/schemas.py",
+]

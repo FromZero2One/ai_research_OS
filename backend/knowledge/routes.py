@@ -52,9 +52,7 @@ async def search_in_document(
 ):
     """Search within a specific document."""
     svc = container.knowledge_service
-    results = await svc.search_by_document(
-        query=query, document_id=document_id, top_k=top_k
-    )
+    results = await svc.search_by_document(query=query, document_id=document_id, top_k=top_k)
     return {
         "query": query,
         "document_id": document_id,

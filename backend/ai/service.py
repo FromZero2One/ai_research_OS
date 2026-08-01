@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import cast
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai.models import AIWorkflow, PromptTemplate
@@ -35,14 +35,16 @@ class AIService:
     async def get_template(self, template_id: str) -> PromptTemplate:
         # Try UUID first, then name
         import uuid
+
         try:
             uuid.UUID(template_id)
-            conditions = (PromptTemplate.id == template_id) | (PromptTemplate.name == template_id)
+            conditions = or_(
+                PromptTemplate.id == template_id,
+                PromptTemplate.name == template_id,
+            )
         except ValueError:
             conditions = PromptTemplate.name == template_id
-        result = await self.session.execute(
-            select(PromptTemplate).where(conditions)
-        )
+        result = await self.session.execute(select(PromptTemplate).where(conditions))
         template = result.scalar_one_or_none()
         if not template:
             raise NotFoundError("PromptTemplate", template_id)
@@ -64,7 +66,7 @@ class AIService:
 
     async def list_templates(self) -> list[PromptTemplate]:
         result = await self.session.execute(
-            select(PromptTemplate).where(PromptTemplate.is_active == True)
+            select(PromptTemplate).where(PromptTemplate.is_active.is_(True))
         )
         return list(result.scalars().all())
 
@@ -128,8 +130,7 @@ class AIService:
         """Summarize a text using the summarization prompt."""
         system = "You are a research analyst. Summarize the following text concisely."
         user = (
-            f"Summarize the following text in {format_} format "
-            f"(max {max_length} words):\n\n{text}"
+            f"Summarize the following text in {format_} format (max {max_length} words):\n\n{text}"
         )
 
         messages = [
@@ -156,8 +157,7 @@ class AIService:
         """Extract structured data from text using JSON schema."""
         system = "You extract structured information from text. Respond with valid JSON."
         user = (
-            f"Extract the following information from the text.\n"
-            f"Schema:\n{schema}\n\nText:\n{text}"
+            f"Extract the following information from the text.\nSchema:\n{schema}\n\nText:\n{text}"
         )
 
         messages = [
@@ -186,22 +186,18 @@ class AIService:
         await self.session.refresh(workflow)
         return workflow
 
-    async def execute_workflow(
-        self, workflow_id: str, input_data: dict
-    ) -> dict:
+    async def execute_workflow(self, workflow_id: str, input_data: dict) -> dict:
         """Execute a multi-step AI workflow.
 
         V1: Simple sequential step execution.
         V2+: LangGraph-based DAG orchestration.
         """
-        result = await self.session.execute(
-            select(AIWorkflow).where(AIWorkflow.id == workflow_id)
-        )
+        result = await self.session.execute(select(AIWorkflow).where(AIWorkflow.id == workflow_id))
         workflow = result.scalar_one_or_none()
         if not workflow:
             raise NotFoundError("AIWorkflow", workflow_id)
 
-        steps = workflow.steps or []
+        steps = cast(list[dict], workflow.steps or [])
         if not steps:
             return {"status": "empty", "output": None}
 

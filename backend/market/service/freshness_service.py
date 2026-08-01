@@ -6,20 +6,19 @@ and by the dashboard/freshness API to report data staleness.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.logging import logger
 from market.repositories import FreshnessRepository
 
 # How old is "stale" for each data type (in hours)
 STALE_THRESHOLD_HOURS: dict[str, int] = {
-    "prices": 24,       # daily price — stale after 1 day
+    "prices": 24,  # daily price — stale after 1 day
     "financials": 168,  # 7 days
-    "profile": 168,     # 7 days (company profile rarely changes)
-    "news": 6,          # 6 hours
+    "profile": 168,  # 7 days (company profile rarely changes)
+    "news": 6,  # 6 hours
 }
 
 
@@ -40,8 +39,11 @@ class FreshnessService:
     ) -> Any:
         """Upsert freshness record after a successful (or failed) fetch."""
         return await self.repo.upsert(
-            ticker, data_type, record_count=record_count,
-            status=status, error_message=error_message,
+            ticker,
+            data_type,
+            record_count=record_count,
+            status=status,
+            error_message=error_message,
         )
 
     async def get_freshness(
@@ -53,26 +55,31 @@ class FreshnessService:
     ) -> list[dict[str, Any]]:
         """Query freshness records, optionally filtered."""
         entries = await self.repo.list_all(
-            ticker=ticker, data_type=data_type, status=status, limit=limit,
+            ticker=ticker,
+            data_type=data_type,
+            status=status,
+            limit=limit,
         )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         output = []
         for e in entries:
             threshold_hours = STALE_THRESHOLD_HOURS.get(e.data_type, 24)
             age_hours = (now - e.checked_at).total_seconds() / 3600
             is_stale = age_hours > threshold_hours
-            output.append({
-                "ticker": e.ticker,
-                "data_type": e.data_type,
-                "checked_at": e.checked_at.isoformat(),
-                "age_hours": round(age_hours, 1),
-                "is_stale": is_stale,
-                "stale_threshold_hours": threshold_hours,
-                "record_count": e.record_count,
-                "status": e.status,
-                "error_message": e.error_message,
-            })
+            output.append(
+                {
+                    "ticker": e.ticker,
+                    "data_type": e.data_type,
+                    "checked_at": e.checked_at.isoformat(),
+                    "age_hours": round(age_hours, 1),
+                    "is_stale": is_stale,
+                    "stale_threshold_hours": threshold_hours,
+                    "record_count": e.record_count,
+                    "status": e.status,
+                    "error_message": e.error_message,
+                }
+            )
         return output
 
     async def get_ticker_summary(self, ticker: str) -> dict[str, Any]:
@@ -81,9 +88,7 @@ class FreshnessService:
         summary: dict[str, Any] = {"ticker": ticker.upper(), "data_types": {}}
         for r in records:
             summary["data_types"][r["data_type"]] = r
-        summary["all_fresh"] = all(
-            not dt["is_stale"] for dt in summary["data_types"].values()
-        )
+        summary["all_fresh"] = all(not dt["is_stale"] for dt in summary["data_types"].values())
         return summary
 
     async def get_stale_tickers(
@@ -104,7 +109,7 @@ class FreshnessService:
         """Aggregate freshness stats across all tickers."""
         rows = await self.repo.stats()
         stats = {}
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for data_type, count, newest, oldest in rows:
             max_age = (now - newest).total_seconds() / 3600 if newest else None
             min_age = (now - oldest).total_seconds() / 3600 if oldest else None

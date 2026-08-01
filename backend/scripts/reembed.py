@@ -1,12 +1,11 @@
 """Re-embed all existing chunks with real Ollama embeddings (fix zero-vector issue)."""
+
 from __future__ import annotations
 
 import asyncio
 import uuid
 
-import httpx
-from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from core.adapters.embedding import create_embedding
 from core.adapters.vector_store import create_vector_store
@@ -65,7 +64,6 @@ async def reembed() -> None:
         # Clean up old zero-vector points from Qdrant
         logger.info("Cleaning up old Qdrant points...")
         try:
-            old_points = [c.embedding_id for c in chunks if c.embedding_id]
             # Actually we just updated them above, but we also need to
             # remove points that aren't linked to any chunk anymore
             pass

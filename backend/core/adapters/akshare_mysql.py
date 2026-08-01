@@ -21,13 +21,14 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date
 from typing import Any
 
 
 @dataclass
 class PriceRow:
     """Maps stock_zh_a_hist row to our StockPrice model."""
+
     ticker: str
     date: date
     open: float | None = None
@@ -41,6 +42,7 @@ class PriceRow:
 @dataclass
 class FinancialRow:
     """Maps stock_yjbb_em row to our FinancialMetric model."""
+
     ticker: str
     fiscal_year: int
     fiscal_period: str
@@ -70,9 +72,8 @@ class AkshareMySQLAdapter:
         """Lazy connect — runs in thread pool to avoid blocking."""
         if self._conn is None:
             import pymysql
-            conn = await asyncio.to_thread(
-                pymysql.connect, **self._config
-            )
+
+            conn = await asyncio.to_thread(pymysql.connect, **self._config)
             self._conn = conn
         return self._conn
 
@@ -188,24 +189,24 @@ class AkshareMySQLAdapter:
             else:
                 period = "Annual"
 
-            metrics = {}
+            metrics: dict[str, float | None] = {}
             for cn_key, en_key in METRIC_KEYS:
                 val = r.get(cn_key)
                 if val is not None:
                     metrics[en_key] = float(val)
 
-            results.append(FinancialRow(
-                ticker=symbol,
-                fiscal_year=year,
-                fiscal_period=period,
-                metrics=metrics,
-            ))
+            results.append(
+                FinancialRow(
+                    ticker=symbol,
+                    fiscal_year=year,
+                    fiscal_period=period,
+                    metrics=metrics,
+                )
+            )
 
         return results
 
-    async def get_valuation(
-        self, symbol: str
-    ) -> dict[str, Any] | None:
+    async def get_valuation(self, symbol: str) -> dict[str, Any] | None:
         """Query valuation data from stock_value_em.
 
         Returns latest PE, PB, PS, PCF ratios if available.
@@ -230,9 +231,7 @@ class AkshareMySQLAdapter:
             "date": r.get("数据日期"),
         }
 
-    async def search_stocks(
-        self, query: str, limit: int = 20
-    ) -> list[dict]:
+    async def search_stocks(self, query: str, limit: int = 20) -> list[dict]:
         """Search stocks by symbol or name from stock_name_entity."""
         sql = """
             SELECT symbol, stock_name AS name
@@ -274,4 +273,6 @@ class AkshareMySQLAdapter:
             SELECT COUNT(*) AS cnt FROM stock_zh_a_hist WHERE symbol = %s
         """
         rows = await self._fetch_all(sql, (symbol,))
-        return rows and rows[0]["cnt"] > 0
+        if not rows:
+            return False
+        return bool(rows[0]["cnt"])

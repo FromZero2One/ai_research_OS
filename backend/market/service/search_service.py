@@ -28,10 +28,12 @@ class SearchService:
 
         # PostgreSQL: search Companies table (A, HK, US stocks)
         from company.models import Company
-        stmt = select(Company).where(
-            (Company.ticker.ilike(f"%{query}%"))
-            | (Company.name.ilike(f"%{query}%"))
-        ).limit(limit)
+
+        stmt = (
+            select(Company)
+            .where((Company.ticker.ilike(f"%{query}%")) | (Company.name.ilike(f"%{query}%")))
+            .limit(limit)
+        )
         rows = await self.session.execute(stmt)
         for c in rows.scalars().all():
             key = c.ticker.upper()

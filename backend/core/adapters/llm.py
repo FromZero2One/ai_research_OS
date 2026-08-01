@@ -2,25 +2,46 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+from typing import cast
 
 import httpx
+from openai.types.chat import ChatCompletionMessageParam
 
 from core.config import settings
 from core.interfaces import LLM, LLMMessage, LLMResponse
 
-# Shared httpx client with connection pooling — avoids TCP handshake per call
+
+def _sdk_messages(messages: list[LLMMessage]) -> list[ChatCompletionMessageParam]:
+    """Convert internal LLMMessage list to OpenAI SDK chat message params."""
+    return [
+        cast(ChatCompletionMessageParam, {"role": m.role, "content": m.content}) for m in messages
+    ]
+
+
+# Shared httpx client with connection pooling — avoids TCP handshake per call.
+# Cached per event loop (see embedding.py for why cross-loop reuse is unsafe).
 _shared_client: httpx.AsyncClient | None = None
+_shared_client_loop: asyncio.AbstractEventLoop | None = None
 
 
-def _get_client() -> httpx.AsyncClient:
-    global _shared_client
-    if _shared_client is None:
+async def _get_client() -> httpx.AsyncClient:
+    global _shared_client, _shared_client_loop
+    loop = asyncio.get_running_loop()
+    if _shared_client is None or _shared_client_loop is not loop:
+        old = _shared_client
         _shared_client = httpx.AsyncClient(
             timeout=httpx.Timeout(120.0),
             limits=httpx.Limits(max_keepalive_connections=5, max_connections=20),
             proxy=None,  # explicit — avoid env proxy leaks
         )
+        _shared_client_loop = loop
+        if old is not None:
+            try:
+                await old.aclose()
+            except Exception:
+                pass
     return _shared_client
 
 
@@ -54,7 +75,7 @@ class OllamaLLM:
             "stream": stream,
         }
 
-        client = _get_client()
+        client = await _get_client()
         resp = await client.post(
             f"{self._base_url}/api/chat",
             json={**payload, "stream": False},
@@ -128,7 +149,7 @@ class OpenAILLM:
         client = openai.AsyncOpenAI(api_key=self._api_key, base_url=self._base_url)
         resp = await client.chat.completions.create(
             model=self._model,
-            messages=[{"role": m.role, "content": m.content} for m in messages],
+            messages=_sdk_messages(messages),
             temperature=temperature,
             max_tokens=max_tokens,
         )
@@ -148,8 +169,7 @@ class OpenAILLM:
 
         system_msg = messages[0].content if messages and messages[0].role == "system" else ""
         format_hint = (
-            f"\n\nRespond with JSON conforming to this schema:\n"
-            f"{json.dumps(schema, indent=2)}"
+            f"\n\nRespond with JSON conforming to this schema:\n{json.dumps(schema, indent=2)}"
         )
         updated = [
             LLMMessage(role="system", content=system_msg + format_hint),
@@ -159,7 +179,7 @@ class OpenAILLM:
         client = openai.AsyncOpenAI(api_key=self._api_key, base_url=self._base_url)
         resp = await client.chat.completions.create(
             model=self._model,
-            messages=[{"role": m.role, "content": m.content} for m in updated],
+            messages=_sdk_messages(updated),
             temperature=temperature,
             response_format={"type": "json_object"},
         )

@@ -54,14 +54,16 @@ class TimelineService:
 
         for s in sessions:
             # Session created
-            events.append({
-                "type": "session_created",
-                "date": s.created_at.isoformat() if s.created_at else "",
-                "session_id": str(s.id),
-                "session_title": s.title,
-                "detail": "创建研究",
-                "status": s.status,
-            })
+            events.append(
+                {
+                    "type": "session_created",
+                    "date": s.created_at.isoformat() if s.created_at else "",
+                    "session_id": str(s.id),
+                    "session_title": s.title,
+                    "detail": "创建研究",
+                    "status": s.status,
+                }
+            )
 
             # Status changes from EventLog
             log_result = await self.session.execute(
@@ -77,54 +79,64 @@ class TimelineService:
             for log in log_entries:
                 event_type = log.event_type
                 if event_type == "research.plan_generated":
-                    events.append({
-                        "type": "plan_generated",
-                        "date": log.occurred_at.isoformat() if log.occurred_at else "",
-                        "session_id": str(s.id),
-                        "session_title": s.title,
-                        "detail": "AI 研究计划生成",
-                    })
+                    events.append(
+                        {
+                            "type": "plan_generated",
+                            "date": log.occurred_at.isoformat() if log.occurred_at else "",
+                            "session_id": str(s.id),
+                            "session_title": s.title,
+                            "detail": "AI 研究计划生成",
+                        }
+                    )
                 elif event_type in ("report.created", "report.generated"):
-                    events.append({
-                        "type": "report_generated",
-                        "date": log.occurred_at.isoformat() if log.occurred_at else "",
-                        "session_id": str(s.id),
-                        "session_title": s.title,
-                        "detail": "研究报告生成",
-                    })
+                    events.append(
+                        {
+                            "type": "report_generated",
+                            "date": log.occurred_at.isoformat() if log.occurred_at else "",
+                            "session_id": str(s.id),
+                            "session_title": s.title,
+                            "detail": "研究报告生成",
+                        }
+                    )
                 elif event_type == "research.completed":
-                    events.append({
-                        "type": "research_completed",
-                        "date": log.occurred_at.isoformat() if log.occurred_at else "",
-                        "session_id": str(s.id),
-                        "session_title": s.title,
-                        "thesis": s.thesis,
-                        "decision": s.decision,
-                        "confidence": s.confidence,
-                        "detail": f"研究完结 - {s.decision}" if s.decision else "研究完结",
-                    })
+                    events.append(
+                        {
+                            "type": "research_completed",
+                            "date": log.occurred_at.isoformat() if log.occurred_at else "",
+                            "session_id": str(s.id),
+                            "session_title": s.title,
+                            "thesis": s.thesis,
+                            "decision": s.decision,
+                            "confidence": s.confidence,
+                            "detail": f"研究完结 - {s.decision}" if s.decision else "研究完结",
+                        }
+                    )
                 elif event_type.startswith("research."):
                     status_name = event_type.replace("research.", "")
-                    events.append({
-                        "type": "status_change",
-                        "date": log.occurred_at.isoformat() if log.occurred_at else "",
-                        "session_id": str(s.id),
-                        "session_title": s.title,
-                        "detail": f"状态变更: {status_name}",
-                    })
+                    events.append(
+                        {
+                            "type": "status_change",
+                            "date": log.occurred_at.isoformat() if log.occurred_at else "",
+                            "session_id": str(s.id),
+                            "session_title": s.title,
+                            "detail": f"状态变更: {status_name}",
+                        }
+                    )
 
             # Report versions
-            for report in (s.reports or []):
-                events.append({
-                    "type": "report_version",
-                    "date": report.created_at.isoformat() if report.created_at else "",
-                    "session_id": str(s.id),
-                    "session_title": s.title,
-                    "report_id": str(report.id),
-                    "version": report.version,
-                    "is_final": report.is_final,
-                    "detail": f"报告 v{report.version}{' (终稿)' if report.is_final else ''}",
-                })
+            for report in s.reports or []:
+                events.append(
+                    {
+                        "type": "report_version",
+                        "date": report.created_at.isoformat() if report.created_at else "",
+                        "session_id": str(s.id),
+                        "session_title": s.title,
+                        "report_id": str(report.id),
+                        "version": report.version,
+                        "is_final": report.is_final,
+                        "detail": f"报告 v{report.version}{' (终稿)' if report.is_final else ''}",
+                    }
+                )
 
         # 3. Observation events (price alerts, research reminders)
         obs_result = await self.session.execute(
@@ -141,12 +153,14 @@ class TimelineService:
             if payload.get("ticker") != ticker.upper():
                 continue
             reasons = payload.get("reasons", [])
-            events.append({
-                "type": "observation",
-                "date": log.occurred_at.isoformat() if log.occurred_at else "",
-                "detail": "; ".join(reasons) if reasons else "系统观察触发",
-                "observation_status": payload.get("status", "attention"),
-            })
+            events.append(
+                {
+                    "type": "observation",
+                    "date": log.occurred_at.isoformat() if log.occurred_at else "",
+                    "detail": "; ".join(reasons) if reasons else "系统观察触发",
+                    "observation_status": payload.get("status", "attention"),
+                }
+            )
 
         # Sort by date ascending
         events.sort(key=lambda e: e.get("date", ""))
@@ -173,8 +187,7 @@ class TimelineService:
 
         # Get the other version
         result = await self.session.execute(
-            select(ResearchReport)
-            .where(
+            select(ResearchReport).where(
                 ResearchReport.session_id == report.session_id,
                 ResearchReport.version == other_version,
             )
@@ -186,13 +199,15 @@ class TimelineService:
         # Generate diff
         old_lines = other.content.splitlines(keepends=True)
         new_lines = report.content.splitlines(keepends=True)
-        diff = list(difflib.unified_diff(
-            old_lines,
-            new_lines,
-            fromfile=f"v{other_version}",
-            tofile=f"v{report.version}",
-            n=3,
-        ))
+        diff = list(
+            difflib.unified_diff(
+                old_lines,
+                new_lines,
+                fromfile=f"v{other_version}",
+                tofile=f"v{report.version}",
+                n=3,
+            )
+        )
 
         additions = 0
         deletions = 0
@@ -234,11 +249,13 @@ class TimelineService:
         events: list[dict[str, Any]] = []
 
         # Session created
-        events.append({
-            "type": "created",
-            "date": session.created_at.isoformat() if session.created_at else "",
-            "detail": "研究会话创建",
-        })
+        events.append(
+            {
+                "type": "created",
+                "date": session.created_at.isoformat() if session.created_at else "",
+                "detail": "研究会话创建",
+            }
+        )
 
         # Event log entries
         log_result = await self.session.execute(
@@ -253,22 +270,26 @@ class TimelineService:
             event_type = log.event_type.replace("research.", "")
             if event_type == "evidence.added":
                 continue
-            events.append({
-                "type": event_type,
-                "date": log.occurred_at.isoformat() if log.occurred_at else "",
-                "detail": log.summary or event_type,
-            })
+            events.append(
+                {
+                    "type": event_type,
+                    "date": log.occurred_at.isoformat() if log.occurred_at else "",
+                    "detail": log.summary or event_type,
+                }
+            )
 
         # Report versions
-        for report in (session.reports or []):
-            events.append({
-                "type": "report_version",
-                "date": report.created_at.isoformat() if report.created_at else "",
-                "version": report.version,
-                "is_final": report.is_final,
-                "report_id": str(report.id),
-                "detail": f"报告 v{report.version}{' (终稿)' if report.is_final else ''}",
-            })
+        for report in session.reports or []:
+            events.append(
+                {
+                    "type": "report_version",
+                    "date": report.created_at.isoformat() if report.created_at else "",
+                    "version": report.version,
+                    "is_final": report.is_final,
+                    "report_id": str(report.id),
+                    "detail": f"报告 v{report.version}{' (终稿)' if report.is_final else ''}",
+                }
+            )
 
         # Sort by date
         events.sort(key=lambda e: e.get("date", ""))

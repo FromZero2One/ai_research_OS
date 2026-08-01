@@ -8,7 +8,7 @@ the classes as ``from_model`` / ``to_model``.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
@@ -26,7 +26,7 @@ class PriceEntry:
     adjusted_close: float | None = None
 
     @classmethod
-    def from_model(cls, model: Any) -> "PriceEntry":
+    def from_model(cls, model: Any) -> PriceEntry:
         return cls(
             date=model.date,
             open=model.open,
@@ -38,13 +38,15 @@ class PriceEntry:
         )
 
     @classmethod
-    def from_row(cls, row: dict) -> "PriceEntry":
+    def from_row(cls, row: dict) -> PriceEntry:
         """Build from a raw dict (akshare/yfinance row)."""
         date_val = row.get("date")
         if isinstance(date_val, datetime):
             date_val = date_val.date()
         elif isinstance(date_val, str):
             date_val = date.fromisoformat(date_val[:10])
+        if not isinstance(date_val, date):
+            raise ValueError(f"Invalid date in price row: {date_val!r}")
         return cls(
             date=date_val,
             open=row.get("open"),
@@ -90,7 +92,7 @@ class FinancialMetricEntry:
     reported_at: datetime | None = None
 
     @classmethod
-    def from_model(cls, model: Any) -> "FinancialMetricEntry":
+    def from_model(cls, model: Any) -> FinancialMetricEntry:
         return cls(
             fiscal_year=model.fiscal_year,
             fiscal_period=model.fiscal_period,
@@ -100,11 +102,15 @@ class FinancialMetricEntry:
         )
 
     @classmethod
-    def from_row(cls, row: dict) -> "FinancialMetricEntry":
+    def from_row(cls, row: dict) -> FinancialMetricEntry:
+        fiscal_year = row.get("fiscal_year")
+        metric_name = row.get("metric_name")
+        if fiscal_year is None or metric_name is None:
+            raise ValueError("Missing fiscal_year/metric_name in financial row")
         return cls(
-            fiscal_year=row.get("fiscal_year"),
+            fiscal_year=int(fiscal_year),
             fiscal_period=row.get("fiscal_period", "Annual"),
-            metric_name=row.get("metric_name"),
+            metric_name=str(metric_name),
             metric_value=row.get("metric_value"),
             reported_at=row.get("reported_at"),
         )
@@ -141,7 +147,7 @@ class FreshnessEntry:
     error_message: str | None = None
 
     @classmethod
-    def from_model(cls, model: Any) -> "FreshnessEntry":
+    def from_model(cls, model: Any) -> FreshnessEntry:
         return cls(
             ticker=model.ticker,
             data_type=model.data_type,
@@ -173,7 +179,7 @@ class MacroIndicatorEntry:
     source: str | None = None
 
     @classmethod
-    def from_model(cls, model: Any) -> "MacroIndicatorEntry":
+    def from_model(cls, model: Any) -> MacroIndicatorEntry:
         return cls(
             indicator=model.indicator,
             date=model.date,

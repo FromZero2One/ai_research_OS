@@ -1,9 +1,15 @@
+# ruff: noqa: E501
 """Test the finalize endpoint."""
-import httpx
+
 import asyncio
 
+import httpx
+
+
 async def test():
-    async with httpx.AsyncClient(base_url="http://localhost:8000", transport=httpx.AsyncHTTPTransport()) as client:
+    async with httpx.AsyncClient(
+        base_url="http://localhost:8000", transport=httpx.AsyncHTTPTransport()
+    ) as client:
         # Get a draft session
         resp = await client.get("/api/v1/research/sessions")
         sessions = resp.json()
@@ -25,5 +31,6 @@ async def test():
         )
         print(f"Status: {resp.status_code}")
         print(f"Response: {resp.text}")
+
 
 asyncio.run(test())

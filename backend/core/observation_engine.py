@@ -9,15 +9,14 @@ Outputs observations stored in EventLog that feed:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from core.logging import logger
 
-
 OBSERVATION_THRESHOLDS = {
-    "research_days_warning": 14,   # → attention after 14 days
+    "research_days_warning": 14,  # → attention after 14 days
     "research_days_critical": 30,  # → need_research after 30 days
-    "price_change_pct": 5.0,       # significant price change threshold
+    "price_change_pct": 5.0,  # significant price change threshold
 }
 
 
@@ -27,23 +26,19 @@ async def run_observation_cycle() -> dict:
     Called by scheduler (daily) or manually via API.
     Returns summary of observations generated.
     """
-    from core.database import managed_session
     from sqlalchemy import desc, select
     from sqlalchemy.orm import selectinload
 
     from company.models import Company
-    from market.models import StockPrice
+    from core.database import managed_session
     from portfolio.models import Watchlist, WatchlistItem
     from research.models import ResearchSession
 
     async with managed_session() as session:
-        event_logger = EventLogger(session)
         observations = []
 
         # Get all watchlist items
-        result = await session.execute(
-            select(Watchlist).options(selectinload(Watchlist.items))
-        )
+        result = await session.execute(select(Watchlist).options(selectinload(Watchlist.items)))
         watchlists = list(result.scalars().all())
 
         all_items: list[WatchlistItem] = []
@@ -58,9 +53,7 @@ async def run_observation_cycle() -> dict:
 
         # ── Batch preload: resolve all tickers → companies ────────────
         tickers = list({item.ticker for item in all_items})
-        companies_result = await session.execute(
-            select(Company).where(Company.ticker.in_(tickers))
-        )
+        companies_result = await session.execute(select(Company).where(Company.ticker.in_(tickers)))
         companies_by_ticker: dict[str, Company] = {
             c.ticker: c for c in companies_result.scalars().all()
         }
@@ -69,7 +62,7 @@ async def run_observation_cycle() -> dict:
         from sqlalchemy import text as sa_text
 
         prices_result = await session.execute(
-            sa_text(f"""
+            sa_text("""
                 SELECT p.ticker, p.date, p.close
                 FROM market.stock_prices p
                 WHERE p.ticker = ANY(:tickers)
@@ -79,9 +72,7 @@ async def run_observation_cycle() -> dict:
         )
         ticker_prices: dict[str, list[dict]] = {}
         for row in prices_result.all():
-            ticker_prices.setdefault(row.ticker, []).append(
-                {"date": row.date, "close": row.close}
-            )
+            ticker_prices.setdefault(row.ticker, []).append({"date": row.date, "close": row.close})
 
         # ── Batch preload: latest research per company ────────────────
         company_ids = [c.id for c in companies_by_ticker.values() if c.id]
@@ -93,6 +84,8 @@ async def run_observation_cycle() -> dict:
                 .order_by(ResearchSession.company_id, desc(ResearchSession.created_at))
             )
             for rs in rs_result.scalars().all():
+                if rs.company_id is None:
+                    continue
                 if rs.company_id not in latest_research_by_company:
                     latest_research_by_company[rs.company_id] = rs
 
@@ -106,7 +99,7 @@ async def run_observation_cycle() -> dict:
             sc_result = await session.execute(
                 select(Company).where(
                     Company.sector.in_(list(sectors)),
-                    Company.is_active == True,
+                    Company.is_active.is_(True),
                 )
             )
             for sc in sc_result.scalars().all():
@@ -126,14 +119,20 @@ async def run_observation_cycle() -> dict:
             latest_research = latest_research_by_company.get(company.id) if company.id else None
             days_since_research = None
             if latest_research and latest_research.created_at:
-                delta = datetime.now(timezone.utc) - latest_research.created_at
+                delta = datetime.now(UTC) - latest_research.created_at
                 days_since_research = delta.days
 
             if days_since_research is not None:
                 if days_since_research >= OBSERVATION_THRESHOLDS["research_days_critical"]:
-                    reasons.append(f"距上次研究 {days_since_research} 天（超过 {OBSERVATION_THRESHOLDS['research_days_critical']} 天）")
+                    reasons.append(
+                        f"距上次研究 {days_since_research} 天"
+                        f"（超过 {OBSERVATION_THRESHOLDS['research_days_critical']} 天）"
+                    )
                 elif days_since_research >= OBSERVATION_THRESHOLDS["research_days_warning"]:
-                    reasons.append(f"距上次研究 {days_since_research} 天（超过 {OBSERVATION_THRESHOLDS['research_days_warning']} 天）")
+                    reasons.append(
+                        f"距上次研究 {days_since_research} 天"
+                        f"（超过 {OBSERVATION_THRESHOLDS['research_days_warning']} 天）"
+                    )
 
             # Price change check
             prices_2 = ticker_prices.get(ticker, [])
@@ -153,31 +152,38 @@ async def run_observation_cycle() -> dict:
                 for sc in related[:3]:
                     if sc.ticker == ticker:
                         continue
-                    reasons.append(f"同板块 「{company.sector}」 {ticker} 异动，建议关注 {sc.ticker}")
+                    reasons.append(
+                        f"同板块 「{company.sector}」 {ticker} 异动，建议关注 {sc.ticker}"
+                    )
 
             # Store observation if any signals found
             if reasons:
-                observations.append({
-                    "ticker": ticker,
-                    "company_name": company.name,
-                    "reasons": reasons,
-                    "days_since_research": days_since_research,
-                })
+                observations.append(
+                    {
+                        "ticker": ticker,
+                        "company_name": company.name,
+                        "reasons": reasons,
+                        "days_since_research": days_since_research,
+                    }
+                )
 
                 from core.observation import Observation
 
                 obs_status = (
-                    "need_research" if days_since_research
+                    "need_research"
+                    if days_since_research
                     and days_since_research >= OBSERVATION_THRESHOLDS["research_days_critical"]
                     else "attention"
                 )
-                session.add(Observation(
-                    ticker=ticker,
-                    company_name=company.name,
-                    reasons="\n".join(reasons),
-                    status=obs_status,
-                    days_since_research=days_since_research,
-                ))
+                session.add(
+                    Observation(
+                        ticker=ticker,
+                        company_name=company.name,
+                        reasons="\n".join(reasons),
+                        status=obs_status,
+                        days_since_research=days_since_research,
+                    )
+                )
 
         await session.commit()
         logger.info("Observation: %d observations from %d items", len(observations), len(all_items))
@@ -192,15 +198,14 @@ async def run_observation_cycle() -> dict:
 
 async def get_recent_observations(limit: int = 20) -> list[dict]:
     """Fetch recent observations from Observation table."""
+    from sqlalchemy import desc, select
+
     from core.database import managed_session
     from core.observation import Observation
-    from sqlalchemy import desc, select
 
     async with managed_session() as session:
         result = await session.execute(
-            select(Observation)
-            .order_by(desc(Observation.observed_at))
-            .limit(limit)
+            select(Observation).order_by(desc(Observation.observed_at)).limit(limit)
         )
         entries = list(result.scalars().all())
 

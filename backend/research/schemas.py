@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
@@ -13,7 +14,9 @@ class ResearchPlan(BaseModel):
 
     research_goal: str = Field(..., description="Restated research goal")
     sub_questions: list[str] = Field(..., description="Sub-questions to answer", max_length=10)
-    analysis_dimensions: list[str] = Field(..., description="Analysis dimensions (financial, industry, etc.)")
+    analysis_dimensions: list[str] = Field(
+        ..., description="Analysis dimensions (financial, industry, etc.)"
+    )
     data_requirements: list[str] = Field(default=[], description="Data to collect")
     suggested_sources: list[str] = Field(default=[], description="Types of sources to search")
 
@@ -36,6 +39,29 @@ class ResearchSessionUpdate(BaseModel):
     confidence: float | None = Field(None, ge=0.0, le=1.0)
     status: str | None = Field(None, pattern="^(draft|researching|reviewing|completed|archived)$")
     tags: list[str] | None = None
+
+
+class ReportCreateRequest(BaseModel):
+    """Body for creating a report (replaces query-param mutation)."""
+
+    title: str = Field(..., max_length=512)
+    content: str = Field(..., min_length=1)
+    format: str = Field(default="markdown", max_length=32)
+    is_final: bool = False
+
+
+class GenerateReportRequest(BaseModel):
+    """Body for AI report generation."""
+
+    is_final: bool = False
+
+
+class FinalizeRequest(BaseModel):
+    """Body for finalizing research (thesis + decision)."""
+
+    thesis: str = Field(..., min_length=1)
+    decision: str = Field(..., pattern="^(buy|sell|hold|watch|pass)$")
+    confidence: float = Field(..., ge=0.0, le=1.0)
 
 
 class EvidenceCreate(BaseModel):
@@ -66,14 +92,15 @@ class ResearchSessionResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
+
 class ResearchSessionDetail(ResearchSessionResponse):
-    evidences: list["EvidenceResponse"] = []
-    reports: list["ReportResponse"] = []
+    evidences: list[EvidenceResponse] = []
+    reports: list[ReportResponse] = []
     plan: ResearchPlan | None = None
 
     @model_validator(mode="before")
     @classmethod
-    def extract_plan(cls, data: any) -> any:
+    def extract_plan(cls, data: Any) -> Any:
         """Extract research plan + structured thesis from session.extra_metadata."""
         if isinstance(data, dict):
             extra = data.get("extra_metadata") or {}

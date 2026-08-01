@@ -20,15 +20,16 @@ Usage:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Callable, Coroutine
+from collections.abc import Callable, Coroutine
+from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import DateTime, Integer, String, Text, func, select
-from sqlalchemy.dialects.postgresql import JSONB, UUID as UUIDType
+from sqlalchemy import DateTime, Integer, String, Text, select
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
-from core.base import Base, UUIDMixin, TimestampMixin
+from core.base import Base, TimestampMixin, UUIDMixin
 from core.logging import logger
 
 # ── Task Record Model ─────────────────────────────────────────────────────
@@ -62,7 +63,7 @@ class TaskRecord(Base, UUIDMixin, TimestampMixin):
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
 
     scheduled_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -70,7 +71,7 @@ class TaskRecord(Base, UUIDMixin, TimestampMixin):
 
 # ── Handler Registry ──────────────────────────────────────────────────────
 
-HandlerFn = Callable[[dict, AsyncSession], Coroutine[Any, Any, dict | None]]
+HandlerFn = Callable[[dict], Coroutine[Any, Any, dict | None]]
 
 _task_handlers: dict[str, HandlerFn] = {}
 
@@ -101,11 +102,13 @@ async def create_task(
     async def _do(session: AsyncSession) -> TaskRecord | None:
         # Dedup: reject if same (type, key) already pending or running
         existing = await session.execute(
-            select(TaskRecord).where(
+            select(TaskRecord)
+            .where(
                 TaskRecord.task_type == task_type,
                 TaskRecord.task_key == task_key,
                 TaskRecord.status.in_(["pending", "running"]),
-            ).limit(1)
+            )
+            .limit(1)
         )
         if existing.scalar_one_or_none():
             logger.debug("Task %s/%s already active — skipping", task_type, task_key)
@@ -116,7 +119,7 @@ async def create_task(
             task_key=task_key,
             payload=payload or {},
             max_attempts=max_attempts,
-            scheduled_at=datetime.now(timezone.utc),
+            scheduled_at=datetime.now(UTC),
         )
         session.add(task)
         await session.flush()
@@ -130,9 +133,7 @@ async def create_task(
 
 
 async def get_task(task_id: uuid.UUID, db: AsyncSession) -> TaskRecord | None:
-    result = await db.execute(
-        select(TaskRecord).where(TaskRecord.id == task_id)
-    )
+    result = await db.execute(select(TaskRecord).where(TaskRecord.id == task_id))
     return result.scalar_one_or_none()
 
 
@@ -189,8 +190,15 @@ async def _recover_interrupted_tasks() -> None:
         interrupted = list(result.scalars().all())
         for task in interrupted:
             task.status = "pending"
-            task.error = f"Interrupted by server restart (attempt {task.attempts}/{task.max_attempts})"
-            logger.warning("  [tasks] recovered interrupted task %s (%s/%s)", task.id, task.task_type, task.task_key)
+            task.error = (
+                f"Interrupted by server restart (attempt {task.attempts}/{task.max_attempts})"
+            )
+            logger.warning(
+                "  [tasks] recovered interrupted task %s (%s/%s)",
+                task.id,
+                task.task_type,
+                task.task_key,
+            )
         if interrupted:
             await session.commit()
             logger.info("  [tasks] recovered %d interrupted task(s)", len(interrupted))
@@ -212,7 +220,7 @@ async def _task_worker_loop() -> None:
                     select(TaskRecord)
                     .where(
                         TaskRecord.status == "pending",
-                        TaskRecord.scheduled_at <= datetime.now(timezone.utc),
+                        TaskRecord.scheduled_at <= datetime.now(UTC),
                         TaskRecord.attempts < TaskRecord.max_attempts,
                     )
                     .order_by(TaskRecord.scheduled_at)
@@ -227,7 +235,7 @@ async def _task_worker_loop() -> None:
                 # Mark as running
                 task.status = "running"
                 task.attempts += 1
-                task.started_at = datetime.now(timezone.utc)
+                task.started_at = datetime.now(UTC)
                 await session.commit()
 
             # Execute outside the pick-transaction (handler has its own session)
@@ -244,7 +252,6 @@ async def _task_worker_loop() -> None:
 
 async def _execute_task(task: TaskRecord) -> None:
     """Execute a single task by dispatching to its registered handler."""
-    import asyncio
     from core.database import managed_session
 
     handler = _task_handlers.get(task.task_type)
@@ -254,10 +261,16 @@ async def _execute_task(task: TaskRecord) -> None:
             if task_in_db:
                 task_in_db.status = "failed"
                 task_in_db.error = f"No handler registered for task_type: {task.task_type}"
-                task_in_db.completed_at = datetime.now(timezone.utc)
+                task_in_db.completed_at = datetime.now(UTC)
             return
 
-    logger.info("  [tasks] executing %s/%s (attempt %d/%d)", task.task_type, task.task_key, task.attempts, task.max_attempts)
+    logger.info(
+        "  [tasks] executing %s/%s (attempt %d/%d)",
+        task.task_type,
+        task.task_key,
+        task.attempts,
+        task.max_attempts,
+    )
     try:
         # Handlers receive payload and create their own managed_session internally
         result = await handler(task.payload or {})
@@ -267,15 +280,26 @@ async def _execute_task(task: TaskRecord) -> None:
             if not task_in_db:
                 return
             task_in_db.error = f"{type(e).__name__}: {e}"
-            task_in_db.completed_at = datetime.now(timezone.utc)
+            task_in_db.completed_at = datetime.now(UTC)
             if task_in_db.attempts >= task_in_db.max_attempts:
                 task_in_db.status = "failed"
-                logger.error("  [tasks] %s/%s FAILED after %d attempts: %s",
-                             task.task_type, task.task_key, task.attempts, e)
+                logger.error(
+                    "  [tasks] %s/%s FAILED after %d attempts: %s",
+                    task.task_type,
+                    task.task_key,
+                    task.attempts,
+                    e,
+                )
             else:
                 task_in_db.status = "pending"  # will retry
-                logger.warning("  [tasks] %s/%s failed (attempt %d/%d), will retry: %s",
-                               task.task_type, task.task_key, task.attempts, task.max_attempts, e)
+                logger.warning(
+                    "  [tasks] %s/%s failed (attempt %d/%d), will retry: %s",
+                    task.task_type,
+                    task.task_key,
+                    task.attempts,
+                    task.max_attempts,
+                    e,
+                )
         return
 
     # Success
@@ -284,7 +308,7 @@ async def _execute_task(task: TaskRecord) -> None:
         if task_in_db:
             task_in_db.status = "completed"
             task_in_db.result = result if isinstance(result, dict) else {"status": "ok"}
-            task_in_db.completed_at = datetime.now(timezone.utc)
+            task_in_db.completed_at = datetime.now(UTC)
             logger.info("  [tasks] %s/%s completed", task.task_type, task.task_key)
 
 

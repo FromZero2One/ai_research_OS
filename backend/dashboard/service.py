@@ -5,14 +5,12 @@ All methods use batch queries (not N+1) to avoid per-item round-trips.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-
-from core.event_log import EventLog
 
 
 class DashboardService:
@@ -28,9 +26,7 @@ class DashboardService:
         from core.morning_brief import MorningBrief
 
         result = await self.session.execute(
-            select(MorningBrief)
-            .order_by(desc(MorningBrief.generated_at))
-            .limit(1)
+            select(MorningBrief).order_by(desc(MorningBrief.generated_at)).limit(1)
         )
         brief = result.scalar_one_or_none()
         if not brief:
@@ -72,9 +68,7 @@ class DashboardService:
         comp_result = await self.session.execute(
             select(Company).where(Company.ticker.in_(all_tickers))
         )
-        company_by_ticker: dict[str, Company] = {
-            c.ticker: c for c in comp_result.scalars().all()
-        }
+        company_by_ticker: dict[str, Company] = {c.ticker: c for c in comp_result.scalars().all()}
         company_ids = [c.id for c in company_by_ticker.values()]
 
         # 3. Batch-load latest price per ticker (GROUP BY → max date)
@@ -85,11 +79,9 @@ class DashboardService:
             .subquery()
         )
         latest_px = await self.session.execute(
-            select(StockPrice)
-            .join(
+            select(StockPrice).join(
                 subq,
-                (StockPrice.ticker == subq.c.ticker)
-                & (StockPrice.date == subq.c.max_date),
+                (StockPrice.ticker == subq.c.ticker) & (StockPrice.date == subq.c.max_date),
             )
         )
         latest_price_by_ticker: dict[str, StockPrice] = {
@@ -109,8 +101,7 @@ class DashboardService:
                 .subquery()
             )
             rs_result = await self.session.execute(
-                select(ResearchSession)
-                .join(
+                select(ResearchSession).join(
                     subq_rs,
                     (ResearchSession.company_id == subq_rs.c.company_id)
                     & (ResearchSession.created_at == subq_rs.c.max_created),
@@ -131,40 +122,48 @@ class DashboardService:
                 days_since_research = None
                 status = "normal"
                 if research and research.created_at:
-                    delta = datetime.now(timezone.utc) - research.created_at
+                    delta = datetime.now(UTC) - research.created_at
                     days_since_research = delta.days
                     if days_since_research and days_since_research > 30:
                         status = "need_research"
                     elif days_since_research and days_since_research > 14:
                         status = "attention"
 
-                items_data.append({
-                    "id": str(item.id),
-                    "ticker": item.ticker,
-                    "company_name": company.name if company else item.ticker,
-                    "sector": company.sector if company else None,
-                    "priority": item.priority,
-                    "target_price": item.target_price,
-                    "reason": item.reason,
-                    "latest_price": price.close if price else None,
-                    "price_date": price.date.isoformat() if price and price.date else None,
-                    "price_change": (
-                        round(((price.close - price.open) / price.open) * 100, 2)
-                        if price and price.open
-                        else None
-                    ),
-                    "status": status,
-                    "thesis": research.thesis if research else None,
-                    "last_research_at": research.created_at.isoformat() if research and research.created_at else None,
-                    "days_since_research": days_since_research,
-                })
+                items_data.append(
+                    {
+                        "id": str(item.id),
+                        "ticker": item.ticker,
+                        "company_name": company.name if company else item.ticker,
+                        "sector": company.sector if company else None,
+                        "priority": item.priority,
+                        "target_price": item.target_price,
+                        "reason": item.reason,
+                        "latest_price": price.close if price else None,
+                        "price_date": price.date.isoformat() if price and price.date else None,
+                        "price_change": (
+                            round(((price.close - price.open) / price.open) * 100, 2)
+                            if (price and price.open is not None and price.close is not None)
+                            else None
+                        ),
+                        "status": status,
+                        "thesis": research.thesis if research else None,
+                        "last_research_at": (
+                            research.created_at.isoformat()
+                            if research and research.created_at
+                            else None
+                        ),
+                        "days_since_research": days_since_research,
+                    }
+                )
 
             items_data.sort(key=lambda x: (x["priority"], x["ticker"]))
-            summaries.append({
-                "watchlist_id": str(wl.id),
-                "watchlist_name": wl.name,
-                "items": items_data,
-            })
+            summaries.append(
+                {
+                    "watchlist_id": str(wl.id),
+                    "watchlist_name": wl.name,
+                    "items": items_data,
+                }
+            )
 
         return summaries
 
@@ -191,9 +190,7 @@ class DashboardService:
         comp_result = await self.session.execute(
             select(Company).where(Company.ticker.in_(all_tickers))
         )
-        company_by_ticker: dict[str, Company] = {
-            c.ticker: c for c in comp_result.scalars().all()
-        }
+        company_by_ticker: dict[str, Company] = {c.ticker: c for c in comp_result.scalars().all()}
         company_ids = [c.id for c in company_by_ticker.values()]
 
         # 3. Batch latest research per company
@@ -209,8 +206,7 @@ class DashboardService:
                 .subquery()
             )
             rs_result = await self.session.execute(
-                select(ResearchSession)
-                .join(
+                select(ResearchSession).join(
                     subq,
                     (ResearchSession.company_id == subq.c.company_id)
                     & (ResearchSession.created_at == subq.c.max_created),
@@ -220,7 +216,7 @@ class DashboardService:
                 research_by_company[str(rs.company_id)] = rs
 
         # 4. Assemble (no per-item queries)
-        reminders = []
+        reminders: list[dict[str, Any]] = []
         for item in items:
             company = company_by_ticker.get(item.ticker)
             if not company:
@@ -229,7 +225,7 @@ class DashboardService:
             research = research_by_company.get(str(company.id))
             days_since = None
             if research and research.created_at:
-                delta = datetime.now(timezone.utc) - research.created_at
+                delta = datetime.now(UTC) - research.created_at
                 days_since = delta.days
 
             reasons = []
@@ -237,15 +233,17 @@ class DashboardService:
                 reasons.append(f"距离上次研究 {days_since} 天")
 
             if reasons:
-                reminders.append({
-                    "ticker": item.ticker,
-                    "company_name": company.name,
-                    "days_since_research": days_since,
-                    "reasons": reasons,
-                    "priority": item.priority,
-                })
+                reminders.append(
+                    {
+                        "ticker": item.ticker,
+                        "company_name": company.name,
+                        "days_since_research": days_since,
+                        "reasons": reasons,
+                        "priority": item.priority,
+                    }
+                )
 
-        reminders.sort(key=lambda x: -(x["days_since_research"] or 0))
+        reminders.sort(key=lambda x: -(int(x["days_since_research"] or 0)))
         return reminders
 
     # ── Market Overview (batch-queried) ───────────────────────────
@@ -259,9 +257,7 @@ class DashboardService:
         from company.models import Company
         from market.models import StockPrice
 
-        result = await self.session.execute(
-            select(Company).where(Company.is_active == True)
-        )
+        result = await self.session.execute(select(Company).where(Company.is_active.is_(True)))
         companies = list(result.scalars().all())
         if not companies:
             return []
@@ -288,25 +284,29 @@ class DashboardService:
             elif p.ticker not in prev_by_ticker:
                 prev_by_ticker[p.ticker] = p
 
-        overview = []
+        overview: list[dict[str, Any]] = []
         for c in companies:
             latest = latest_by_ticker.get(c.ticker)
             prev = prev_by_ticker.get(c.ticker)
             if not latest or not prev:
                 continue
 
-            change_pct = round(
-                ((latest.close - prev.close) / prev.close) * 100, 2
-            ) if prev.close else None
+            change_pct = (
+                round(((latest.close - prev.close) / prev.close) * 100, 2)
+                if prev.close is not None and latest.close is not None
+                else None
+            )
 
-            overview.append({
-                "ticker": c.ticker,
-                "company_name": c.name,
-                "sector": c.sector,
-                "latest_price": latest.close,
-                "price_date": latest.date.isoformat() if latest.date else None,
-                "change_pct": change_pct,
-            })
+            overview.append(
+                {
+                    "ticker": c.ticker,
+                    "company_name": c.name,
+                    "sector": c.sector,
+                    "latest_price": latest.close,
+                    "price_date": latest.date.isoformat() if latest.date else None,
+                    "change_pct": change_pct,
+                }
+            )
 
         overview.sort(key=lambda x: abs(x["change_pct"] or 0), reverse=True)
         return overview[:10]
@@ -322,9 +322,7 @@ class DashboardService:
         reminders = await self.get_research_reminders()
 
         result = await self.session.execute(
-            select(ResearchSession)
-            .order_by(desc(ResearchSession.created_at))
-            .limit(5)
+            select(ResearchSession).order_by(desc(ResearchSession.created_at)).limit(5)
         )
         recent = result.scalars().all()
 

@@ -1,6 +1,7 @@
 """Tests for AI Center — prompt template CRUD."""
 
 from fastapi.testclient import TestClient
+
 from tests.conftest import SAMPLE_PROMPT_TEMPLATE
 
 

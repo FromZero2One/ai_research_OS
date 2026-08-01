@@ -9,6 +9,8 @@ Use the new imports instead:
     from research.thesis_service import ThesisService
     from research.planner import ResearchPlanner, PLAN_KEY
 """
+# Imports below intentionally happen after the deprecation warning.
+# ruff: noqa: E402
 
 from __future__ import annotations
 
@@ -22,5 +24,5 @@ _warnings.warn(
     stacklevel=2,
 )
 
+from research.planner import PLAN_KEY, ResearchPlanner  # noqa: F401
 from research.session_service import SessionService as ResearchService  # noqa: F401
-from research.planner import ResearchPlanner, PLAN_KEY  # noqa: F401

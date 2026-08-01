@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import os
+import asyncio
 from functools import lru_cache
 
 import httpx
@@ -11,18 +11,29 @@ from core.config import settings
 from core.interfaces import EmbeddingModel
 from core.logging import logger
 
-# Shared httpx client with connection pooling
+# Shared httpx client with connection pooling. Cached per event loop:
+# pytest/TestClient each run requests in their own loop, so a client bound
+# to a closed loop must be rebuilt instead of reused.
 _embed_client: httpx.AsyncClient | None = None
+_embed_client_loop: asyncio.AbstractEventLoop | None = None
 
 
-def _get_embed_client() -> httpx.AsyncClient:
-    global _embed_client
-    if _embed_client is None:
+async def _get_embed_client() -> httpx.AsyncClient:
+    global _embed_client, _embed_client_loop
+    loop = asyncio.get_running_loop()
+    if _embed_client is None or _embed_client_loop is not loop:
+        old = _embed_client
         _embed_client = httpx.AsyncClient(
             timeout=httpx.Timeout(60.0),
             limits=httpx.Limits(max_keepalive_connections=5, max_connections=20),
             proxy=None,
         )
+        _embed_client_loop = loop
+        if old is not None:
+            try:
+                await old.aclose()
+            except Exception:
+                pass
     return _embed_client
 
 
@@ -52,7 +63,7 @@ class OllamaEmbedding:
         return self._dim
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        client = _get_embed_client()
+        client = await _get_embed_client()
         try:
             resp = await client.post(
                 f"{self._base_url}/api/embed",
@@ -70,7 +81,10 @@ class OllamaEmbedding:
                         "config/settings=%d, Ollama '%s' returns %d. "
                         "Overriding to %d — update EMBEDDING_DIMENSION "
                         "in config to silence this warning.",
-                        self._dim, self._model, actual_dim, actual_dim,
+                        self._dim,
+                        self._model,
+                        actual_dim,
+                        actual_dim,
                     )
                 self._dim = actual_dim
                 return embeddings
@@ -100,9 +114,7 @@ class SentenceTransformerEmbedding:
         if self._model is None:
             from sentence_transformers import SentenceTransformer
 
-            self._model = SentenceTransformer(
-                self._model_name, device=self._device
-            )
+            self._model = SentenceTransformer(self._model_name, device=self._device)
         return self._model
 
     @property

@@ -47,9 +47,7 @@ class TestGetCompany:
         assert resp.json()["ticker"] == "TEST"
 
     def test_get_nonexistent(self, client: TestClient):
-        resp = client.get(
-            "/api/v1/companies/00000000-0000-0000-0000-000000000000"
-        )
+        resp = client.get("/api/v1/companies/00000000-0000-0000-0000-000000000000")
         assert resp.status_code == 404
 
     def test_get_invalid_uuid(self, client: TestClient):
@@ -124,7 +122,5 @@ class TestDeleteCompany:
         assert resp.status_code == 404
 
     def test_delete_nonexistent(self, client: TestClient):
-        resp = client.delete(
-            "/api/v1/companies/00000000-0000-0000-0000-000000000000"
-        )
+        resp = client.delete("/api/v1/companies/00000000-0000-0000-0000-000000000000")
         assert resp.status_code == 404

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,14 +34,14 @@ class EventLogger:
             actor=actor,
             payload=payload,
             summary=summary,
-            occurred_at=datetime.now(timezone.utc),
+            occurred_at=datetime.now(UTC),
         )
         self.session.add(entry)
         return entry
 
     # ── Read / Query ─────────────────────────────────────────────────────
 
-    async def list(
+    async def list_events(
         self,
         source: str | None = None,
         event_type: str | None = None,

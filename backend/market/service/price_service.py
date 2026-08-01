@@ -9,8 +9,7 @@ Data sources (3-layer fallback):
 
 from __future__ import annotations
 
-from datetime import date, datetime
-from typing import Any
+from datetime import date
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,13 +17,52 @@ from core.adapters.akshare_mysql import AkshareMySQLAdapter
 from core.event_service import EventLogger
 from core.logging import logger
 from market.akshare_executor import (
+    build_akshare_env,
     fetch_prices_via_mcp_cloud,
     is_a_stock,
     run_akshare,
-    tx_symbol,
 )
 from market.domain import PriceEntry
 from market.repositories import PriceRepository
+
+_AKSHARE_PRICE_CODE_HK = (
+    "import json, os, sys\nimport akshare as ak\ntry:\n"
+    '    ticker = os.environ["AKSHARE_TICKER"]\n'
+    "    symbol = ticker.zfill(5)\n"
+    "    df = ak.stock_hk_daily(symbol=symbol)\n"
+    '    if df is None or df.empty:\n        print("__R__:[]")\n'
+    "    else:\n        rows = []\n"
+    "        for _, row in df.iterrows():\n"
+    '            rows.append({"date": str(row["date"])[:10],\n'
+    '                "open": float(row["open"]) if row["open"] == row["open"] else None,\n'
+    '                "high": float(row["high"]) if row["high"] == row["high"] else None,\n'
+    '                "low": float(row["low"]) if row["low"] == row["low"] else None,\n'
+    '                "close": float(row["close"]) if row["close"] == row["close"] else None,\n'
+    '                "volume": float(row.get("volume", 0) or 0)})\n'
+    '        print("__R__:" + json.dumps(rows, ensure_ascii=False))\n'
+    "except Exception as e:\n"
+    '    print("__E__:" + str(e), file=sys.stderr)\n'
+)
+
+
+_AKSHARE_PRICE_CODE_A = (
+    "import json, os, sys\nimport akshare as ak\ntry:\n"
+    '    ticker = os.environ["AKSHARE_TICKER"]\n'
+    '    symbol = ("sh" if ticker.startswith("6") else "sz") + ticker\n'
+    '    df = ak.stock_zh_a_hist_tx(symbol=symbol, start_date="19000101", end_date="20500101")\n'
+    '    if df is None or df.empty:\n        print("__R__:[]")\n'
+    "    else:\n        rows = []\n"
+    "        for _, row in df.iterrows():\n"
+    '            rows.append({"date": str(row["date"])[:10],\n'
+    '                "open": float(row["open"]) if row["open"] == row["open"] else None,\n'
+    '                "high": float(row["high"]) if row["high"] == row["high"] else None,\n'
+    '                "low": float(row["low"]) if row["low"] == row["low"] else None,\n'
+    '                "close": float(row["close"]) if row["close"] == row["close"] else None,\n'
+    '                "volume": float(row.get("amount", 0) or 0)})\n'
+    '        print("__R__:" + json.dumps(rows, ensure_ascii=False))\n'
+    "except Exception as e:\n"
+    '    print("__E__:" + str(e), file=sys.stderr)\n'
+)
 
 
 class PriceService:
@@ -81,11 +119,10 @@ class PriceService:
 
         return []
 
-    async def _record_and_return(
-        self, ticker: str, prices: list[PriceEntry]
-    ) -> list[PriceEntry]:
+    async def _record_and_return(self, ticker: str, prices: list[PriceEntry]) -> list[PriceEntry]:
         """Record freshness and return prices."""
         from market.service.freshness_service import FreshnessService
+
         freshness = FreshnessService(self.session)
         await freshness.record_fetch(ticker, "prices", record_count=len(prices))
         return prices
@@ -109,8 +146,9 @@ class PriceService:
         mysql = await self._get_mysql()
         rows = await mysql.get_prices(ticker, start_date, end_date, limit)
         return [
-            PriceEntry(date=r.date, open=r.open, high=r.high,
-                       low=r.low, close=r.close, volume=r.volume)
+            PriceEntry(
+                date=r.date, open=r.open, high=r.high, low=r.low, close=r.close, volume=r.volume
+            )
             for r in rows
         ]
 
@@ -121,6 +159,7 @@ class PriceService:
     ) -> tuple[int, list[str]]:
         """Fetch prices via akshare 3-layer chain and store in PostgreSQL."""
         from core.exceptions import ValidationError
+
         try:
             prices, warnings = await self.fetch_akshare(ticker)
         except Exception as e:
@@ -128,25 +167,23 @@ class PriceService:
         count = await self.upsert_prices(ticker, prices)
         return count, warnings
 
-    async def upsert_prices(
-        self, ticker: str, prices: list[dict] | list[PriceEntry]
-    ) -> int:
+    async def upsert_prices(self, ticker: str, prices: list[dict] | list[PriceEntry]) -> int:
         """Bulk upsert stock prices into PostgreSQL."""
-        entries = [
-            p if isinstance(p, PriceEntry) else PriceEntry.from_row(p)
-            for p in prices
-        ]
+        entries = [p if isinstance(p, PriceEntry) else PriceEntry.from_row(p) for p in prices]
         count = await self.prices.upsert(ticker, entries)
 
         if count:
             await self.events.record(
-                source="market", event_type="prices.ingested",
-                entity_type="stock_price", entity_id=ticker,
+                source="market",
+                event_type="prices.ingested",
+                entity_type="stock_price",
+                entity_id=ticker,
                 payload={"count": count, "ticker": ticker},
             )
 
         # Record freshness
         from market.service.freshness_service import FreshnessService
+
         freshness = FreshnessService(self.session)
         status = "ok" if count > 0 else "ok"
         await freshness.record_fetch(ticker, "prices", record_count=count, status=status)
@@ -168,20 +205,31 @@ class PriceService:
             rows = await mysql.get_prices(ticker, limit=520)
             if rows:
                 logger.info("  [akshare] Layer 1 MySQL: %d rows for %s", len(rows), ticker)
-                return [{
-                    "date": r.date, "open": r.open, "high": r.high,
-                    "low": r.low, "close": r.close, "volume": r.volume or 0,
-                } for r in rows], []
+                return [
+                    {
+                        "date": r.date,
+                        "open": r.open,
+                        "high": r.high,
+                        "low": r.low,
+                        "close": r.close,
+                        "volume": r.volume or 0,
+                    }
+                    for r in rows
+                ], []
             warnings.append("Layer 1 (MySQL): no data")
         except Exception as e:
             warnings.append(f"Layer 1 (MySQL): {e}")
 
         # Layer 2: local akshare (subprocess)
         try:
-            rows = await self._fetch_akshare_local(ticker)
-            if rows:
-                logger.info("  [akshare] Layer 2 local: %d rows for %s", len(rows), ticker)
-                return rows, []
+            rows_local = await self._fetch_akshare_local(ticker)
+            if rows_local:
+                logger.info(
+                    "  [akshare] Layer 2 local: %d rows for %s",
+                    len(rows_local),
+                    ticker,
+                )
+                return rows_local, []
             warnings.append("Layer 2 (Tencent/Sina): returned no data")
         except Exception as e:
             msg = f"Layer 2 (Tencent/Sina): {e}"
@@ -190,10 +238,14 @@ class PriceService:
 
         # Layer 3: cloud MCP
         try:
-            rows = await fetch_prices_via_mcp_cloud(ticker)
-            if rows:
-                logger.info("  [akshare] Layer 3 cloud: %d rows for %s", len(rows), ticker)
-                return rows, []
+            rows_cloud = await fetch_prices_via_mcp_cloud(ticker)
+            if rows_cloud:
+                logger.info(
+                    "  [akshare] Layer 3 cloud: %d rows for %s",
+                    len(rows_cloud),
+                    ticker,
+                )
+                return rows_cloud, []
             warnings.append("Layer 3 (cloud MCP): no data")
         except Exception as e:
             msg = f"Layer 3 (cloud MCP): {e}"
@@ -211,43 +263,11 @@ class PriceService:
         is_hk = ticker.strip().isdigit() and len(ticker.strip()) in (4, 5)
 
         if is_hk:
-            hk_symbol = ticker.zfill(5)
-            code = (
-                f'import json, sys\nimport akshare as ak\ntry:\n'
-                f'    df = ak.stock_hk_daily(symbol="{hk_symbol}")\n'
-                f'    if df is None or df.empty:\n        print("__R__:[]")\n'
-                f'    else:\n        rows = []\n'
-                f'        for _, row in df.iterrows():\n'
-                f'            rows.append({{"date": str(row["date"])[:10],\n'
-                f'                "open": float(row["open"]) if row["open"] == row["open"] else None,\n'
-                f'                "high": float(row["high"]) if row["high"] == row["high"] else None,\n'
-                f'                "low": float(row["low"]) if row["low"] == row["low"] else None,\n'
-                f'                "close": float(row["close"]) if row["close"] == row["close"] else None,\n'
-                f'                "volume": float(row.get("volume", 0) or 0)}})\n'
-                f'        print("__R__:" + json.dumps(rows, ensure_ascii=False))\n'
-                f'except Exception as e:\n'
-                f'    print("__E__:" + str(e), file=sys.stderr)\n'
-            )
+            code = _AKSHARE_PRICE_CODE_HK
         else:
-            tx_sym = tx_symbol(ticker)
-            code = (
-                f'import json, sys\nimport akshare as ak\ntry:\n'
-                f'    df = ak.stock_zh_a_hist_tx(symbol="{tx_sym}", start_date="19000101", end_date="20500101")\n'
-                f'    if df is None or df.empty:\n        print("__R__:[]")\n'
-                f'    else:\n        rows = []\n'
-                f'        for _, row in df.iterrows():\n'
-                f'            rows.append({{"date": str(row["date"])[:10],\n'
-                f'                "open": float(row["open"]) if row["open"] == row["open"] else None,\n'
-                f'                "high": float(row["high"]) if row["high"] == row["high"] else None,\n'
-                f'                "low": float(row["low"]) if row["low"] == row["low"] else None,\n'
-                f'                "close": float(row["close"]) if row["close"] == row["close"] else None,\n'
-                f'                "volume": float(row.get("amount", 0) or 0)}})\n'
-                f'        print("__R__:" + json.dumps(rows, ensure_ascii=False))\n'
-                f'except Exception as e:\n'
-                f'    print("__E__:" + str(e), file=sys.stderr)\n'
-            )
+            code = _AKSHARE_PRICE_CODE_A
 
-        stdout = await _asyncio.to_thread(run_akshare, code)
+        stdout = await _asyncio.to_thread(run_akshare, code, build_akshare_env(ticker))
         if not stdout:
             return []
         for line in stdout.splitlines():
@@ -256,6 +276,7 @@ class PriceService:
                 for r in data:
                     r["date"] = r["date"][:10] if "T" in str(r["date"]) else str(r["date"])
                     from datetime import date as _date
+
                     r["date"] = _date.fromisoformat(r["date"])
                 return data
         return []
@@ -264,20 +285,31 @@ class PriceService:
 
     async def fetch_yfinance(self, ticker: str) -> list[dict]:
         """Fetch prices via yfinance (US stocks, needs proxy)."""
-        import yfinance as yf
         import asyncio
         import os
+
+        import yfinance as yf
 
         yf_ticker = ticker
         if is_a_stock(ticker):
             yf_ticker = f"{ticker}.SS" if ticker.startswith("6") else f"{ticker}.SZ"
 
         def _fetch():
-            for _var in ("http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY",
-                          "ftp_proxy", "FTP_PROXY", "all_proxy", "ALL_PROXY"):
+            for _var in (
+                "http_proxy",
+                "HTTP_PROXY",
+                "https_proxy",
+                "HTTPS_PROXY",
+                "ftp_proxy",
+                "FTP_PROXY",
+                "all_proxy",
+                "ALL_PROXY",
+            ):
                 os.environ.pop(_var, None)
             stock = yf.Ticker(yf_ticker)
-            from datetime import date as _d, timedelta as _td
+            from datetime import date as _d
+            from datetime import timedelta as _td
+
             end = _d.today()
             start = end - _td(days=400)
             hist = stock.history(start=start.isoformat(), end=end.isoformat())
@@ -286,14 +318,16 @@ class PriceService:
                 close = float(row["Close"])
                 if close != close:
                     continue
-                results.append({
-                    "date": idx.date(),
-                    "open": float(row["Open"]),
-                    "high": float(row["High"]),
-                    "low": float(row["Low"]),
-                    "close": close,
-                    "volume": int(row["Volume"]),
-                })
+                results.append(
+                    {
+                        "date": idx.date(),
+                        "open": float(row["Open"]),
+                        "high": float(row["High"]),
+                        "low": float(row["Low"]),
+                        "close": close,
+                        "volume": int(row["Volume"]),
+                    }
+                )
             return results
 
         return await asyncio.to_thread(_fetch)

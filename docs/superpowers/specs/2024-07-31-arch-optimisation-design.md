@@ -59,25 +59,25 @@ backend/
 |---|------|------|------|
 | 1 | 拆分 `market` 子 Service、Interface、Router；保留 `MarketFacade` 兼容旧调用 | `market/` | ✅ 完成 |
 | 2 | 实现 Domain DTO 与 Repository，Service 改为使用 DTO | `market/domain.py`, `market/repositories.py` | ✅ 完成 |
-| 3 | 引入 DI 容器，所有 Service 通过容器获取依赖 | `core/container.py` + 各域 routes | 🔄 部分完成 |
+| 3 | 引入 DI 容器，所有 Service 通过容器获取依赖 | `core/container.py` + 各域 routes | ✅ 完成 |
 | 4 | 统一异常为 `DomainError` 系列并注册 handler | `core/exceptions.py`, `api/app.py` | ✅ 完成 |
-| 5 | 将相同模式推广至 `research`, `portfolio`, `knowledge` 等域 | `research/`, `portfolio/`, `knowledge/` | 🔄 部分完成 |
-| 6 | 配置 `ruff`/`mypy`/`pre-commit`，完善单元测试覆盖 | `pyproject.toml`, CI | ⬜ 未开始 |
+| 5 | 将相同模式推广至 `research`, `portfolio`, `knowledge` 等域 | `research/`, `portfolio/`, `knowledge/` | ✅ 完成 |
+| 6 | 配置 `ruff`/`mypy`/`pre-commit`，完善单元测试覆盖 | `pyproject.toml`, CI | ✅ 完成 |
 
 ### 4.1 阶段 3 & 5 细分状态
 
 | 域 | 子 Service 拆分 | Domain DTO | Repository | 容器注册 | Facade | routes 用容器 |
 |----|:---:|:---:|:---:|:---:|:---:|:---:|
 | `market` | ✅ `service/` 6 个 | ✅ `domain.py` | ✅ `repositories.py` (3) | ✅ 6 服务 | ✅ `MarketFacade` | ✅ 6 子 router + `aggregate.py` |
-| `research` | ✅ `session_service.py` / `evidence_service.py` / `report_service.py` | ⬜ | ⬜ | ✅ 3 服务 | ✅ `ResearchFacade` | ✅ |
+| `research` | ✅ `session_service.py` / `evidence_service.py` / `report_service.py` / `gather_service.py` / `thesis_service.py` / `timeline_service.py` | ⬜ | ⬜ | ✅ 6 服务 | ✅ `ResearchFacade` | ✅ |
 | `portfolio` | ✅ `service/` 3 个 (watchlist/holding/journal) | ⬜ | ⬜ | ✅ 3 服务 | ✅ `PortfolioFacade` | ✅ |
 | `knowledge` | ✅ 单 Service（无拆分必要） | ⬜ | ⬜ | ✅ `knowledge_service` | ✅ `KnowledgeFacade` | ✅ |
-| `document` | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ 仍用 `get_db` |
-| `ai` | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ 仍用 `get_db` |
-| `company` | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ 仍用 `get_db` |
-| `dashboard` | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ 仍用 `get_db` |
+| `document` | ⬜ | ⬜ | ⬜ | ✅ `document_service` | ⬜ | ✅ |
+| `ai` | ⬜ | ⬜ | ⬜ | ✅ `ai_service` | ⬜ | ✅ |
+| `company` | ⬜ | ⬜ | ⬜ | ✅ `company_service` | ⬜ | ✅ |
+| `dashboard` | ⬜ | ⬜ | ⬜ | ✅ `dashboard_service` | ⬜ | ✅ |
 
-> `research`/`portfolio`/`knowledge` 复用「Protocols + 容器 + Facade + routes 容器化」模式；其 Domain DTO / Repository 层是否引入视后续需要决定。
+> 全部 8 个域已复用「Protocols + 容器 + Facade + routes 容器化」模式；`document`/`ai`/`company`/`dashboard` 未做子 Service 拆分（单 Service 无拆分必要），Domain DTO / Repository 层是否引入视后续需要决定。
 
 ## 5. 迁移风险与应对
 - **兼容性破坏**：在 `market/__init__.py` 保留旧函数的代理实现。
@@ -89,23 +89,28 @@ backend/
 
 ### ✅ 已完成
 - **market 域（阶段 1-4 全量）**：`market/service/`（6 个聚焦 Service）、`market/routes/`（6 子 router + `aggregate.py` + 聚合导出）、`market/domain.py`（`PriceEntry`/`FinancialMetricEntry`/`FreshnessEntry`/`MacroIndicatorEntry`）、`market/repositories.py`（`PriceRepository`/`FinancialRepository`/`FreshnessRepository`）、`market/service.py` deprecated shim、`MarketFacade` 兼容层。
-- **DI 容器**：`core/container.py`（`Container` + `create_container`），懒加载 13 个服务属性；`core/database.py` 新增 `get_container` 依赖。
-- **Protocols**：`core/interfaces.py` 新增 12 个域服务 Protocol（market 5 + research 3 + portfolio 3 + knowledge 1），容器懒加载 13 个服务属性（含 market `FreshnessService` 直接用具体类型）。
+- **DI 容器**：`core/container.py`（`Container` + `create_container`），懒加载 20 个服务属性；`core/database.py` 新增 `get_container` 依赖。
+- **Protocols**：`core/interfaces.py` 现有 19 个域服务 Protocol（market 5 + research 5 + timeline 1 + portfolio 3 + knowledge 1 + company 1 + document 1 + ai 1 + dashboard 1），容器懒加载 20 个服务属性（含 market `FreshnessService` 直接用具体类型）。
 - **异常体系**：`core/exceptions.py` 定义 `AIResearchOSError` → `DomainError` 层级；`api/app.py` 注册 8 个 handler（`NotFoundError`/`ValidationError`/`DuplicateError`/`AuthenticationError`/`AuthorizationError`/`ExternalServiceError`/`AIResearchOSError`/`DomainError`）。全库 `raise` 扫描确认全部为结构化异常。
-- **research 域**：3 个 Protocol + 容器注册 + `ResearchFacade` + routes 容器化。
+- **research 域**：6 个 Protocol（session/evidence/report/gather/thesis/timeline）+ 容器注册 + `ResearchFacade` + routes 容器化；`quick.py` 后台任务与 SSE 也统一走容器工厂。
 - **portfolio 域**：`PortfolioService` 拆分为 `service/` 3 个子服务 + `PortfolioFacade` + 容器注册 + routes 容器化；`service/__init__.py` 保留 `PortfolioService` 后向兼容别名。
 - **knowledge 域**：`KnowledgeService` Protocol + 容器注册 + `KnowledgeFacade` + routes 容器化。
-- **测试基线**：全量 `91 passed / 7 failed`，7 个失败全部为环境依赖（6× market 依赖 akshare MySQL、1× knowledge 依赖 Ollama embedding），与重构前基线一致，无回归。
+- **document/ai/company/dashboard 域**：4 个 Protocol + 容器注册 + routes 容器化（B7 收尾完成）。
+- **模型注册**：`api/app.py` 显式导入全部 ORM 模型（与 `alembic/env.py` 同列表），不再依赖路由对服务模块的传递性导入——消除了 lazy 容器化后 mapper 配置不完整的隐患。
+- **后台任务容器化**：`scheduler_jobs.market_data_update` 与 `quick_research` 任务处理器改用 `create_container(session)` 工厂，后台与请求路径共用同一依赖图。
+- **安全修复（P0）**：akshare 子进程不再把 ticker 拼进 Python 源码；改由环境变量传参（`build_akshare_env` + `AKSHARE_TICKER`），并加字符白名单纵深防御。新增 `tests/test_akshare_safety.py`（18 个用例，含真实子进程隔离验证）。
+- **测试夹具**：conftest 同步覆盖 `get_container`，所有容器化路由在测试中走每次测试独立的 NullPool 会话，消除了 TestClient 与 pytest 事件循环间连接池串用导致的 "Event loop is closed"。
+- **测试基线**：全量 `116 passed / 0 failed`（`airesearch_test` 独立测试库 + 基础设施在线的环境下），此前 7 个环境依赖失败已全部归零。
+- **部署边界**：README 新增安全边界章节；`SECRET_KEY` 默认随机生成、CORS 默认指向 5173、`.env` 对齐；research 的 mutation 端点（finalize/generate-report/create report）从 query param 改为请求体（前后端同步）。
+- **数据层**：BM25 语料改为分页全量加载（`BM25_MAX_CHUNKS` 可配置上限，默认不截断）；`PriceRepository`/`FinancialRepository` upsert 改为批量查询；新增 pg_trgm GIN 索引迁移（加速 ILIKE 兜底检索）；embedding/LLM 共享 httpx 客户端改为事件循环感知（修复跨 loop 复用）。
+- **scheduler_jobs 拆分**：拆为 `core/market_sync.py`、`core/news_fetcher.py`、`core/brief_generator.py`，原模块保留为兼容转发层；新增 `core/event_cleanup.py`（事件日志每周保留清理，`EVENT_LOG_RETENTION_DAYS=90`）。
+- **代码质量门槛**：全仓库 `ruff check` + `ruff format` 清零（含既有历史欠账）；`[tool.mypy]` 配置（core 范围 + market domain/repositories + research schemas）零错误；`.pre-commit-config.yaml` 接入 ruff/ruff-format/mypy 三钩子并全部通过；mypy 修复过程中顺带对齐了 8 个域服务的 Protocol 真实签名（Any → 具体类型，`TYPE_CHECKING` 导入保持运行时解耦）。
 
 ### 🔄 进行中
-- **阶段 3/5 收尾**：`document` / `ai` / `company` / `dashboard` 4 个域仍用 `get_db` 直连，尚未接入容器（待 B7）。
+- **发布收尾**：`refactor/vue3-rewrite` 分支尚未合并/创建 PR。
 
 ### ⬜ 未开始
-- **阶段 6（C8）**：配置 `[tool.mypy]`（当前仅 `[tool.ruff]`）、接入 pre-commit、完善单元测试覆盖。
-- **环境依赖测试失败（非代码缺陷，需环境修复后归零）**：
-  - 6× `test_market`：依赖 akshare MySQL 本地数据（600519/000001 等），需初始化对应标的本地 K 线/财务数据。
-  - 1× `test_knowledge`：依赖本地 Ollama embedding 服务运行（未启动时 embedding 返回零向量 → 检索 count=0）。
-- **发布收尾**：`refactor/vue3-rewrite` 分支尚未合并/创建 PR；周 8 任务（文档审查、PR 合并）待做。
+- **Protocol 全覆盖**：`research`/`portfolio`/`knowledge` 等域服务的返回类型仍为 ORM 模型直出（协议已对齐具体签名，但未引入独立 DTO 层）；是否引入视后续需要决定。
 
 ## 7. 实施计划（原时间估算）
 | 周 | 任务 | 状态 |
@@ -114,8 +119,8 @@ backend/
 | 2 | 实现 `market` Domain DTO 与 Repository | ✅ |
 | 3 | 引入 DI 容器并迁移 `market` Service | ✅ |
 | 4 | 统一 `market` 异常并注册 handler | ✅ |
-| 5-6 | 在其他域复用相同模式 | 🔄 部分（research/portfolio/knowledge 完成，document/ai/company/dashboard 待接入） |
-| 7 | 配置代码质量工具，完成全套测试 | ⬜ |
+| 5-6 | 在其他域复用相同模式 | ✅（全部 8 域 + 后台任务已容器化） |
+| 7 | 配置代码质量工具，完成全套测试 | ✅ |
 | 8 | 文档审查、PR 合并 | ⬜ |
 
 ## 8. 文档化与后续

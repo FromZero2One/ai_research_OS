@@ -1,4 +1,5 @@
 """Event Log API — read/query the audit trail."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -14,8 +15,12 @@ router = APIRouter(prefix="/events", tags=["Event Log"])
 
 @router.get("")
 async def list_events(
-    source: str | None = Query(None, description="Filter by source (e.g. company, research, observation)"),
-    event_type: str | None = Query(None, description="Filter by event type (e.g. company.created, research.started)"),
+    source: str | None = Query(
+        None, description="Filter by source (e.g. company, research, observation)"
+    ),
+    event_type: str | None = Query(
+        None, description="Filter by event type (e.g. company.created, research.started)"
+    ),
     entity_id: str | None = Query(None, description="Filter by entity ID"),
     entity_type: str | None = Query(None, description="Filter by entity type"),
     since: datetime | None = Query(None, description="ISO datetime (inclusive)"),
@@ -26,7 +31,7 @@ async def list_events(
 ):
     """Query event log entries with filters. Returns paginated results."""
     svc = EventLogger(db)
-    entries, total = await svc.list(
+    entries, total = await svc.list_events(
         source=source,
         event_type=event_type,
         entity_id=entity_id,

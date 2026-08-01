@@ -1,11 +1,9 @@
+# ruff: noqa: E501
 """Seed sample companies and a research session for development."""
 
 from __future__ import annotations
 
 import asyncio
-
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import async_session_factory, engine
 from core.logging import configure_logging, logger
@@ -155,7 +153,8 @@ async def seed() -> None:
             session_obj.company_id = nvda.id
             logger.info(
                 "  Research session '%s' linked to %s",
-                session_obj.title, nvda.ticker,
+                session_obj.title,
+                nvda.ticker,
             )
 
         await session.commit()

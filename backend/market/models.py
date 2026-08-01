@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import uuid
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Date, DateTime, Float, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.base import Base, TimestampMixin, UUIDMixin
@@ -14,7 +12,6 @@ from core.base import Base, TimestampMixin, UUIDMixin
 
 class StockPrice(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "stock_prices"
-    __table_args__ = {"schema": "market"}
 
     ticker: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -26,9 +23,7 @@ class StockPrice(Base, UUIDMixin, TimestampMixin):
     adjusted_close: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Composite unique: one row per ticker per date
-    __table_args__ = (
-        {"schema": "market"},
-    )
+    __table_args__: tuple[dict[str, str], ...] = ({"schema": "market"},)
 
 
 class FinancialMetric(Base, UUIDMixin, TimestampMixin):
@@ -61,17 +56,16 @@ class DataFreshness(Base, UUIDMixin, TimestampMixin):
     """
 
     __tablename__ = "data_freshness"
-    __table_args__ = (
-        {"schema": "market"},
-    )
+    __table_args__ = ({"schema": "market"},)
 
     ticker: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     data_type: Mapped[str] = mapped_column(String(32), nullable=False)
     """prices | financials | profile | news"""
 
     checked_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
     )
     """When the data was last successfully fetched."""
 

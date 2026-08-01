@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from company.models import Company, CompanyTag
-from core.exceptions import DuplicateError, NotFoundError
 from core.event_service import EventLogger
+from core.exceptions import DuplicateError, NotFoundError
 
 
 class CompanyService:
@@ -30,8 +30,15 @@ class CompanyService:
             raise DuplicateError("Company", ticker)
 
         company = Company(ticker=ticker.upper(), name=name)
-        for field in ("description", "sector", "industry", "headquarters",
-                       "founded_year", "employees", "website"):
+        for field in (
+            "description",
+            "sector",
+            "industry",
+            "headquarters",
+            "founded_year",
+            "employees",
+            "website",
+        ):
             if field in kwargs and kwargs[field] is not None:
                 setattr(company, field, kwargs[field])
 
@@ -55,9 +62,7 @@ class CompanyService:
 
     async def get(self, company_id: UUID) -> Company:
         result = await self.session.execute(
-            select(Company)
-            .where(Company.id == company_id)
-            .options(selectinload(Company.tags))
+            select(Company).where(Company.id == company_id).options(selectinload(Company.tags))
         )
         company = result.scalar_one_or_none()
         if not company:
@@ -85,10 +90,7 @@ class CompanyService:
         stmt = select(Company).options(selectinload(Company.tags))
 
         if query:
-            stmt = stmt.where(
-                Company.name.ilike(f"%{query}%")
-                | Company.ticker.ilike(f"%{query}%")
-            )
+            stmt = stmt.where(Company.name.ilike(f"%{query}%") | Company.ticker.ilike(f"%{query}%"))
         if sector:
             stmt = stmt.where(Company.sector.ilike(f"%{sector}%"))
         if industry:
@@ -113,9 +115,17 @@ class CompanyService:
     async def update(self, company_id: UUID, data: dict) -> Company:
         company = await self.get(company_id)
 
-        updatable = {"name", "description", "sector", "industry",
-                      "headquarters", "founded_year", "employees",
-                      "website", "is_active"}
+        updatable = {
+            "name",
+            "description",
+            "sector",
+            "industry",
+            "headquarters",
+            "founded_year",
+            "employees",
+            "website",
+            "is_active",
+        }
 
         for key, value in data.items():
             if key in updatable and value is not None:
@@ -181,11 +191,13 @@ class CompanyService:
                 "thesis": thesis_log.payload.get("thesis"),
                 "decision": thesis_log.payload.get("decision"),
                 "confidence": thesis_log.payload.get("confidence"),
-                "updated_at": thesis_log.occurred_at.isoformat() if thesis_log.occurred_at else None,
+                "updated_at": (
+                    thesis_log.occurred_at.isoformat() if thesis_log.occurred_at else None
+                ),
             }
 
         # 2. Fallback to latest completed research
-        result = await self.session.execute(
+        research_result = await self.session.execute(
             select(ResearchSession)
             .where(
                 ResearchSession.company_id == company.id,
@@ -195,20 +207,24 @@ class CompanyService:
             .order_by(desc(ResearchSession.updated_at))
             .limit(1)
         )
-        session = result.scalar_one_or_none()
+        research_session = research_result.scalar_one_or_none()
 
-        if session and session.thesis:
+        if research_session and research_session.thesis:
             structured = None
-            if session.extra_metadata and isinstance(session.extra_metadata, dict):
-                structured = session.extra_metadata.get("structured_thesis")
+            if research_session.extra_metadata and isinstance(
+                research_session.extra_metadata, dict
+            ):
+                structured = research_session.extra_metadata.get("structured_thesis")
             return {
                 "ticker": ticker.upper(),
                 "company_name": company.name,
-                "thesis": session.thesis,
-                "decision": session.decision,
-                "confidence": session.confidence,
-                "source_session_id": str(session.id),
-                "updated_at": session.updated_at.isoformat() if session.updated_at else None,
+                "thesis": research_session.thesis,
+                "decision": research_session.decision,
+                "confidence": research_session.confidence,
+                "source_session_id": str(research_session.id),
+                "updated_at": (
+                    research_session.updated_at.isoformat() if research_session.updated_at else None
+                ),
                 "structured_thesis": structured,
             }
 

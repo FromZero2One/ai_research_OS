@@ -7,7 +7,6 @@ Supports: text extraction, page metadata, headings detection, encrypted PDF hand
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 import fitz
 
@@ -83,7 +82,6 @@ class PyMuPDFParser(DocumentParser):
 
             # Get text blocks with positioning
             blocks = page.get_text("dict", sort=True)["blocks"]
-            page_text_parts: list[str] = []
             headings: list[str] = []
 
             page_text = page.get_text("text", sort=True)
@@ -110,15 +108,19 @@ class PyMuPDFParser(DocumentParser):
                                 block_text += span["text"]
                                 block_max_font = max(block_max_font, span["size"])
 
-                        if (block_max_font > avg_font * self.HEADING_FONT_THRESHOLD
-                            and len(block_text.strip()) < 200):
+                        if (
+                            block_max_font > avg_font * self.HEADING_FONT_THRESHOLD
+                            and len(block_text.strip()) < 200
+                        ):
                             headings.append(block_text.strip())
 
-            page_metadata.append({
-                "page": page_num + 1,
-                "text_length": page_text_length,
-                "headings": headings,
-            })
+            page_metadata.append(
+                {
+                    "page": page_num + 1,
+                    "text_length": page_text_length,
+                    "headings": headings,
+                }
+            )
             pages_text.append(page_text)
 
         page_count = len(doc)
@@ -160,6 +162,7 @@ class PyMuPDFParser(DocumentParser):
     async def _open_pdf(self, content: bytes) -> fitz.Document:
         """Open a PDF document from bytes, running in a thread."""
         import asyncio
+
         return await asyncio.to_thread(fitz.open, stream=content, filetype="pdf")
 
     def _extract_metadata(self, doc: fitz.Document) -> dict:

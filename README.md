@@ -130,6 +130,15 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 6. **Workspace First, not Module First** — V1.1: Dashboard as default entry, not function list
 7. **AI = Capability, not Center** — LLM provider swappable (DeepSeek/Ollama/OpenAI)
 
+## Security Boundary
+
+> **设计决策：本项目定位为单用户本地工具，API 默认不启用认证。** 请勿直接暴露到公网。
+
+- 路由层未接入 JWT 认证（`core/security.py` 提供工具但未被使用）——这是有意的 V1 决策，不是疏漏
+- `SECRET_KEY` 默认每次启动随机生成；若需跨重启保持 token 有效，请在 `backend/.env` 中显式设置
+- CORS 默认仅允许 `http://localhost:5173`（开发前端），按需在 `.env` 中扩展
+- 若未来需要部署到服务器/公网，第一优先级是接入认证（复用 `core/security.py`）并收紧基础设施访问
+
 ## V1 → V1.1 → V2 → V3
 
 | | V1 | V1.1 ✅ | V2 | V3 |

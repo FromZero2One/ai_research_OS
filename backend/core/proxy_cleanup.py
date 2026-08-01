@@ -24,10 +24,14 @@ def clean_proxy_env() -> None:
     must be called **before** any module that imports httpx is loaded.
     """
     for _var in (
-        "all_proxy", "ALL_PROXY",
-        "http_proxy", "HTTP_PROXY",
-        "https_proxy", "HTTPS_PROXY",
-        "ftp_proxy", "FTP_PROXY",
+        "all_proxy",
+        "ALL_PROXY",
+        "http_proxy",
+        "HTTP_PROXY",
+        "https_proxy",
+        "HTTPS_PROXY",
+        "ftp_proxy",
+        "FTP_PROXY",
     ):
         _os.environ.pop(_var, None)
     _os.environ.setdefault("no_proxy", "localhost,127.0.0.0/8,::1")

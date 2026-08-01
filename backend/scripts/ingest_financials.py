@@ -5,10 +5,11 @@ import sys
 
 sys.path.insert(0, ".")
 
+from sqlalchemy import select
+
 from core.database import async_session_factory
 from core.logging import configure_logging, logger
 from market.models import FinancialMetric
-from sqlalchemy import select
 
 
 def fiscal_period_from_date(dt):
@@ -51,9 +52,12 @@ async def ingest_financials():
             logger.info(f"  [{local_ticker}] 获取 ({yf_ticker})...")
 
             try:
+
                 def _fetch(t=yf_ticker):
                     import yfinance as yf
+
                     return yf.Ticker(t).quarterly_financials
+
                 qf = await asyncio.to_thread(_fetch)
             except Exception as e:
                 logger.error(f"  [{local_ticker}] 获取失败: {e}")
@@ -69,11 +73,13 @@ async def ingest_financials():
 
                 # 检查是否已存在
                 existing = await sess.execute(
-                    select(FinancialMetric).where(
+                    select(FinancialMetric)
+                    .where(
                         FinancialMetric.ticker == local_ticker,
                         FinancialMetric.fiscal_year == fy,
                         FinancialMetric.fiscal_period == fq,
-                    ).limit(1)
+                    )
+                    .limit(1)
                 )
                 if existing.scalar_one_or_none():
                     continue
@@ -82,38 +88,58 @@ async def ingest_financials():
                 if "Total Revenue" in qf.index:
                     val = qf.loc["Total Revenue", col]
                     if val == val:  # not NaN
-                        sess.add(FinancialMetric(
-                            ticker=local_ticker, fiscal_year=fy, fiscal_period=fq,
-                            metric_name="revenue", metric_value=float(val),
-                        ))
+                        sess.add(
+                            FinancialMetric(
+                                ticker=local_ticker,
+                                fiscal_year=fy,
+                                fiscal_period=fq,
+                                metric_name="revenue",
+                                metric_value=float(val),
+                            )
+                        )
 
                 # Net Income
                 if "Net Income" in qf.index:
                     val = qf.loc["Net Income", col]
                     if val == val:
-                        sess.add(FinancialMetric(
-                            ticker=local_ticker, fiscal_year=fy, fiscal_period=fq,
-                            metric_name="net_income", metric_value=float(val),
-                        ))
+                        sess.add(
+                            FinancialMetric(
+                                ticker=local_ticker,
+                                fiscal_year=fy,
+                                fiscal_period=fq,
+                                metric_name="net_income",
+                                metric_value=float(val),
+                            )
+                        )
 
                 # Operating Margin
                 if "Operating Income" in qf.index and "Total Revenue" in qf.index:
                     oi = qf.loc["Operating Income", col]
                     tr = qf.loc["Total Revenue", col]
                     if oi == oi and tr == tr and tr != 0:
-                        sess.add(FinancialMetric(
-                            ticker=local_ticker, fiscal_year=fy, fiscal_period=fq,
-                            metric_name="operating_margin", metric_value=float(oi / tr),
-                        ))
+                        sess.add(
+                            FinancialMetric(
+                                ticker=local_ticker,
+                                fiscal_year=fy,
+                                fiscal_period=fq,
+                                metric_name="operating_margin",
+                                metric_value=float(oi / tr),
+                            )
+                        )
 
                 # EPS
                 if "Diluted EPS" in qf.index:
                     val = qf.loc["Diluted EPS", col]
                     if val == val:
-                        sess.add(FinancialMetric(
-                            ticker=local_ticker, fiscal_year=fy, fiscal_period=fq,
-                            metric_name="eps", metric_value=float(val),
-                        ))
+                        sess.add(
+                            FinancialMetric(
+                                ticker=local_ticker,
+                                fiscal_year=fy,
+                                fiscal_period=fq,
+                                metric_name="eps",
+                                metric_value=float(val),
+                            )
+                        )
 
                 count += 1
 

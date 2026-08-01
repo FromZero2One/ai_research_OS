@@ -77,6 +77,7 @@ async def get_tasks(
 async def retry_background_task(task_id: UUID):
     """Reset a failed task so the worker retries it."""
     from core.database import async_session_factory
+
     async with async_session_factory() as db:
         task = await retry_task(task_id, db)
         if task:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select, update as sql_update
+from sqlalchemy import update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.adapters.akshare_mysql import AkshareMySQLAdapter
@@ -73,8 +73,10 @@ class ProfileService:
 
     async def fetch_and_store_company_profile(self, ticker: str) -> dict:
         """Fetch company profile data via akshare and update the Company record in PG."""
-        import akshare as ak
         import asyncio as _asyncio
+
+        import akshare as ak
+
         from company.models import Company
 
         profile: dict[str, str | int | None] = {}
@@ -93,7 +95,9 @@ class ProfileService:
                 "description": str(row.get("机构简介", ""))[:2000] if row.get("机构简介") else None,
                 "website": row.get("官方网站"),
                 "headquarters": row.get("办公地址"),
-                "founded_year": int(str(row.get("成立日期", ""))[:4]) if row.get("成立日期") else None,
+                "founded_year": (
+                    int(str(row.get("成立日期", ""))[:4]) if row.get("成立日期") else None
+                ),
             }
 
         def _fetch_hk():
@@ -115,7 +119,9 @@ class ProfileService:
                 "description": str(row.get("公司介绍", ""))[:2000] if row.get("公司介绍") else None,
                 "website": row.get("公司网址"),
                 "headquarters": row.get("办公地址"),
-                "founded_year": int(str(row.get("公司成立日期", ""))[:4]) if row.get("公司成立日期") else None,
+                "founded_year": (
+                    int(str(row.get("公司成立日期", ""))[:4]) if row.get("公司成立日期") else None
+                ),
                 "employees": employees,
             }
 
@@ -130,28 +136,29 @@ class ProfileService:
 
         update_data = {k: v for k, v in profile.items() if v is not None}
         if update_data:
-            stmt = (
-                sql_update(Company)
-                .where(Company.ticker == ticker)
-                .values(**update_data)
-            )
+            stmt = sql_update(Company).where(Company.ticker == ticker).values(**update_data)
             await self.session.execute(stmt)
             await self.session.flush()
             await self.events.record(
-                source="market", event_type="company_profile.ingested",
-                entity_type="company", entity_id=ticker,
+                source="market",
+                event_type="company_profile.ingested",
+                entity_type="company",
+                entity_id=ticker,
                 payload=update_data,
             )
             logger.info("  [profile] updated %s: %s", ticker, list(update_data.keys()))
 
         # Record freshness (even if no profile data, the fetch was attempted)
         from market.service.freshness_service import FreshnessService
+
         freshness = FreshnessService(self.session)
         count = len(update_data) if update_data else 0
         status = "ok" if profile else "error"
         await freshness.record_fetch(
-            ticker, "profile",
-            record_count=count, status=status,
+            ticker,
+            "profile",
+            record_count=count,
+            status=status,
             error_message=None if profile else "No profile data returned",
         )
 

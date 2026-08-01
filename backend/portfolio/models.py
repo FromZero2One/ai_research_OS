@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Float, ForeignKey, Integer, String, Text
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Float, ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.base import Base, TimestampMixin, UUIDMixin
@@ -18,7 +18,7 @@ class Watchlist(Base, UUIDMixin, TimestampMixin):
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    items: Mapped[list["WatchlistItem"]] = relationship(
+    items: Mapped[list[WatchlistItem]] = relationship(
         back_populates="watchlist", cascade="all, delete-orphan"
     )
 
@@ -58,9 +58,7 @@ class InvestmentJournal(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "investment_journal"
     __table_args__ = {"schema": "portfolio"}
 
-    entry_type: Mapped[str] = mapped_column(
-        String(32), nullable=False, index=True
-    )
+    entry_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     """idea, analysis, reflection, lesson"""
 
     ticker: Mapped[str | None] = mapped_column(String(16), nullable=True)

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from secrets import token_hex
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -56,7 +58,11 @@ class Settings(BaseSettings):
     REDIS_TTL: int = 3600
 
     # --- Security ---
-    SECRET_KEY: str = "change-me-in-production"
+    # Single-user local tool by default: no auth is enforced on routes.
+    # Default secret is random per boot so a forgotten deployment never
+    # ships with a known key. Set SECRET_KEY explicitly if you persist
+    # tokens across restarts or expose the service.
+    SECRET_KEY: str = Field(default_factory=lambda: token_hex(32))
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
 
     # --- Document ---
@@ -64,6 +70,10 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_MB: int = 50
     CHUNK_SIZE: int = 512
     CHUNK_OVERLAP: int = 64
+    # Hard safety valve for the in-memory BM25 corpus (0 = unlimited).
+    # Unlike the old hard-coded 10000 cap, hitting this logs a warning
+    # instead of silently truncating the search index.
+    BM25_MAX_CHUNKS: int = 0
 
     # --- Market ---
     AKSHARE_ENABLED: bool = True
@@ -74,9 +84,11 @@ class Settings(BaseSettings):
     MARKET_DATA_SCHEDULE: str = "0 2 * * 1-5"  # Weekdays 2am
     REPORT_SCHEDULE: str = "0 6 * * 1-5"  # Weekdays 6am
     OBSERVATION_SCHEDULE: str = "30 5 * * 1-5"  # Weekdays 5:30am (before brief)
+    EVENT_LOG_CLEANUP_SCHEDULE: str = "0 3 * * 1"  # Weekly Monday 3am
+    EVENT_LOG_RETENTION_DAYS: int = 90
 
     # --- CORS ---
-    CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+    CORS_ORIGINS: list[str] = ["http://localhost:5173"]
 
 
 settings = Settings()

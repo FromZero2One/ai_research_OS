@@ -39,7 +39,7 @@ format:
 	cd backend && ruff format . && ruff check --fix .
 
 typecheck:
-	cd backend && mypy .
+	cd backend && mypy
 
 test:
 	cd backend && pytest -v

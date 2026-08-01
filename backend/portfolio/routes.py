@@ -26,6 +26,7 @@ router = APIRouter(prefix="/portfolio", tags=["Portfolio Center"])
 
 # ── Watchlists ──────────────────────────────────────────────────────
 
+
 @router.post("/watchlists", response_model=WatchlistResponse, status_code=201)
 async def create_watchlist(
     data: WatchlistCreate,
@@ -75,7 +76,11 @@ async def delete_watchlist(
     await svc.delete_watchlist(watchlist_id)
 
 
-@router.post("/watchlists/{watchlist_id}/items", response_model=WatchlistItemResponse, status_code=201)
+@router.post(
+    "/watchlists/{watchlist_id}/items",
+    response_model=WatchlistItemResponse,
+    status_code=201,
+)
 async def add_to_watchlist(
     watchlist_id: uuid.UUID,
     data: WatchlistItemCreate,
@@ -95,6 +100,7 @@ async def remove_from_watchlist(
 
 
 # ── Holdings ────────────────────────────────────────────────────────
+
 
 @router.post("/holdings", response_model=HoldingResponse, status_code=201)
 async def add_holding(
@@ -134,6 +140,7 @@ async def close_holding(
 
 
 # ── Journal ─────────────────────────────────────────────────────────
+
 
 @router.post("/journal", response_model=JournalEntryResponse, status_code=201)
 async def create_journal_entry(

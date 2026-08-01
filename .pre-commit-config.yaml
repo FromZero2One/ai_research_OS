@@ -1,0 +1,15 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v2.3.0
+    hooks:
+      - id: mypy
+        # Check the full core layer, not just the changed files. The target
+        # list mirrors [tool.mypy].files in pyproject.toml.
+        pass_filenames: false
+        entry: bash -c 'cd backend && mypy --no-incremental core market/domain.py market/repositories.py research/schemas.py'

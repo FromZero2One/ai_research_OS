@@ -21,5 +21,7 @@ class MorningBrief(Base, UUIDMixin):
     stocks_covered: Mapped[int] = mapped_column(Integer, default=0)
     focus_stocks: Mapped[int] = mapped_column(Integer, default=0)
     generated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False,
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
     )

@@ -36,17 +36,13 @@ class HoldingService:
     async def get_holdings(self, active_only: bool = True) -> list[Holding]:
         stmt = select(Holding)
         if active_only:
-            stmt = stmt.where(Holding.is_active == True)
+            stmt = stmt.where(Holding.is_active.is_(True))
         stmt = stmt.order_by(Holding.ticker)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def update_holding(
-        self, holding_id: uuid.UUID, **kwargs
-    ) -> Holding:
-        result = await self.session.execute(
-            select(Holding).where(Holding.id == holding_id)
-        )
+    async def update_holding(self, holding_id: uuid.UUID, **kwargs) -> Holding:
+        result = await self.session.execute(select(Holding).where(Holding.id == holding_id))
         holding = result.scalar_one_or_none()
         if not holding:
             raise NotFoundError("Holding", str(holding_id))

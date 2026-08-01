@@ -28,9 +28,7 @@ class TestDocumentCRUD:
         assert resp.status_code == 404
 
     def test_delete_nonexistent(self, client: TestClient):
-        resp = client.delete(
-            "/api/v1/documents/00000000-0000-0000-0000-000000000000"
-        )
+        resp = client.delete("/api/v1/documents/00000000-0000-0000-0000-000000000000")
         assert resp.status_code == 404
 
     def test_search_by_doc_type(self, client: TestClient):
@@ -44,7 +42,9 @@ class TestDocumentUploadAsync:
 
     @pytest.mark.asyncio
     async def test_upload_markdown(self, async_client: httpx.AsyncClient):
-        content = b"# Test Doc\n\nSimple test document content.\n\nWith multiple paragraphs for chunking."
+        content = (
+            b"# Test Doc\n\nSimple test document content.\n\nWith multiple paragraphs for chunking."
+        )
         resp = await async_client.post(
             "/api/v1/documents/upload",
             files={"file": ("test.md", BytesIO(content), "text/markdown")},

@@ -35,8 +35,12 @@ async def ingest_financials(
 ):
     """Ingest financial metrics (HK stocks via eastmoney HK API)."""
     if is_a_stock(ticker):
-        return {"ticker": ticker.upper(), "ingested": 0, "source": "mysql",
-                "note": "A-stock financials served from MySQL — no ingest needed"}
+        return {
+            "ticker": ticker.upper(),
+            "ingested": 0,
+            "source": "mysql",
+            "note": "A-stock financials served from MySQL — no ingest needed",
+        }
 
     svc = container.financial_service
     fetched = await svc._fetch_akshare_financials(ticker)

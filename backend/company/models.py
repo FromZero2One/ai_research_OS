@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
 
-from sqlalchemy import ForeignKey, String, Text, Date
+from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 

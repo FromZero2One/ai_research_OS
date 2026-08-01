@@ -83,29 +83,32 @@ class FinancialService:
             for m_name, m_value in row.metrics.items():
                 if metric and m_name != metric:
                     continue
-                results.append(FinancialMetricEntry(
-                    fiscal_year=row.fiscal_year,
-                    fiscal_period=row.fiscal_period,
-                    metric_name=m_name,
-                    metric_value=m_value,
-                ))
+                results.append(
+                    FinancialMetricEntry(
+                        fiscal_year=row.fiscal_year,
+                        fiscal_period=row.fiscal_period,
+                        metric_name=m_name,
+                        metric_value=m_value,
+                    )
+                )
         return results
 
-    async def upsert_financials(
-        self, ticker: str, metrics: list[FinancialMetricEntry]
-    ) -> int:
+    async def upsert_financials(self, ticker: str, metrics: list[FinancialMetricEntry]) -> int:
         """Bulk upsert financial metrics into PostgreSQL."""
         count = await self.repo.upsert(ticker, metrics)
 
         if count:
             await self.events.record(
-                source="market", event_type="financials.ingested",
-                entity_type="financial_metric", entity_id=ticker,
+                source="market",
+                event_type="financials.ingested",
+                entity_type="financial_metric",
+                entity_id=ticker,
                 payload={"count": count, "ticker": ticker},
             )
 
         # Record freshness
         from market.service.freshness_service import FreshnessService
+
         freshness = FreshnessService(self.session)
         await freshness.record_fetch(ticker, "financials", record_count=count, status="ok")
 
@@ -113,15 +116,14 @@ class FinancialService:
 
     async def _fetch_akshare_financials(self, ticker: str) -> list[FinancialMetricEntry]:
         """Fetch HK-stock financial data via akshare (eastmoney HK API)."""
-        import akshare as ak
         import asyncio as _asyncio
+
+        import akshare as ak
 
         hk_symbol = ticker.zfill(5)
 
         def _fetch():
-            df = ak.stock_financial_hk_report_em(
-                stock=hk_symbol, symbol="利润表", indicator="年度"
-            )
+            df = ak.stock_financial_hk_report_em(stock=hk_symbol, symbol="利润表", indicator="年度")
             results: list[FinancialMetricEntry] = []
             for cn_name, en_name in HK_METRICS:
                 subset = df[df["STD_ITEM_NAME"] == cn_name]
@@ -132,12 +134,14 @@ class FinancialService:
                     else:
                         year = report_date.year
                     value = float(row["AMOUNT"])
-                    results.append(FinancialMetricEntry(
-                        fiscal_year=year,
-                        fiscal_period="Annual",
-                        metric_name=en_name,
-                        metric_value=value,
-                    ))
+                    results.append(
+                        FinancialMetricEntry(
+                            fiscal_year=year,
+                            fiscal_period="Annual",
+                            metric_name=en_name,
+                            metric_value=value,
+                        )
+                    )
             return results
 
         return await _asyncio.to_thread(_fetch)

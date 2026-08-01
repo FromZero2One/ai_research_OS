@@ -2,7 +2,6 @@
 
 from fastapi.testclient import TestClient
 
-
 SAMPLE_WATCHLIST = {"name": "AI Stocks", "description": "Top AI companies to watch"}
 SAMPLE_HOLDING = {"ticker": "AAPL", "shares": 100, "avg_cost_basis": 150.0, "sector": "Technology"}
 SAMPLE_JOURNAL = {
@@ -77,7 +76,10 @@ class TestHolding:
 
     def test_close_holding(self, client: TestClient):
         created = client.post("/api/v1/portfolio/holdings", json=SAMPLE_HOLDING).json()
-        resp = client.patch(f"/api/v1/portfolio/holdings/{created['id']}", json={"is_active": False})
+        resp = client.patch(
+            f"/api/v1/portfolio/holdings/{created['id']}",
+            json={"is_active": False},
+        )
         assert resp.status_code == 200, resp.text
         assert resp.json()["is_active"] is False
 

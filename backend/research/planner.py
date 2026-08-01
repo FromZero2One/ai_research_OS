@@ -8,16 +8,20 @@ from core.adapters.llm import create_llm
 from core.interfaces import LLM, LLMMessage
 from core.logging import logger
 
-RESEARCH_PLAN_SYSTEM_PROMPT = """You are a professional investment research analyst. Given a research question, create a structured research plan.
-
-Your plan must include:
-1. **research_goal**: A clear restatement of what needs to be researched
-2. **sub_questions**: 3-6 specific questions that must be answered to reach a conclusion
-3. **analysis_dimensions**: Key dimensions to analyze (e.g., financial health, competitive position, industry trends, management quality, valuation, risks)
-4. **data_requirements**: What specific data points are needed
-5. **suggested_sources**: Types of documents or data sources to consult
-
-Respond with valid JSON only, no markdown formatting."""
+RESEARCH_PLAN_SYSTEM_PROMPT = (
+    "You are a professional investment research analyst. "
+    "Given a research question, create a structured research plan.\n\n"
+    "Your plan must include:\n"
+    "1. **research_goal**: A clear restatement of what needs to be researched\n"
+    "2. **sub_questions**: 3-6 specific questions that must be answered "
+    "to reach a conclusion\n"
+    "3. **analysis_dimensions**: Key dimensions to analyze (e.g., financial "
+    "health, competitive position, industry trends, management quality, "
+    "valuation, risks)\n"
+    "4. **data_requirements**: What specific data points are needed\n"
+    "5. **suggested_sources**: Types of documents or data sources to consult"
+    "\nRespond with valid JSON only, no markdown formatting."
+)
 
 PLAN_KEY = "research_plan"
 
@@ -70,7 +74,10 @@ class ResearchPlanner:
             if not required.issubset(plan.keys()):
                 plan["research_goal"] = plan.get("research_goal", question)
                 plan["sub_questions"] = plan.get("sub_questions", [question])
-                plan["analysis_dimensions"] = plan.get("analysis_dimensions", ["Financial", "Industry", "Competitive"])
+                plan["analysis_dimensions"] = plan.get(
+                    "analysis_dimensions",
+                    ["Financial", "Industry", "Competitive"],
+                )
             plan["data_requirements"] = plan.get("data_requirements", [])
             plan["suggested_sources"] = plan.get("suggested_sources", [])
             return plan
@@ -78,7 +85,12 @@ class ResearchPlanner:
             return {
                 "research_goal": question,
                 "sub_questions": [question],
-                "analysis_dimensions": ["Financial Analysis", "Industry Analysis", "Competitive Position", "Risk Factors"],
+                "analysis_dimensions": [
+                    "Financial Analysis",
+                    "Industry Analysis",
+                    "Competitive Position",
+                    "Risk Factors",
+                ],
                 "data_requirements": ["Revenue and earnings trends", "Market share data"],
                 "suggested_sources": ["Annual reports", "Industry reports", "News"],
             }
@@ -97,7 +109,8 @@ Report: {report_content[:3000]}"""
         try:
             response = await self.llm.generate(
                 messages=[LLMMessage(role="user", content=prompt)],
-                temperature=0.3, max_tokens=1024,
+                temperature=0.3,
+                max_tokens=1024,
             )
             result = json.loads(response.content)
             for key in ("bull_case", "bear_case", "key_drivers", "risks"):

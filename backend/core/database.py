@@ -14,8 +14,8 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
 
-from sqlalchemy import NullPool
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -23,6 +23,9 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from core.config import settings
+
+if TYPE_CHECKING:
+    from core.container import Container
 
 engine = create_async_engine(
     settings.DATABASE_URL,
@@ -54,7 +57,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
-async def get_container() -> AsyncGenerator["Container", None]:
+async def get_container() -> AsyncGenerator[Container, None]:
     """FastAPI dependency that yields a DI container for the request.
 
     Builds on top of ``get_db`` so the session is managed automatically.

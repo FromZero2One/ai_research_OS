@@ -16,7 +16,8 @@ class GatherService:
     """Orchestrates automatic evidence gathering from various sources."""
 
     def __init__(
-        self, session: AsyncSession,
+        self,
+        session: AsyncSession,
         evidence_service: EvidenceService | None = None,
         session_service: SessionService | None = None,
     ) -> None:
@@ -32,8 +33,8 @@ class GatherService:
     ) -> dict:
         """Auto-gather evidence from Knowledge Center and Market Center."""
         from knowledge.service import KnowledgeService
-        from market.service.price_service import PriceService
         from market.service.financial_service import FinancialService
+        from market.service.price_service import PriceService
 
         session = await self.sessions.get(session_id)
         question = session.question
@@ -83,12 +84,13 @@ class GatherService:
                 prices = await market_prices.get_prices(company.ticker, limit=30)
                 latest = prices[-1] if prices else None
                 if prices and latest:
+                    closes = [p.close for p in prices if p.close is not None]
+                    range_str = f"High={max(closes):.2f} Low={min(closes):.2f}" if closes else "n/a"
                     price_summary = (
                         f"Recent price data for {company.ticker}:\n"
                         f"Latest: {latest.date} Close={latest.close:.2f} "
                         f"Vol={latest.volume:.0f}\n"
-                        f"30d Range: High={max(p.close for p in prices):.2f} "
-                        f"Low={min(p.close for p in prices):.2f}"
+                        f"30d Range: {range_str}"
                     )
                     await self.evidence.add(
                         session_id=session_id,
@@ -106,7 +108,6 @@ class GatherService:
                     financials = await market_financials.get_financials(company.ticker)
                     if financials:
                         fin_lines = []
-                        from market.models import FinancialMetric
                         for f in financials[:10]:
                             fin_lines.append(
                                 f"{f.fiscal_year}-{f.fiscal_period}: "
@@ -115,7 +116,12 @@ class GatherService:
                         if fin_lines:
                             await self.evidence.add(
                                 session_id=session_id,
-                                content="Financial metrics for " + company.ticker + ":\n" + "\n".join(fin_lines),
+                                content=(
+                                    "Financial metrics for "
+                                    + company.ticker
+                                    + ":\n"
+                                    + "\n".join(fin_lines)
+                                ),
                                 source_type="market_data",
                                 source_id=company.ticker,
                                 source_title=f"{company.ticker} Financials",

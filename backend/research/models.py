@@ -27,17 +27,13 @@ class ResearchSession(Base, UUIDMixin, TimestampMixin):
         index=True,
     )
 
-    status: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="draft", index=True
-    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft", index=True)
     """draft → researching → reviewing → completed → archived"""
 
     thesis: Mapped[str | None] = mapped_column(Text, nullable=True)
     """Final investment thesis / conclusion."""
 
-    decision: Mapped[str | None] = mapped_column(
-        String(32), nullable=True
-    )
+    decision: Mapped[str | None] = mapped_column(String(32), nullable=True)
     """investment decision: buy, sell, hold, watch, pass"""
 
     confidence: Mapped[float | None] = mapped_column(nullable=True)
@@ -47,10 +43,10 @@ class ResearchSession(Base, UUIDMixin, TimestampMixin):
     extra_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # Relationships
-    evidences: Mapped[list["ResearchEvidence"]] = relationship(
+    evidences: Mapped[list[ResearchEvidence]] = relationship(
         back_populates="session", cascade="all, delete-orphan"
     )
-    reports: Mapped[list["ResearchReport"]] = relationship(
+    reports: Mapped[list[ResearchReport]] = relationship(
         back_populates="session", cascade="all, delete-orphan"
     )
 
@@ -74,9 +70,7 @@ class ResearchEvidence(Base, UUIDMixin, TimestampMixin):
 
     source_title: Mapped[str | None] = mapped_column(String(512), nullable=True)
     relevance_score: Mapped[float | None] = mapped_column(nullable=True)
-    evidence_type: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="supporting"
-    )
+    evidence_type: Mapped[str] = mapped_column(String(32), nullable=False, default="supporting")
     """supporting, opposing, neutral"""
 
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -97,9 +91,7 @@ class ResearchReport(Base, UUIDMixin, TimestampMixin):
     )
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    format: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="markdown"
-    )
+    format: Mapped[str] = mapped_column(String(32), nullable=False, default="markdown")
     """markdown, html, pdf"""
 
     version: Mapped[int] = mapped_column(nullable=False, default=1)

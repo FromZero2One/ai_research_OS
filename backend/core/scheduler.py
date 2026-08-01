@@ -79,11 +79,16 @@ def start_scheduler() -> AsyncIOScheduler:
             settings.OBSERVATION_SCHEDULE,
         )
 
+    # Register event log retention cleanup job (weekly)
+    if hasattr(settings, "EVENT_LOG_CLEANUP_SCHEDULE") and settings.EVENT_LOG_CLEANUP_SCHEDULE:
+        _add_cron_job(
+            "event_log_cleanup",
+            settings.EVENT_LOG_CLEANUP_SCHEDULE,
+        )
+
     if _scheduler.get_jobs():
         _scheduler.start()
-        logger.info(
-            "Scheduler started with %d job(s)", len(_scheduler.get_jobs())
-        )
+        logger.info("Scheduler started with %d job(s)", len(_scheduler.get_jobs()))
     else:
         logger.info("Scheduler started — no jobs configured")
 
@@ -115,9 +120,7 @@ def _add_cron_job(job_name: str, cron_expr: str) -> None:
         name=job_name,
         replace_existing=True,
     )
-    logger.info(
-        "Scheduled job '%s' at cron '%s'", job_name, cron_expr
-    )
+    logger.info("Scheduled job '%s' at cron '%s'", job_name, cron_expr)
 
 
 def _run_async_job_wrapper(job_name: str) -> Callable[[], Awaitable[None]]:

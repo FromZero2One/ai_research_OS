@@ -1,8 +1,8 @@
 """Tests for Research Center — full workflow: session → evidence → report → finalize."""
 
 from fastapi.testclient import TestClient
-from tests.conftest import SAMPLE_RESEARCH
 
+from tests.conftest import SAMPLE_RESEARCH
 
 SAMPLE_EVIDENCE = {
     "source_type": "article",
@@ -30,7 +30,10 @@ class TestCreateSession:
         assert "id" in data
 
     def test_create_minimal(self, client: TestClient):
-        resp = client.post("/api/v1/research/sessions", json={"title": "Minimal", "question": "Is this working?"})
+        resp = client.post(
+            "/api/v1/research/sessions",
+            json={"title": "Minimal", "question": "Is this working?"},
+        )
         assert resp.status_code == 201, resp.text
         assert resp.json()["status"] == "draft"
 
@@ -126,8 +129,8 @@ class TestFinalize:
     def test_finalize_session(self, client: TestClient):
         session = client.post("/api/v1/research/sessions", json=SAMPLE_RESEARCH).json()
         resp = client.post(
-            f"/api/v1/research/sessions/{session['id']}/finalize"
-            "?thesis=Strong+BUY&decision=buy&confidence=0.85",
+            f"/api/v1/research/sessions/{session['id']}/finalize",
+            json={"thesis": "Strong BUY", "decision": "buy", "confidence": 0.85},
         )
         assert resp.status_code == 200, resp.text
         data = resp.json()
@@ -138,16 +141,16 @@ class TestFinalize:
     def test_finalize_missing_thesis(self, client: TestClient):
         session = client.post("/api/v1/research/sessions", json=SAMPLE_RESEARCH).json()
         resp = client.post(
-            f"/api/v1/research/sessions/{session['id']}/finalize"
-            "?decision=sell&confidence=0.7",
+            f"/api/v1/research/sessions/{session['id']}/finalize",
+            json={"decision": "sell", "confidence": 0.7},
         )
         # thesis is required
         assert resp.status_code == 422
 
     def test_finalize_nonexistent(self, client: TestClient):
         resp = client.post(
-            "/api/v1/research/sessions/00000000-0000-0000-0000-000000000000/finalize"
-            "?thesis=test&decision=buy&confidence=0.5",
+            "/api/v1/research/sessions/00000000-0000-0000-0000-000000000000/finalize",
+            json={"thesis": "test", "decision": "buy", "confidence": 0.5},
         )
         assert resp.status_code == 404
 

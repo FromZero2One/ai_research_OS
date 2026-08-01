@@ -4,7 +4,30 @@ from __future__ import annotations
 
 from core.event_service import EventLogger
 from core.logging import logger
-from market.akshare_executor import fetch_news_via_mcp_cloud, run_akshare
+from market.akshare_executor import (
+    build_akshare_env,
+    fetch_news_via_mcp_cloud,
+    run_akshare,
+)
+
+_NEWS_CODE = (
+    "import json, os, sys, akshare as ak\n"
+    "try:\n"
+    '    ticker = os.environ["AKSHARE_TICKER"]\n'
+    "    df = ak.stock_news_em(symbol=ticker)\n"
+    '    if df is None or df.empty:\n        print("__R__:[]")\n'
+    "    else:\n        rows = []\n"
+    "        for _, row in df.iterrows():\n"
+    '            rows.append({"title": str(row.get("\u65b0\u95fb\u6807\u9898", "")),\n'
+    '                "content": str(row.get("\u65b0\u95fb\u5185\u5bb9", ""))[:300],\n'
+    '                "publish_time": str(row.get("\u53d1\u5e03\u65f6\u95f4", "")),\n'
+    '                "source": str(row.get("\u6587\u7ae0\u6765\u6e90", "")),\n'
+    '                "url": str(row.get("\u65b0\u95fb\u94fe\u63a5", "")),\n'
+    "            })\n"
+    '        print("__R__:" + json.dumps(rows, ensure_ascii=False))\n'
+    "except Exception as e:\n"
+    '    print("__E__:" + str(e), file=sys.stderr)\n'
+)
 
 
 class NewsService:
@@ -24,29 +47,18 @@ class NewsService:
 
         # Layer 1: local akshare via subprocess
         try:
-            code = (
-                f'import json, sys, akshare as ak\ntry:\n'
-                f'    df = ak.stock_news_em(symbol="{ticker}")\n'
-                f'    if df is None or df.empty:\n        print("__R__:[]")\n'
-                f'    else:\n        rows = []\n'
-                f'        for _, row in df.iterrows():\n'
-                f'            rows.append({{"title": str(row.get("新闻标题", "")),\n'
-                f'                "content": str(row.get("新闻内容", ""))[:300],\n'
-                f'                "publish_time": str(row.get("发布时间", "")),\n'
-                f'                "source": str(row.get("文章来源", "")),\n'
-                f'                "url": str(row.get("新闻链接", "")),\n'
-                f'            }})\n'
-                f'        print("__R__:" + json.dumps(rows, ensure_ascii=False))\n'
-                f'except Exception as e:\n'
-                f'    print("__E__:" + str(e), file=sys.stderr)\n'
-            )
-            stdout = await _asyncio.to_thread(run_akshare, code)
+            code = _NEWS_CODE
+            stdout = await _asyncio.to_thread(run_akshare, code, build_akshare_env(ticker))
             if stdout:
                 for line in stdout.splitlines():
                     if line.startswith("__R__:"):
                         data = _json.loads(line[6:])
                         if data:
-                            logger.info("  [news] Layer 1 local: %d items for %s", len(data), ticker)
+                            logger.info(
+                                "  [news] Layer 1 local: %d items for %s",
+                                len(data),
+                                ticker,
+                            )
                             return data, "akshare_local"
         except Exception as e:
             logger.warning("  [news] Layer 1 failed: %s", e)

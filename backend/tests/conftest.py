@@ -13,7 +13,8 @@ from sqlalchemy.pool import NullPool
 
 from api.app import create_app
 from core.config import settings
-from core.database import get_db
+from core.container import Container
+from core.database import get_container, get_db
 
 # Tests don't need a real embedding model — skip the 20-30s startup warmup.
 settings.EMBEDDING_PREWARM = False
@@ -41,21 +42,44 @@ async def _get_test_db() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
+async def _get_test_container() -> AsyncGenerator[Container, None]:
+    """Test DI container bound to the per-test NullPool session.
+
+    Containerized routes depend on ``get_container``, which internally builds
+    on the shared pooled engine — connections created inside Starlette's
+    TestClient loop then get reused by async tests running in pytest's loop
+    (and vice versa), producing "Event loop is closed" failures. Overriding
+    the container keeps every request on the isolated test session instead.
+    """
+    from core.container import create_container
+
+    async for session in _get_test_db():
+        yield create_container(session)
+
+
 # ── Synchronous engine for table cleanup ───────────────────────────────
 
-sync_url = settings.DATABASE_URL.replace(
-    "postgresql+asyncpg://", "postgresql+psycopg2://"
-)
+sync_url = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
 cleanup_engine = create_engine(sync_url, pool_pre_ping=True)
 
 
 ALL_TABLES = [
-    "company.companies", "company.company_tags",
-    "market.stock_prices", "market.financial_metrics", "market.macro_indicators",
-    "document.documents", "document.document_chunks",
-    "ai.prompt_templates", "ai.ai_workflows",
-    "research.research_sessions", "research.research_evidences", "research.research_reports",
-    "portfolio.watchlists", "portfolio.watchlist_items", "portfolio.holdings", "portfolio.investment_journal",
+    "company.companies",
+    "company.company_tags",
+    "market.stock_prices",
+    "market.financial_metrics",
+    "market.macro_indicators",
+    "document.documents",
+    "document.document_chunks",
+    "ai.prompt_templates",
+    "ai.ai_workflows",
+    "research.research_sessions",
+    "research.research_evidences",
+    "research.research_reports",
+    "portfolio.watchlists",
+    "portfolio.watchlist_items",
+    "portfolio.holdings",
+    "portfolio.investment_journal",
     "core.event_log",
 ]
 
@@ -65,6 +89,7 @@ def clean_env(monkeypatch: pytest.MonkeyPatch):
     """Clear proxy env vars that break httpx/TestClient."""
     for var in ("ALL_PROXY", "all_proxy", "HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"):
         monkeypatch.delenv(var, raising=False)
+
 
 @pytest.fixture(autouse=True)
 def clean_tables():
@@ -87,6 +112,7 @@ def client() -> TestClient:
     """FastAPI synchronous test client with NullPool DB override."""
     app = create_app()
     app.dependency_overrides[get_db] = _get_test_db
+    app.dependency_overrides[get_container] = _get_test_container
     with TestClient(app) as c:
         yield c
 
@@ -96,6 +122,7 @@ async def async_client() -> httpx.AsyncClient:
     """Async ASGI client — ignores proxy env vars (ALL_PROXY breaks httpx)."""
     app = create_app()
     app.dependency_overrides[get_db] = _get_test_db
+    app.dependency_overrides[get_container] = _get_test_container
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",

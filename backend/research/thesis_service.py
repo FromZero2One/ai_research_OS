@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from core.event_service import EventLogger
 from core.exceptions import NotFoundError
-from research.models import ResearchReport, ResearchSession
+from research.models import ResearchSession
 from research.planner import ResearchPlanner
 
 
@@ -47,9 +47,7 @@ class ThesisService:
         if not report_content:
             report_content = thesis
 
-        structured = await self.planner.generate_structured_thesis(
-            thesis, decision, report_content
-        )
+        structured = await self.planner.generate_structured_thesis(thesis, decision, report_content)
 
         session.thesis = thesis
         session.decision = decision
@@ -61,10 +59,16 @@ class ThesisService:
         await self.session.flush()
 
         await self.events.record(
-            source="research", event_type="research.completed",
-            entity_type="research_session", entity_id=str(session.id),
-            payload={"title": session.title, "decision": decision,
-                     "confidence": confidence, "structured_thesis": structured},
+            source="research",
+            event_type="research.completed",
+            entity_type="research_session",
+            entity_id=str(session.id),
+            payload={
+                "title": session.title,
+                "decision": decision,
+                "confidence": confidence,
+                "structured_thesis": structured,
+            },
         )
         await self.session.refresh(session)
         return session

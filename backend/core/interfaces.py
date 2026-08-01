@@ -7,10 +7,17 @@ each module's adapter sub-package.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from ai.models import AIWorkflow, PromptTemplate
+    from market.domain import FinancialMetricEntry
+    from research.models import ResearchReport, ResearchSession
 
 # ──  Embedding  ──────────────────────────────────────────────────────
+
 
 @runtime_checkable
 class EmbeddingModel(Protocol):
@@ -26,6 +33,7 @@ class EmbeddingModel(Protocol):
 
 # ──  Vector Store  ───────────────────────────────────────────────────
 
+
 @dataclass
 class VectorRecord:
     id: str
@@ -38,9 +46,7 @@ class VectorRecord:
 class VectorStore(Protocol):
     """Interface for vector databases (Qdrant, etc.)."""
 
-    async def upsert(
-        self, collection: str, records: list[VectorRecord]
-    ) -> None: ...
+    async def upsert(self, collection: str, records: list[VectorRecord]) -> None: ...
 
     async def search(
         self,
@@ -53,12 +59,11 @@ class VectorStore(Protocol):
 
     async def delete(self, collection: str, ids: list[str]) -> None: ...
 
-    async def create_collection(
-        self, collection: str, dimension: int
-    ) -> None: ...
+    async def create_collection(self, collection: str, dimension: int) -> None: ...
 
 
 # ──  LLM  ────────────────────────────────────────────────────────────
+
 
 @dataclass
 class LLMMessage:
@@ -98,6 +103,7 @@ class LLM(Protocol):
 
 # ──  Document Parser  ────────────────────────────────────────────────
 
+
 @dataclass
 class ParsedDocument:
     text: str
@@ -115,6 +121,7 @@ class DocumentParser(Protocol):
 
 
 # ──  Market sub-services  ──────────────────────────────────────────────
+
 
 @runtime_checkable
 class PriceService(Protocol):
@@ -149,13 +156,11 @@ class FinancialService(Protocol):
     async def get_financials(
         self,
         ticker: str,
+        metric: str | None = None,
         fiscal_year: int | None = None,
-        fiscal_quarter: int | None = None,
-    ) -> list[Any]: ...
+    ) -> list[FinancialMetricEntry]: ...
 
-    async def upsert_financials(
-        self, ticker: str, metrics: list[Any]
-    ) -> int: ...
+    async def upsert_financials(self, ticker: str, metrics: list[FinancialMetricEntry]) -> int: ...
 
 
 @runtime_checkable
@@ -178,19 +183,33 @@ class SearchService(Protocol):
 
 # ──  Research services  ────────────────────────────────────────────────
 
+
 @runtime_checkable
 class ResearchSessionService(Protocol):
     """Interface for research session lifecycle management."""
 
-    async def create(self, title: str, question: str, **kwargs) -> Any: ...
+    async def create(
+        self,
+        title: str,
+        question: str,
+        context: str | None = None,
+        company_id: Any | None = None,
+        tags: list[str] | None = None,
+        auto_plan: bool = True,
+    ) -> ResearchSession: ...
 
-    async def get(self, session_id: Any, eager: bool = False) -> Any: ...
+    async def get(self, session_id: Any, eager: bool = False) -> ResearchSession: ...
 
     async def list(
-        self, status: str | None = None, **kwargs
-    ) -> tuple[list[Any], int]: ...
+        self,
+        status: str | None = None,
+        company_id: Any | None = None,
+        query: str | None = None,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> tuple[list[ResearchSession], int]: ...
 
-    async def update(self, session_id: Any, **kwargs) -> Any: ...
+    async def update(self, session_id: Any, **kwargs) -> ResearchSession: ...
 
     async def delete(self, session_id: Any) -> None: ...
 
@@ -215,21 +234,64 @@ class ResearchReportService(Protocol):
     """Interface for research report generation."""
 
     async def create(
-        self, session_id: Any, title: str, content: str, **kwargs
+        self,
+        session_id: Any,
+        title: str,
+        content: str,
+        format_: str = "markdown",
+        is_final: bool = False,
+    ) -> ResearchReport: ...
+
+    async def list(self, session_id: Any) -> list[ResearchReport]: ...
+
+    async def auto_generate(self, session_id: Any, is_final: bool = False) -> ResearchReport: ...
+
+
+@runtime_checkable
+class ResearchGatherService(Protocol):
+    """Interface for evidence gathering (knowledge + market data)."""
+
+    async def auto_gather(
+        self,
+        session_id: Any,
+        db: AsyncSession,
+        use_plan: bool = True,
     ) -> Any: ...
 
-    async def list(self, session_id: Any) -> list[Any]: ...
 
-    async def auto_generate(self, session_id: Any, **kwargs) -> Any: ...
+@runtime_checkable
+class ResearchThesisService(Protocol):
+    """Interface for research finalization (thesis + decision)."""
+
+    async def finalize(
+        self,
+        session_id: Any,
+        thesis: str,
+        decision: str,
+        confidence: float,
+    ) -> Any: ...
+
+
+@runtime_checkable
+class TimelineService(Protocol):
+    """Interface for cross-session research timeline + report diff."""
+
+    async def get_company_timeline(self, ticker: str) -> dict: ...
+
+    async def get_report_diff(
+        self,
+        report_id: Any,
+        other_version: int,
+    ) -> Any: ...
+
+    async def get_session_timeline(self, session_id: Any) -> dict: ...
 
 
 @runtime_checkable
 class WatchlistService(Protocol):
     """Interface for watchlist CRUD and item management."""
 
-    async def create_watchlist(
-        self, name: str, description: str | None = None
-    ) -> Any: ...
+    async def create_watchlist(self, name: str, description: str | None = None) -> Any: ...
 
     async def get_watchlist(self, watchlist_id: Any) -> Any: ...
 
@@ -239,9 +301,7 @@ class WatchlistService(Protocol):
 
     async def update_watchlist(self, watchlist_id: Any, **kwargs) -> Any: ...
 
-    async def add_to_watchlist(
-        self, watchlist_id: Any, ticker: str, **kwargs
-    ) -> Any: ...
+    async def add_to_watchlist(self, watchlist_id: Any, ticker: str, **kwargs) -> Any: ...
 
     async def remove_from_watchlist(self, item_id: Any) -> None: ...
 
@@ -294,3 +354,113 @@ class KnowledgeService(Protocol):
         top_k: int = 5,
     ) -> list[Any]: ...
 
+
+# ── Remaining business services (containerized in B7) ────────────────────
+
+
+@runtime_checkable
+class CompanyService(Protocol):
+    """Interface for company profile / thesis / workspace management."""
+
+    async def create(self, ticker: str, name: str, **kwargs) -> Any: ...
+
+    async def get(self, company_id: Any) -> Any: ...
+
+    async def get_by_ticker(self, ticker: str) -> Any | None: ...
+
+    async def search(
+        self,
+        query: str | None = None,
+        sector: str | None = None,
+        industry: str | None = None,
+        tag: str | None = None,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> tuple[list[Any], int]: ...
+
+    async def update(self, company_id: Any, data: dict) -> Any: ...
+
+    async def delete(self, company_id: Any) -> None: ...
+
+    async def get_thesis(self, ticker: str) -> dict | None: ...
+
+    async def get_workspace(self, ticker: str) -> dict | None: ...
+
+
+@runtime_checkable
+class DocumentService(Protocol):
+    """Interface for document lifecycle: ingest → parse → chunk → embed → index."""
+
+    async def process_upload(
+        self,
+        file_bytes: bytes,
+        filename: str,
+        title: str | None = None,
+        doc_type: str | None = None,
+        company_id: Any | None = None,
+    ) -> Any: ...
+
+    async def create(self, **kwargs) -> Any: ...
+
+    async def get(self, document_id: Any) -> Any: ...
+
+    async def search(
+        self,
+        query: str | None = None,
+        doc_type: str | None = None,
+        company_id: Any | None = None,
+        is_indexed: bool | None = None,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> tuple[list[Any], int]: ...
+
+    async def delete(self, document_id: Any) -> None: ...
+
+
+@runtime_checkable
+class AIService(Protocol):
+    """Interface for prompt management and LLM orchestration."""
+
+    async def create_template(self, **kwargs) -> PromptTemplate: ...
+
+    async def get_template(self, template_id: str) -> PromptTemplate: ...
+
+    async def update_template(self, template_id: str, **kwargs) -> PromptTemplate: ...
+
+    async def delete_template(self, template_id: str) -> None: ...
+
+    async def list_templates(self) -> list[PromptTemplate]: ...
+
+    async def generate(
+        self,
+        prompt_name: str,
+        variables: dict | None = None,
+        model: str | None = None,
+        temperature: float | None = None,
+    ) -> dict: ...
+
+    async def summarize(
+        self,
+        text: str,
+        max_length: int = 500,
+        format_: str = "paragraph",
+    ) -> dict: ...
+
+    async def extract(self, text: str, schema: dict) -> dict: ...
+
+    async def create_workflow(self, **kwargs) -> AIWorkflow: ...
+
+    async def execute_workflow(self, workflow_id: str, input_data: dict) -> Any: ...
+
+
+@runtime_checkable
+class DashboardService(Protocol):
+    """Interface for aggregated dashboard data."""
+
+    async def get_dashboard(self) -> dict[str, Any]: ...
+
+    async def get_market_overview(self) -> list[dict[str, Any]]: ...
+
+    async def get_latest_brief(self) -> dict[str, Any] | None: ...
+
+    async def get_watchlist_summary(self) -> list[dict[str, Any]]: ...

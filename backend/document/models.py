@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 
 from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.base import Base, TimestampMixin, UUIDMixin
@@ -17,9 +16,7 @@ class Document(Base, UUIDMixin, TimestampMixin):
     __table_args__ = {"schema": "document"}
 
     title: Mapped[str] = mapped_column(String(512), nullable=False)
-    doc_type: Mapped[str] = mapped_column(
-        String(64), nullable=False, index=True
-    )
+    doc_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     """Doc type: pdf, news_article, sec_10k, sec_10q, transcript, report, markdown"""
 
     source: Mapped[str | None] = mapped_column(String(256), nullable=True)
@@ -41,7 +38,7 @@ class Document(Base, UUIDMixin, TimestampMixin):
     is_indexed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     extra_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
-    chunks: Mapped[list["DocumentChunk"]] = relationship(
+    chunks: Mapped[list[DocumentChunk]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
     )
 
@@ -59,9 +56,7 @@ class DocumentChunk(Base, UUIDMixin, TimestampMixin):
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    embedding_id: Mapped[str | None] = mapped_column(
-        String(128), nullable=True, index=True
-    )
+    embedding_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     """ID in Qdrant for this chunk's vector."""
 
     document: Mapped[Document] = relationship(back_populates="chunks")

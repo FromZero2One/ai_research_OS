@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-import os
 import uuid
 from pathlib import Path
-from typing import Any
 
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from core.adapters.embedding import create_embedding
-from core.interfaces import DocumentParser, EmbeddingModel, VectorStore
 from core.adapters.pdf_parser import (
     PDFEncryptedError,
     PDFParserError,
@@ -23,6 +20,7 @@ from core.adapters.vector_store import create_vector_store
 from core.config import settings
 from core.event_service import EventLogger
 from core.exceptions import DocumentParsingError, NotFoundError
+from core.interfaces import DocumentParser, EmbeddingModel, VectorStore
 from document.models import Document, DocumentChunk
 
 
@@ -30,7 +28,8 @@ class DocumentService:
     """Full document lifecycle: ingest → parse → chunk → embed → index."""
 
     def __init__(
-        self, session: AsyncSession,
+        self,
+        session: AsyncSession,
         embedder: EmbeddingModel | None = None,
         vector_store: VectorStore | None = None,
         pdf_parser: DocumentParser | None = None,
@@ -102,11 +101,7 @@ class DocumentService:
         doc = await self.get(document_id)
         # Remove vectors from Qdrant if indexed
         if doc.is_indexed:
-            chunk_ids = [
-                c.embedding_id
-                for c in doc.chunks
-                if c.embedding_id
-            ]
+            chunk_ids = [c.embedding_id for c in doc.chunks if c.embedding_id]
             if chunk_ids:
                 await self.vector_store.delete("documents", chunk_ids)
 
@@ -208,22 +203,16 @@ class DocumentService:
                 # Fallback: try plain text
                 return content.decode("utf-8", errors="replace")
         except PDFEncryptedError:
-            raise DocumentParsingError(
-                f"Cannot parse {filename}: PDF is password-protected"
-            )
+            raise DocumentParsingError(f"Cannot parse {filename}: PDF is password-protected")
         except PDFScannedError:
             raise DocumentParsingError(
                 f"Cannot parse {filename}: PDF appears to be a scanned document "
                 "(OCR not supported in V1)"
             )
         except PDFParserError as e:
-            raise DocumentParsingError(
-                f"Failed to parse PDF {filename}: {e}"
-            )
+            raise DocumentParsingError(f"Failed to parse PDF {filename}: {e}")
         except (UnicodeDecodeError, ValueError) as e:
-            raise DocumentParsingError(
-                f"Failed to parse {filename}: {e}"
-            )
+            raise DocumentParsingError(f"Failed to parse {filename}: {e}")
 
     async def _parse_html(self, content: bytes) -> str:
         """Strip HTML tags to get plain text."""
@@ -291,9 +280,7 @@ class DocumentService:
 
         records = []
         for chunk, vector in zip(chunks, vectors):
-            embedding_id = str(uuid.uuid5(
-                doc.id, f"chunk_{chunk.chunk_index}"
-            ))
+            embedding_id = str(uuid.uuid5(doc.id, f"chunk_{chunk.chunk_index}"))
             chunk.embedding_id = embedding_id
             records.append(
                 VectorRecord(

@@ -127,7 +127,10 @@ export function useAutoGatherEvidence() {
 export function useGenerateReport() {
   const qc = useQueryClient()
   return useMutation<any, Error, { sessionId: string; isFinal: boolean }>({
-    mutationFn: ({ sessionId, isFinal }) => fetchApi(`/research/sessions/${sessionId}/generate-report?is_final=${isFinal}`, { method: 'POST' }),
+    mutationFn: ({ sessionId, isFinal }) => fetchApi(
+      `/research/sessions/${sessionId}/generate-report`,
+      { method: 'POST', body: JSON.stringify({ is_final: isFinal }) },
+    ),
     onSuccess: (_, { sessionId }) => { qc.invalidateQueries({ queryKey: ['research', sessionId] }) },
   })
 }
@@ -136,7 +139,10 @@ export function useFinalizeResearch() {
   const qc = useQueryClient()
   return useMutation<any, Error, { sessionId: string; thesis: string; decision: string; confidence: number }>({
     mutationFn: ({ sessionId, thesis, decision, confidence }) =>
-      fetchApi(`/research/sessions/${sessionId}/finalize?thesis=${encodeURIComponent(thesis)}&decision=${decision}&confidence=${confidence}`, { method: 'POST' }),
+      fetchApi(
+        `/research/sessions/${sessionId}/finalize`,
+        { method: 'POST', body: JSON.stringify({ thesis, decision, confidence }) },
+      ),
     onSuccess: (_, { sessionId }) => { qc.invalidateQueries({ queryKey: ['research', sessionId] }) },
   })
 }

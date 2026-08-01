@@ -8,6 +8,8 @@ Use the new imports instead:
     from portfolio.service.holding_service import HoldingService
     from portfolio.service.journal_service import JournalService
 """
+# Imports below intentionally happen after the deprecation warning.
+# ruff: noqa: E402
 
 from __future__ import annotations
 

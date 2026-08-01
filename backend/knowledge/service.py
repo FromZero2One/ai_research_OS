@@ -6,19 +6,20 @@ No Knowledge Graph — that's V2.
 
 from __future__ import annotations
 
-from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
+import jieba
+from rank_bm25 import BM25Okapi
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.adapters.embedding import create_embedding
-from core.interfaces import EmbeddingModel, VectorStore
 from core.adapters.reranker import create_reranker
 from core.adapters.vector_store import create_vector_store
+from core.config import settings
 from core.event_service import EventLogger
+from core.interfaces import EmbeddingModel, VectorStore
 from core.logging import logger
-import jieba
 from document.models import Document, DocumentChunk
 
 
@@ -36,7 +37,7 @@ class SearchResult:
 
 # Module-level BM25 cache (shared across requests, rebuilt on TTL expiry).
 # This avoids loading all chunks from DB on every search request.
-_bm25_cache: dict[str, "BM25Index"] = {}
+_bm25_cache: dict[str, BM25Okapi] = {}
 _bm25_cache_time: dict[str, float] = {}
 BM25_CACHE_TTL = 300  # seconds before rebuild
 
@@ -45,11 +46,12 @@ class KnowledgeService:
     """Hybrid RAG retrieval — dense (vector) + sparse (BM25)."""
 
     def __init__(
-        self, session: AsyncSession,
+        self,
+        session: AsyncSession,
         use_reranker: bool = False,
         embedder: EmbeddingModel | None = None,
         vector_store: VectorStore | None = None,
-        reranker = None,
+        reranker=None,
     ) -> None:
         self.session = session
         self.events = EventLogger(session)
@@ -93,13 +95,17 @@ class KnowledgeService:
         if self._reranker and enriched:
             try:
                 docs_for_rerank = [
-                    (r.content, r.title, {
-                        "document_id": r.document_id,
-                        "chunk_index": r.chunk_index,
-                        "title": r.title,
-                        "doc_type": r.doc_type,
-                    })
-                    for r in enriched[:top_k * 3]  # re-rank top 3x
+                    (
+                        r.content,
+                        r.title,
+                        {
+                            "document_id": r.document_id,
+                            "chunk_index": r.chunk_index,
+                            "title": r.title,
+                            "doc_type": r.doc_type,
+                        },
+                    )
+                    for r in enriched[: top_k * 3]  # re-rank top 3x
                 ]
                 reranked = await self._reranker.rerank(query, docs_for_rerank, top_k=top_k)
                 enriched = [
@@ -145,7 +151,8 @@ class KnowledgeService:
             filter_={"document_id": document_id},
         )
         # Fall back to BM25
-        results = await self._enrich_results(vector_results)
+        fused = [{"id": r.id, "score": r.score or 0.0} for r in vector_results]
+        results = await self._enrich_results(fused)
         # If not enough, do direct DB text search
         if len(results) < top_k:
             db_results = await self._db_text_search(query, document_id, top_k)
@@ -166,18 +173,18 @@ class KnowledgeService:
             return []
 
         scores = bm25.get_scores(jieba.lcut(query))
-        top_indices = sorted(
-            range(len(scores)), key=lambda i: scores[i], reverse=True
-        )[:top_k]
+        top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
 
         results = []
         for idx in top_indices:
             if scores[idx] > 0:
-                results.append({
-                    "id": bm25.ids[idx],
-                    "score": float(scores[idx]) / 100.0,  # normalize
-                    "payload": bm25.metadata[idx],
-                })
+                results.append(
+                    {
+                        "id": bm25.ids[idx],
+                        "score": float(scores[idx]) / 100.0,  # normalize
+                        "payload": bm25.metadata[idx],
+                    }
+                )
         return results
 
     async def _get_bm25(self, collection: str):
@@ -185,20 +192,42 @@ class KnowledgeService:
         import time as _time
 
         now = _time.time()
-        cache_age = now - _bm25_cache_time.get(collection, 0) if collection in _bm25_cache_time else float("inf")
+        cache_age = (
+            now - _bm25_cache_time.get(collection, 0)
+            if collection in _bm25_cache_time
+            else float("inf")
+        )
 
         if collection in _bm25_cache and cache_age < BM25_CACHE_TTL:
             return _bm25_cache[collection]
 
-        logger.info("BM25 cache miss for '%s' (age=%.1fs) — rebuilding from DB", collection, cache_age)
-        from rank_bm25 import BM25Okapi
-
-        result = await self.session.execute(
-            select(DocumentChunk)
-            .where(DocumentChunk.embedding_id.isnot(None))
-            .limit(10000)  # safety cap
+        logger.info(
+            "BM25 cache miss for '%s' (age=%.1fs) — rebuilding from DB",
+            collection,
+            cache_age,
         )
-        chunks = list(result.scalars().all())
+
+        # Load the full corpus via keyset pagination — no silent truncation.
+        chunks: list[DocumentChunk] = []
+        last_id = None
+        while True:
+            stmt = select(DocumentChunk).where(DocumentChunk.embedding_id.isnot(None))
+            if last_id is not None:
+                stmt = stmt.where(DocumentChunk.id > last_id)
+            stmt = stmt.order_by(DocumentChunk.id).limit(5000)
+            batch = list((await self.session.execute(stmt)).scalars().all())
+            if not batch:
+                break
+            chunks.extend(batch)
+            last_id = batch[-1].id
+            max_chunks = settings.BM25_MAX_CHUNKS
+            if max_chunks and len(chunks) >= max_chunks:
+                logger.warning(
+                    "BM25 corpus truncated at %d chunks (BM25_MAX_CHUNKS=%d)",
+                    len(chunks),
+                    max_chunks,
+                )
+                break
         if not chunks:
             return None
 
@@ -224,24 +253,20 @@ class KnowledgeService:
         k: int = 60,
     ) -> list:
         """Reciprocal Rank Fusion — combine dense and sparse results."""
-        scores: Counter = Counter()
+        scores: dict[str, float] = {}
 
         for rank, result in enumerate(dense):
             doc_id = result.id
-            scores[doc_id] += 1.0 / (k + rank + 1)
+            scores[doc_id] = scores.get(doc_id, 0.0) + 1.0 / (k + rank + 1)
 
         for rank, result in enumerate(sparse):
             doc_id = result["id"]
-            scores[doc_id] += 1.0 / (k + rank + 1)
+            scores[doc_id] = scores.get(doc_id, 0.0) + 1.0 / (k + rank + 1)
 
-        return [
-            {"id": doc_id, "score": score}
-            for doc_id, score in scores.most_common()
-        ]
+        ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+        return [{"id": doc_id, "score": score} for doc_id, score in ranked]
 
-    async def _enrich_results(
-        self, fused: list[dict]
-    ) -> list[SearchResult]:
+    async def _enrich_results(self, fused: list[dict]) -> list[SearchResult]:
         """Enrich fused results with full chunk content from DB."""
         if not fused:
             return []
@@ -277,9 +302,7 @@ class KnowledgeService:
                 )
         return enriched
 
-    async def _db_text_search(
-        self, query: str, document_id: str, top_k: int
-    ) -> list[SearchResult]:
+    async def _db_text_search(self, query: str, document_id: str, top_k: int) -> list[SearchResult]:
         """Fallback: direct LIKE search on document chunks."""
         from sqlalchemy import text
 

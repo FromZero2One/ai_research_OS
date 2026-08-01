@@ -11,6 +11,9 @@ from core.database import get_container
 from research.schemas import (
     EvidenceCreate,
     EvidenceResponse,
+    FinalizeRequest,
+    GenerateReportRequest,
+    ReportCreateRequest,
     ReportResponse,
     ResearchPlan,
     ResearchSessionCreate,
@@ -23,6 +26,7 @@ router = APIRouter(prefix="/research", tags=["Research Center"])
 
 
 # ── Sessions ────────────────────────────────────────────────────────
+
 
 @router.post("/sessions", response_model=ResearchSessionResponse, status_code=201)
 async def create_session(
@@ -86,6 +90,7 @@ async def delete_session(
 
 # ── Evidence ────────────────────────────────────────────────────────
 
+
 @router.post("/sessions/{session_id}/evidences", response_model=EvidenceResponse, status_code=201)
 async def add_evidence(
     session_id: uuid.UUID,
@@ -117,17 +122,21 @@ async def delete_evidence(
 
 # ── Reports ─────────────────────────────────────────────────────────
 
+
 @router.post("/sessions/{session_id}/reports", response_model=ReportResponse, status_code=201)
 async def create_report(
     session_id: uuid.UUID,
-    title: str,
-    content: str,
-    format: str = "markdown",
-    is_final: bool = False,
+    data: ReportCreateRequest,
     container: Container = Depends(get_container),
 ):
     svc = container.research_report_service
-    report = await svc.create(session_id, title, content, format_=format, is_final=is_final)
+    report = await svc.create(
+        session_id,
+        data.title,
+        data.content,
+        format_=data.format,
+        is_final=data.is_final,
+    )
     return report
 
 
@@ -141,6 +150,7 @@ async def list_reports(
 
 
 # ── Research Plan ────────────────────────────────────────────────────
+
 
 @router.post("/sessions/{session_id}/plan", response_model=ResearchPlan)
 async def generate_research_plan(
@@ -164,33 +174,33 @@ async def get_research_plan(
 
 # ── AI Report Generation ────────────────────────────────────────────
 
+
 @router.post("/sessions/{session_id}/generate-report", response_model=ReportResponse)
 async def generate_report(
     session_id: uuid.UUID,
-    is_final: bool = False,
+    data: GenerateReportRequest,
     container: Container = Depends(get_container),
 ):
     svc = container.research_report_service
-    report = await svc.auto_generate(session_id, is_final=is_final)
+    report = await svc.auto_generate(session_id, is_final=data.is_final)
     return report
 
 
 # ── Thesis / Finalize ──────────────────────────────────────────────
 
+
 @router.post("/sessions/{session_id}/finalize", response_model=ResearchSessionResponse)
 async def finalize_research(
     session_id: uuid.UUID,
-    thesis: str,
-    decision: str = Query(..., pattern="^(buy|sell|hold|watch|pass)$"),
-    confidence: float = Query(..., ge=0.0, le=1.0),
+    data: FinalizeRequest,
     container: Container = Depends(get_container),
 ):
-    from research.thesis_service import ThesisService
-    svc = ThesisService(container.session)
-    return await svc.finalize(session_id, thesis, decision, confidence)
+    svc = container.research_thesis_service
+    return await svc.finalize(session_id, data.thesis, data.decision, data.confidence)
 
 
 # ── AI-Assisted ─────────────────────────────────────────────────────
+
 
 @router.post("/sessions/{session_id}/auto-gather")
 async def auto_gather(
@@ -198,8 +208,7 @@ async def auto_gather(
     use_plan: bool = True,
     container: Container = Depends(get_container),
 ):
-    from research.gather_service import GatherService
-    svc = GatherService(container.session)
+    svc = container.research_gather_service
     result = await svc.auto_gather(session_id, container.session, use_plan=use_plan)
     return result
 

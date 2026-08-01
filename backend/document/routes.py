@@ -5,15 +5,14 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.database import get_db
+from core.container import Container
+from core.database import get_container
 from document.schemas import (
     DocumentListResponse,
     DocumentResponse,
     DocumentUploadResponse,
 )
-from document.service import DocumentService
 
 router = APIRouter(prefix="/documents", tags=["Document Center"])
 
@@ -24,11 +23,11 @@ async def upload_document(
     title: str | None = Form(None),
     doc_type: str | None = Form(None),
     company_id: str | None = Form(None),
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
     """Upload a document → parse → chunk → embed → index."""
     content = await file.read()
-    svc = DocumentService(db)
+    svc = container.document_service
     company_uuid = uuid.UUID(company_id) if company_id else None
     doc = await svc.process_upload(
         file_bytes=content,
@@ -55,9 +54,9 @@ async def list_documents(
     is_indexed: bool | None = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
-    svc = DocumentService(db)
+    svc = container.document_service
     company_uuid = uuid.UUID(company_id) if company_id else None
     docs, total = await svc.search(
         query=query,
@@ -76,9 +75,9 @@ async def list_documents(
 @router.get("/{document_id}", response_model=DocumentResponse)
 async def get_document(
     document_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
-    svc = DocumentService(db)
+    svc = container.document_service
     doc = await svc.get(document_id)
     return doc
 
@@ -86,7 +85,7 @@ async def get_document(
 @router.delete("/{document_id}", status_code=204)
 async def delete_document(
     document_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
-    svc = DocumentService(db)
+    svc = container.document_service
     await svc.delete(document_id)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import desc, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.event_service import EventLogger
@@ -19,11 +19,10 @@ class EvidenceService:
         self.session = session
         self.events = EventLogger(session)
 
-    async def add(
-        self, session_id: uuid.UUID, **kwargs
-    ) -> ResearchEvidence:
+    async def add(self, session_id: uuid.UUID, **kwargs) -> ResearchEvidence:
         # Verify session exists
         from research.models import ResearchSession
+
         result = await self.session.execute(
             select(ResearchSession).where(ResearchSession.id == session_id)
         )
@@ -41,11 +40,15 @@ class EvidenceService:
         await self.session.refresh(evidence)
 
         await self.events.record(
-            source="research", event_type="evidence.added",
-            entity_type="research_evidence", entity_id=str(evidence.id),
-            payload={"session_id": str(session_id),
-                     "source_type": kwargs.get("source_type"),
-                     "evidence_type": kwargs.get("evidence_type")},
+            source="research",
+            event_type="evidence.added",
+            entity_type="research_evidence",
+            entity_id=str(evidence.id),
+            payload={
+                "session_id": str(session_id),
+                "source_type": kwargs.get("source_type"),
+                "evidence_type": kwargs.get("evidence_type"),
+            },
         )
         return evidence
 
@@ -73,10 +76,32 @@ class EvidenceService:
         V1: keyword-based. V2+ will use LLM for nuanced classification.
         """
         content_lower = content.lower()
-        positive_words = {"growth", "increase", "profit", "record", "strong", "positive",
-                         "growth", "expanded", "leadership", "advantage", "opportunity"}
-        negative_words = {"decline", "decrease", "loss", "risk", "threat", "weak",
-                         "decline", "challenge", "uncertainty", "regulation", "competition"}
+        positive_words = {
+            "growth",
+            "increase",
+            "profit",
+            "record",
+            "strong",
+            "positive",
+            "growth",
+            "expanded",
+            "leadership",
+            "advantage",
+            "opportunity",
+        }
+        negative_words = {
+            "decline",
+            "decrease",
+            "loss",
+            "risk",
+            "threat",
+            "weak",
+            "decline",
+            "challenge",
+            "uncertainty",
+            "regulation",
+            "competition",
+        }
 
         pos_count = sum(1 for w in positive_words if w in content_lower)
         neg_count = sum(1 for w in negative_words if w in content_lower)

@@ -64,17 +64,11 @@ class BGEReranker:
 
         def _sync_rerank() -> list[tuple[float, str, dict]]:
             model = self._get_model()
-            pairs = [
-                [query, f"{title}\n{content[:512]}"]
-                for content, title, _ in documents
-            ]
+            pairs = [[query, f"{title}\n{content[:512]}"] for content, title, _ in documents]
             scores = model.predict(pairs, show_progress_bar=False)
-            scored = list(zip(scores.tolist() if hasattr(scores, 'tolist') else scores, documents))
+            scored = list(zip(scores.tolist() if hasattr(scores, "tolist") else scores, documents))
             scored.sort(key=lambda x: x[0], reverse=True)
-            return [
-                (float(score), content, meta)
-                for score, (content, _, meta) in scored
-            ]
+            return [(float(score), content, meta) for score, (content, _, meta) in scored]
 
         results = await asyncio.to_thread(_sync_rerank)
         if top_k:

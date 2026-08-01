@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import DateTime, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -20,8 +19,11 @@ class Observation(Base, UUIDMixin):
     ticker: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     company_name: Mapped[str] = mapped_column(String(256), nullable=False)
     reasons: Mapped[str] = mapped_column(Text, nullable=False)  # newline-separated
-    status: Mapped[str] = mapped_column(String(32), default="attention")  # attention | need_research
-    days_since_research: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # attention | need_research
+    status: Mapped[str] = mapped_column(String(32), default="attention")
+    days_since_research: Mapped[int | None] = mapped_column(Integer, nullable=True)
     observed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False,
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
     )

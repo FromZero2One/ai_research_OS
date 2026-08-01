@@ -6,7 +6,6 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from company.schemas import (
     CompanyCreate,
@@ -14,10 +13,10 @@ from company.schemas import (
     CompanyResponse,
     CompanyUpdate,
 )
-from company.service import CompanyService
-from core.database import get_db
-from core.exceptions import NotFoundError
+from core.container import Container
+from core.database import get_container
 from core.event_service import EventLogger
+from core.exceptions import NotFoundError
 
 router = APIRouter(prefix="/companies", tags=["Company Center"])
 
@@ -25,9 +24,9 @@ router = APIRouter(prefix="/companies", tags=["Company Center"])
 @router.post("", response_model=CompanyResponse, status_code=201)
 async def create_company(
     data: CompanyCreate,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ) -> CompanyResponse:
-    svc = CompanyService(db)
+    svc = container.company_service
     company = await svc.create(**data.model_dump())
     return CompanyResponse.model_validate(company)
 
@@ -40,12 +39,16 @@ async def list_companies(
     tag: str | None = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ) -> CompanyListResponse:
-    svc = CompanyService(db)
+    svc = container.company_service
     companies, total = await svc.search(
-        query=query, sector=sector, industry=industry,
-        tag=tag, skip=skip, limit=limit,
+        query=query,
+        sector=sector,
+        industry=industry,
+        tag=tag,
+        skip=skip,
+        limit=limit,
     )
     return CompanyListResponse(
         items=[CompanyResponse.model_validate(c) for c in companies],
@@ -56,9 +59,9 @@ async def list_companies(
 @router.get("/{company_id}", response_model=CompanyResponse)
 async def get_company(
     company_id: UUID,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ) -> CompanyResponse:
-    svc = CompanyService(db)
+    svc = container.company_service
     company = await svc.get(company_id)
     return CompanyResponse.model_validate(company)
 
@@ -67,9 +70,9 @@ async def get_company(
 async def update_company(
     company_id: UUID,
     data: CompanyUpdate,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ) -> CompanyResponse:
-    svc = CompanyService(db)
+    svc = container.company_service
     company = await svc.update(company_id, data.model_dump(exclude_unset=True))
     return CompanyResponse.model_validate(company)
 
@@ -77,9 +80,9 @@ async def update_company(
 @router.delete("/{company_id}", status_code=204)
 async def delete_company(
     company_id: UUID,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ) -> None:
-    svc = CompanyService(db)
+    svc = container.company_service
     await svc.delete(company_id)
 
 
@@ -107,30 +110,32 @@ class ThesisUpdate(BaseModel):
 @router.get("/by-ticker/{ticker}/thesis", response_model=ThesisResponse)
 async def get_thesis(
     ticker: str,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
     """Get current thesis for a company (latest completed research or manual update)."""
-    svc = CompanyService(db)
+    svc = container.company_service
     company = await svc.get_by_ticker(ticker)
     if not company:
         raise NotFoundError("Company", ticker.upper())
     result = await svc.get_thesis(ticker)
-    return ThesisResponse(**result) if result else ThesisResponse(ticker=ticker.upper(), company_name=company.name)
+    if result:
+        return ThesisResponse(**result)
+    return ThesisResponse(ticker=ticker.upper(), company_name=company.name)
 
 
 @router.post("/by-ticker/{ticker}/thesis", response_model=ThesisResponse)
 async def update_thesis(
     ticker: str,
     data: ThesisUpdate,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
     """Manually set/update thesis for a company."""
-    svc = CompanyService(db)
+    svc = container.company_service
     company = await svc.get_by_ticker(ticker)
     if not company:
         raise NotFoundError("Company", ticker.upper())
 
-    logger = EventLogger(db)
+    logger = EventLogger(container.session)
     await logger.record(
         source="company",
         event_type="thesis.updated",
@@ -138,7 +143,7 @@ async def update_thesis(
         entity_id=ticker.upper(),
         payload=data.model_dump(),
     )
-    await db.commit()
+    await container.session.commit()
 
     return ThesisResponse(
         ticker=ticker.upper(),
@@ -153,10 +158,10 @@ async def update_thesis(
 @router.get("/by-ticker/{ticker}/workspace")
 async def get_company_workspace(
     ticker: str,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
     """Aggregated company workspace data — thesis, timeline snippets, evidence."""
-    svc = CompanyService(db)
+    svc = container.company_service
     result = await svc.get_workspace(ticker)
     if not result:
         raise NotFoundError("Company", ticker.upper())

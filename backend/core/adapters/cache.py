@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from functools import lru_cache
+from typing import cast
 
 import redis.asyncio as aioredis
 
@@ -19,18 +20,15 @@ class RedisCache:
 
     async def _get_client(self) -> aioredis.Redis:
         if self._client is None:
-            self._client = await aioredis.from_url(
-                self._url, decode_responses=True
-            )
+            self._client = await aioredis.from_url(self._url, decode_responses=True)
         return self._client
 
     async def get(self, key: str) -> str | None:
         client = await self._get_client()
-        return await client.get(key)
+        # decode_responses=True is set, so values come back as str.
+        return cast(str | None, await client.get(key))
 
-    async def set(
-        self, key: str, value: str, ttl: int | None = None
-    ) -> None:
+    async def set(self, key: str, value: str, ttl: int | None = None) -> None:
         client = await self._get_client()
         ttl = ttl or settings.REDIS_TTL
         await client.set(key, value, ex=ttl)  # type: ignore[arg-type]

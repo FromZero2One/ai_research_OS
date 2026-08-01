@@ -49,6 +49,7 @@ class SessionService:
                 company_name = None
                 if company_id:
                     from company.service import CompanyService
+
                     try:
                         company_svc = CompanyService(self.session)
                         company = await company_svc.get(company_id)
@@ -65,10 +66,15 @@ class SessionService:
                 pass
 
         await self.events.record(
-            source="research", event_type="research.started",
-            entity_type="research_session", entity_id=str(session.id),
-            payload={"title": title, "question": question[:200],
-                     "company_id": str(company_id) if company_id else None},
+            source="research",
+            event_type="research.started",
+            entity_type="research_session",
+            entity_id=str(session.id),
+            payload={
+                "title": title,
+                "question": question[:200],
+                "company_id": str(company_id) if company_id else None,
+            },
         )
         return session
 
@@ -78,6 +84,7 @@ class SessionService:
         company_name = None
         if session.company_id:
             from company.service import CompanyService
+
             try:
                 company_svc = CompanyService(self.session)
                 company = await company_svc.get(session.company_id)
@@ -85,16 +92,16 @@ class SessionService:
             except NotFoundError:
                 pass
 
-        plan = await self.planner.generate_plan(
-            session.question, session.context, company_name
-        )
+        plan = await self.planner.generate_plan(session.question, session.context, company_name)
         session.extra_metadata = session.extra_metadata or {}
         session.extra_metadata[PLAN_KEY] = plan
         await self.session.flush()
 
         await self.events.record(
-            source="research", event_type="research.plan_generated",
-            entity_type="research_session", entity_id=str(session.id),
+            source="research",
+            event_type="research.plan_generated",
+            entity_type="research_session",
+            entity_id=str(session.id),
             payload={"sub_questions": len(plan.get("sub_questions", []))},
         )
         return plan
@@ -148,8 +155,10 @@ class SessionService:
 
         if "status" in kwargs and kwargs["status"]:
             await self.events.record(
-                source="research", event_type=f"research.{kwargs['status']}",
-                entity_type="research_session", entity_id=str(session.id),
+                source="research",
+                event_type=f"research.{kwargs['status']}",
+                entity_type="research_session",
+                entity_id=str(session.id),
                 payload={"title": session.title},
             )
         await self.session.refresh(session)

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
-from typing import Any, Generic, TypeVar
 from uuid import UUID
 
 from sqlalchemy import select
@@ -13,10 +11,8 @@ from sqlalchemy.sql import func
 from core.base import Base
 from core.exceptions import NotFoundError
 
-ModelT = TypeVar("ModelT", bound=Base)
 
-
-class CRUDBase(Generic[ModelT]):
+class CRUDBase[ModelT: Base]:
     """Generic CRUD with common query patterns."""
 
     def __init__(self, model: type[ModelT], session: AsyncSession) -> None:
@@ -32,9 +28,7 @@ class CRUDBase(Generic[ModelT]):
             raise NotFoundError(self.model.__name__, str(id))
         return obj
 
-    async def list(
-        self, skip: int = 0, limit: int = 100, **filters
-    ) -> tuple[list[ModelT], int]:
+    async def list(self, skip: int = 0, limit: int = 100, **filters) -> tuple[list[ModelT], int]:
         stmt = select(self.model)
 
         for col, val in filters.items():
@@ -71,7 +65,7 @@ class CRUDBase(Generic[ModelT]):
         await self.session.delete(obj)
 
 
-class DomainRepository(Generic[ModelT]):
+class DomainRepository[ModelT: Base]:
     """Repository base — thin persistence layer over a model + DTO.
 
     Subclasses bind a concrete ORM model and provide a ``to_dto`` mapper.

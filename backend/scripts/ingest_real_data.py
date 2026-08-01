@@ -1,15 +1,16 @@
+# ruff: noqa: E501
 """批量导入真实行情数据（直接写入数据库，绕过API层）"""
 
 import asyncio
 import sys
-from datetime import date, timedelta
 
 sys.path.insert(0, ".")
+
+from sqlalchemy import select
 
 from core.database import async_session_factory
 from core.logging import configure_logging, logger
 from market.models import StockPrice
-from sqlalchemy import select
 
 
 def fetch_yfinance(ticker: str, years: float = 1):
@@ -27,14 +28,16 @@ def fetch_yfinance(ticker: str, years: float = 1):
         close = float(row["Close"])
         if close != close:  # NaN check
             continue
-        results.append({
-            "date": idx.date(),
-            "open": float(row["Open"]) if row["Open"] == row["Open"] else None,
-            "high": float(row["High"]) if row["High"] == row["High"] else None,
-            "low": float(row["Low"]) if row["Low"] == row["Low"] else None,
-            "close": close,
-            "volume": int(row["Volume"]) if row["Volume"] == row["Volume"] else 0,
-        })
+        results.append(
+            {
+                "date": idx.date(),
+                "open": float(row["Open"]) if row["Open"] == row["Open"] else None,
+                "high": float(row["High"]) if row["High"] == row["High"] else None,
+                "low": float(row["Low"]) if row["Low"] == row["Low"] else None,
+                "close": close,
+                "volume": int(row["Volume"]) if row["Volume"] == row["Volume"] else 0,
+            }
+        )
     return results
 
 
@@ -87,15 +90,17 @@ async def ingest_real_data():
                 )
                 if existing.scalar_one_or_none():
                     continue
-                sess.add(StockPrice(
-                    ticker=local_ticker,
-                    date=row["date"],
-                    open=row["open"],
-                    high=row["high"],
-                    low=row["low"],
-                    close=row["close"],
-                    volume=row["volume"],
-                ))
+                sess.add(
+                    StockPrice(
+                        ticker=local_ticker,
+                        date=row["date"],
+                        open=row["open"],
+                        high=row["high"],
+                        low=row["low"],
+                        close=row["close"],
+                        volume=row["volume"],
+                    )
+                )
                 count += 1
 
             if count:
@@ -111,7 +116,9 @@ async def verify():
         from sqlalchemy import text
 
         rows = await sess.execute(
-            text("SELECT ticker, count(*) as cnt FROM market.stock_prices GROUP BY ticker ORDER BY ticker")
+            text(
+                "SELECT ticker, count(*) as cnt FROM market.stock_prices GROUP BY ticker ORDER BY ticker"
+            )
         )
         logger.info("当前数据库行情数据量:")
         for r in rows:

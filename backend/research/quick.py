@@ -16,9 +16,9 @@ import uuid
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.database import get_db
+from core.container import Container
+from core.database import get_container
 from core.logging import logger
 from core.task_manager import register_handler, run_in_background
 
@@ -46,16 +46,14 @@ async def _run_research_chain(payload: dict) -> dict | None:
     Progress is persisted in session extra_metadata (survives restart).
     """
     session_id = uuid.UUID(payload["session_id"])
+    from core.container import create_container
     from core.database import managed_session
 
     async with managed_session() as bg_session:
-        from research.session_service import SessionService
-        from research.gather_service import GatherService
-        from research.report_service import ReportService
-
-        sessions_svc = SessionService(bg_session)
-        gather_svc = GatherService(bg_session)
-        report_svc = ReportService(bg_session)
+        container = create_container(bg_session)
+        sessions_svc = container.research_session_service
+        gather_svc = container.research_gather_service
+        report_svc = container.research_report_service
 
         try:
             # Step 1: Generate Plan
@@ -66,7 +64,9 @@ async def _run_research_chain(payload: dict) -> dict | None:
             await bg_session.commit()
 
             # Step 2: Gather Evidence
-            await sessions_svc.update_progress(session_id, "searching", "正在搜索知识库和市场数据...")
+            await sessions_svc.update_progress(
+                session_id, "searching", "正在搜索知识库和市场数据..."
+            )
             await bg_session.commit()
             logger.info("  [research] gathering %s", session_id)
             await gather_svc.auto_gather(session_id, bg_session, use_plan=True)
@@ -80,8 +80,9 @@ async def _run_research_chain(payload: dict) -> dict | None:
             await bg_session.commit()
 
             # Done
-            await sessions_svc.update_progress(session_id, "completed", "研究完成！",
-                                                report_id=str(report.id))
+            await sessions_svc.update_progress(
+                session_id, "completed", "研究完成！", report_id=str(report.id)
+            )
             await bg_session.commit()
             logger.info("  [research] completed %s (report=%s)", session_id, report.id)
             return {"report_id": str(report.id)}
@@ -93,8 +94,9 @@ async def _run_research_chain(payload: dict) -> dict | None:
             return None
         except Exception as e:
             logger.error("  [research] failed %s: %s", session_id, e, exc_info=True)
-            await sessions_svc.update_progress(session_id, "error", f"研究过程出错: {str(e)[:200]}",
-                                                error=str(e))
+            await sessions_svc.update_progress(
+                session_id, "error", f"研究过程出错: {str(e)[:200]}", error=str(e)
+            )
             await bg_session.commit()
             raise  # Re-raise so TaskRecord tracks the failure
 
@@ -106,11 +108,9 @@ register_handler("quick_research", _run_research_chain)
 # ── Helper ────────────────────────────────────────────────────────────────
 
 
-async def _get_company_by_ticker(ticker: str, db: AsyncSession) -> uuid.UUID | None:
+async def _get_company_by_ticker(ticker: str, container: Container) -> uuid.UUID | None:
     """Resolve ticker to company_id."""
-    from company.service import CompanyService
-    company_svc = CompanyService(db)
-    company = await company_svc.get_by_ticker(ticker)
+    company = await container.company_service.get_by_ticker(ticker)
     return company.id if company else None
 
 
@@ -120,7 +120,7 @@ async def _get_company_by_ticker(ticker: str, db: AsyncSession) -> uuid.UUID | N
 @router.post("", response_model=QuickResearchResponse)
 async def quick_research(
     data: QuickResearchRequest,
-    db: AsyncSession = Depends(get_db),
+    container: Container = Depends(get_container),
 ):
     """Start one-click research. Returns immediately; runs in background.
 
@@ -130,17 +130,16 @@ async def quick_research(
     """
     ticker = data.ticker.upper()
     title = data.title or f"{ticker} 快速研究"
-    company_id = await _get_company_by_ticker(ticker, db)
+    company_id = await _get_company_by_ticker(ticker, container)
 
-    from research.session_service import SessionService
-    sessions_svc = SessionService(db)
+    sessions_svc = container.research_session_service
     session = await sessions_svc.create(
         title=title,
         question=data.question,
         company_id=company_id,
         auto_plan=False,
     )
-    await db.commit()
+    await container.session.commit()
 
     # Create persistent task — the POST returns immediately
     sid = str(session.id)
@@ -173,8 +172,9 @@ async def stream_research_progress(session_id: uuid.UUID):
 
     async def event_generator():
         async with managed_session() as db:
-            from research.session_service import SessionService
-            sessions_svc = SessionService(db)
+            from core.container import create_container
+
+            sessions_svc = create_container(db).research_session_service
 
             deadline = time.time() + 120  # 2-minute timeout
             while time.time() < deadline:
@@ -206,9 +206,11 @@ async def stream_research_progress(session_id: uuid.UUID):
 
 
 @router.get("/{session_id}/status")
-async def get_quick_research_status(session_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def get_quick_research_status(
+    session_id: uuid.UUID,
+    container: Container = Depends(get_container),
+):
     """Poll current research progress (non-SSE fallback)."""
-    from research.session_service import SessionService
-    svc = SessionService(db)
+    svc = container.research_session_service
     progress = await svc.get_progress(session_id)
     return progress

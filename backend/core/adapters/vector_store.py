@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
     Distance,
-    PointStruct,
-    VectorParams,
-    Filter as QdrantFilter,
     FieldCondition,
     MatchValue,
+    PointStruct,
+    VectorParams,
+)
+from qdrant_client.models import (
+    Filter as QdrantFilter,
 )
 
 from core.config import settings
@@ -25,20 +29,11 @@ class QdrantVectorStore:
         port: int = settings.QDRANT_PORT,
         prefer_grpc: bool = settings.QDRANT_PREFER_GRPC,
     ) -> None:
-        self._client = AsyncQdrantClient(
-            host=host, port=port, prefer_grpc=prefer_grpc
-        )
+        self._client = AsyncQdrantClient(host=host, port=port, prefer_grpc=prefer_grpc)
 
-    async def upsert(
-        self, collection: str, records: list[VectorRecord]
-    ) -> None:
-        points = [
-            PointStruct(id=r.id, vector=r.vector, payload=r.payload)
-            for r in records
-        ]
-        await self._client.upsert(
-            collection_name=collection, points=points
-        )
+    async def upsert(self, collection: str, records: list[VectorRecord]) -> None:
+        points = [PointStruct(id=r.id, vector=r.vector, payload=r.payload) for r in records]
+        await self._client.upsert(collection_name=collection, points=points)
 
     async def search(
         self,
@@ -51,10 +46,9 @@ class QdrantVectorStore:
         qdrant_filter = None
         if filter_:
             conditions = [
-                FieldCondition(key=k, match=MatchValue(value=v))
-                for k, v in filter_.items()
+                FieldCondition(key=k, match=MatchValue(value=v)) for k, v in filter_.items()
             ]
-            qdrant_filter = QdrantFilter(must=conditions)
+            qdrant_filter = QdrantFilter(must=cast(list[Any], conditions))
 
         result = await self._client.query_points(
             collection_name=collection,
@@ -76,20 +70,16 @@ class QdrantVectorStore:
     async def delete(self, collection: str, ids: list[str]) -> None:
         await self._client.delete(
             collection_name=collection,
-            points_selector=ids,
+            points_selector=cast(Any, ids),
         )
 
-    async def create_collection(
-        self, collection: str, dimension: int
-    ) -> None:
+    async def create_collection(self, collection: str, dimension: int) -> None:
         collections = await self._client.get_collections()
         existing = {c.name for c in collections.collections}
         if collection not in existing:
             await self._client.create_collection(
                 collection_name=collection,
-                vectors_config=VectorParams(
-                    size=dimension, distance=Distance.COSINE
-                ),
+                vectors_config=VectorParams(size=dimension, distance=Distance.COSINE),
             )
 
 

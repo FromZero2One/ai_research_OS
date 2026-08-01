@@ -1,5 +1,10 @@
 """FastAPI application factory — wires all modules, middleware, and lifecycle."""
 
+# Imports below are deliberately ordered: proxy env must be stripped before
+# any httpx-dependent module is imported, and models must be registered
+# before routers resolve services lazily.
+# ruff: noqa: E402
+
 from __future__ import annotations
 
 # ── Strip proxy BEFORE any httpx import ──────────────────────────
@@ -11,14 +16,27 @@ clean_proxy_env()
 # ─────────────────────────────────────────────────────────────────
 
 import asyncio
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+# ── Register all ORM models ────────────────────────────────────────────
+# Routers resolve services lazily via the DI container, so model
+# registration can no longer rely on route modules importing services
+# transitively. Import every model explicitly (same list as alembic/env.py)
+# so SQLAlchemy metadata and mapper configuration are always complete.
+from ai.models import *  # noqa: F401, F403
+
+# ── Module routers ──────────────────────────────────────────────────
+from ai.routes import router as ai_router
+from company.models import *  # noqa: F401, F403
+from company.routes import router as company_router
 from core.config import settings
+from core.event_log import *  # noqa: F401, F403
+from core.event_routes import router as event_router
 from core.exceptions import (
     AIResearchOSError,
     AuthenticationError,
@@ -30,23 +48,24 @@ from core.exceptions import (
     ValidationError,
 )
 from core.logging import configure_logging, logger
-
-# ── Module routers ──────────────────────────────────────────────────
-
-from ai.routes import router as ai_router
-from company.routes import router as company_router
-from core.event_routes import router as event_router
+from core.morning_brief import *  # noqa: F401, F403
+from core.observation import *  # noqa: F401, F403
 from core.scheduler_routes import router as scheduler_router
+from core.task_manager import *  # noqa: F401, F403
 from dashboard.routes import router as dashboard_router
+from document.models import *  # noqa: F401, F403
 from document.routes import router as document_router
 from knowledge.routes import router as knowledge_router
+from market.models import *  # noqa: F401, F403
 from market.routes.financial_routes import router as market_financial_router
 from market.routes.freshness_routes import router as market_freshness_router
 from market.routes.news_routes import router as market_news_router
 from market.routes.price_routes import router as market_price_router
 from market.routes.profile_routes import router as market_profile_router
 from market.routes.search_routes import router as market_search_router
+from portfolio.models import *  # noqa: F401, F403
 from portfolio.routes import router as portfolio_router
+from research.models import *  # noqa: F401, F403
 from research.routes import router as research_router
 
 
@@ -58,14 +77,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # Startup: verify DB connection, create vector collections, schedule jobs
     from core.adapters.embedding import create_embedding
-    from core.adapters.vector_store import create_vector_store
     from core.database import async_session_factory, engine
 
     try:
         async with engine.connect() as conn:
-            await conn.execute(
-                __import__("sqlalchemy").text("SELECT 1")
-            )
+            await conn.execute(__import__("sqlalchemy").text("SELECT 1"))
         logger.info("Database connection verified")
     except Exception as e:
         logger.warning("Database not available at startup: %s", e)
@@ -96,14 +112,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # Start scheduler
     if settings.SCHEDULER_ENABLED:
-        from core.scheduler import start_scheduler
-        from core.scheduler import register_job
-        from core.scheduler_jobs import market_data_update, morning_brief
+        from core.event_cleanup import event_log_cleanup
         from core.observation_engine import run_observation_cycle
+        from core.scheduler import register_job, start_scheduler
+        from core.scheduler_jobs import market_data_update, morning_brief
 
         register_job("market_data_update", market_data_update)
         register_job("morning_brief", morning_brief)
         register_job("observation_cycle", run_observation_cycle)
+        register_job("event_log_cleanup", event_log_cleanup)
         start_scheduler()
         logger.info("Scheduler started (enabled=%s)", settings.SCHEDULER_ENABLED)
     else:
@@ -113,11 +130,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # Shutdown
     logger.info("Shutting down %s", settings.APP_NAME)
-    from core.task_manager import stop_worker
     from core.scheduler import stop_scheduler
 
     stop_worker()  # signal task worker loop to exit
-    if 'worker_task' in locals():
+    if "worker_task" in locals():
         worker_task.cancel()
     stop_scheduler()
     await engine.dispose()

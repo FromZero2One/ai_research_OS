@@ -173,8 +173,8 @@ async def _run_background_refresh(payload: dict) -> dict | None:
         return None
     try:
         async with managed_session() as session:
-            from market.service.profile_service import ProfileService
             from market.service.financial_service import FinancialService
+            from market.service.profile_service import ProfileService
 
             profile_svc = ProfileService(session)
             fin_svc = FinancialService(session)
