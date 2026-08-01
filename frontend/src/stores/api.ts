@@ -71,8 +71,11 @@ export interface Company {
 
 export function useCompanies(query?: MaybeRefOrGetter<string>) {
   return useQuery<{ items: Company[]; total: number }>({
-    queryKey: ['companies', query || 'all'],
-    queryFn: () => { const q = toValue(query); return fetchApi(q ? `/companies?q=${encodeURIComponent(q)}` : '/companies') },
+    queryKey: computed(() => ['companies', toValue(query) || 'all']),
+    queryFn: () => {
+      const q = toValue(query)
+      return fetchApi(q ? `/companies?query=${encodeURIComponent(q)}` : '/companies')
+    },
   })
 }
 
@@ -187,11 +190,12 @@ export function useUploadDocument() {
   return useMutation<{
     id: string; title: string; doc_type: string
     chunk_count: number; is_indexed: boolean; status: string; message: string
-  }, Error, File>({
-    mutationFn: async (file) => {
+  }, Error, { file: File; companyId?: string | null }>({
+    mutationFn: async ({ file, companyId }) => {
       const formData = new FormData()
       formData.append('file', file)
       formData.append('title', file.name.replace(/\.[^/.]+$/, ''))
+      if (companyId) formData.append('company_id', companyId)
       const res = await fetch(`${API_BASE}/documents/upload`, { method: 'POST', body: formData })
       if (!res.ok) { const err = await res.json().catch(() => ({ detail: res.statusText })); throw new Error(err.detail || 'Upload failed') }
       return res.json()
@@ -211,6 +215,18 @@ export function useDocumentStatus(id: MaybeRefOrGetter<string | null>) {
     computed(() => (toValue(id) ? `/documents/${toValue(id)}/status` : '')),
     { refetchInterval: 2000 },
   )
+}
+
+export function useUpdateDocumentCompany() {
+  const qc = useQueryClient()
+  return useMutation<unknown, Error, { id: string; companyId: string | null }>({
+    mutationFn: ({ id, companyId }) =>
+      fetchApi(`/documents/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ company_id: companyId }),
+      }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['documents'] }) },
+  })
 }
 
 // ── Market ──

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
@@ -15,7 +15,13 @@ import StockSearch from '@/components/StockSearch.vue'
 
 const router = useRouter()
 const query = ref('')
-const { data, isLoading } = useCompanies(query)
+const debouncedQuery = ref('')
+let debounceTimer: ReturnType<typeof setTimeout>
+watch(query, (v) => {
+  clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(() => { debouncedQuery.value = v.trim() }, 300)
+})
+const { data, isLoading } = useCompanies(debouncedQuery)
 
 const createCompany = useCreateCompany()
 const deleteCompany = useDeleteCompany()
