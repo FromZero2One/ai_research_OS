@@ -1,1 +1,1 @@
-- [AI Research OS V1 Session](ai-research-os-session.md) — 完整架构实现进度: 85 files, 5800 LOC, 7 modules + Core, API verified
+- [AI Research OS Session](ai-research-os-session.md) — 当前实现进度与状态快照

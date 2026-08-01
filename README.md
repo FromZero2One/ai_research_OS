@@ -46,11 +46,11 @@ A personal AI-powered investment research assistant. Company → Knowledge → A
 |--------|---------------|------|
 | **Company Center** | Company profiles, industry, tags | PostgreSQL |
 | **Market Center** | Stock prices, financials, macros (no analysis) | yfinance / AKShare |
-| **Document Center** | Ingest → Parse → Chunk → Embed → Index | PyMuPDF + BGE-M3 |
-| **Knowledge Center** | Hybrid RAG: dense + sparse retrieval | Qdrant + BM25 + RRF |
+| **Document Center** | Ingest → Parse → Chunk → Embed → Index（后台任务，PDF 表格结构化提取） | PyMuPDF + pdfplumber + BGE-M3 |
+| **Knowledge Center** | Hybrid RAG: dense + sparse + rerank（中文停用词、查询扩展、命中高亮） | Qdrant + BM25 + RRF + BGE Reranker |
 | **AI Center** | Prompt mgmt, LLM orchestration, summarization | DeepSeek V4 Flash (默认) / Ollama / OpenAI 兼容 |
 | **Research Center** | Question → Evidence → Report → Decision → Thesis | LangGraph-ready |
-| **Portfolio Center** | Watchlists, holdings, investment journal | PostgreSQL |
+| **Portfolio Center** | 关注公司（并入公司中心）、持仓、投资日志（后端） | PostgreSQL |
 
 ## Data Flow
 
@@ -67,6 +67,9 @@ Research (Thesis → Decision)
   ↓
 Portfolio
 ```
+
+> 自选列表已并入 Company Center：`is_active` 即关注状态，`priority/target_price/reason` 挂在公司上。
+> Portfolio Center 当前为持仓与投资日志（后端就绪，前端随 V2 P&L 一起提供）。
 
 **Dependency rule**: Dependencies go UP only. Research can call Knowledge; Knowledge cannot call Research.
 
@@ -113,6 +116,22 @@ npm run dev   # starts on http://localhost:5173
 
 Visit **http://localhost:5173** — the Research Workspace dashboard.
 
+## 当前进度
+
+| 模块 | 完成度 | 备注 |
+|------|:---:|------|
+| 公司中心 | ~90% | CRUD/搜索/Thesis/自选（is_active）全可用 |
+| 市场中心 | ~75% | A股行情/财务可用；美股为合成数据占位（yfinance 受代理限制） |
+| 文档中心 | ~90% | 后台异步索引、PDF 表格结构化、关联公司；OCR 待 V2 |
+| 知识中心 | ~90% | 混合 RAG + Reranker + 文档问答（模型切换）+ 检索评估集 |
+| AI 中心 | ~80% | 模板/摘要全可用；工作流前端 UI 待补 |
+| 研究中心 | ~90% | 会话/证据/报告/决策/时间线/一键研究全链路 |
+| 投资组合 | ~40% | 自选已并入公司；持仓/日志后端就绪，前端随 V2 |
+| 系统/调度 | ~85% | 调度/观察/持久任务/事件/新鲜度可用 |
+
+总体：V1.1 目标基本达成，后端 125 项测试通过（ruff/mypy/vue-tsc/build 全绿）。
+已知缺口：美股真实行情、持仓/日志前端、AI 工作流 UI。详见 [memory/ai-research-os-session.md](memory/ai-research-os-session.md)。
+
 ## API (when backend is running)
 
 | Module | API Prefix | Docs |
@@ -129,6 +148,8 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 5. **Core Layer = Interfaces, not Implementations** — Protocols > concrete classes
 6. **Workspace First, not Module First** — V1.1: Dashboard as default entry, not function list
 7. **AI = Capability, not Center** — LLM provider swappable (DeepSeek/Ollama/OpenAI)
+8. **自选列表并入公司中心** — watched == is_active，priority/target_price/reason 挂在公司上，消除两套列表重复
+9. **文档表格结构化** — 财报类 PDF 表格按词坐标重建为 Markdown（保留集团/母公司列组），整块入库、问答不丢列含义
 
 ## Security Boundary
 

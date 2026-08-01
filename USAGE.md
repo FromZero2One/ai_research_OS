@@ -35,7 +35,8 @@
 | 后端 | FastAPI, SQLAlchemy 2.0 (async), Pydantic v2, Alembic |
 | 数据库 | PostgreSQL 16 (pgvector), Qdrant, Redis |
 | AI | DeepSeek V4 Flash (默认) / Ollama 本地 (备选) / 任意 OpenAI 兼容 API |
-| 文档处理 | PyMuPDF, Ollama BGE-M3 向量化 |
+| 文档处理 | PyMuPDF + pdfplumber（财报表格结构化）, BGE-M3 向量化, 后台异步索引 |
+| 知识检索 | Qdrant 稠密 + BM25 稀疏 + RRF 融合 + BGE Reranker；文档问答（DeepSeek/Ollama 可切换） |
 | 基础设施 | Docker Compose |
 
 ---
@@ -264,7 +265,7 @@ make ingest-sample # 加载示例数据
 |------|------|
 | **Morning Brief** | AI生成的每日早晨简报,工作日6am自动生成(需AI服务) |
 | **研究提醒** | 超过14天未研究的自选股,按需研究程度排序 |
-| **自选股行情** | Watchlist中股票的最新价格和涨跌 |
+| **自选股行情** | 关注公司(is_active)的最新价格和涨跌 |
 | **最近研究** | 最近开展的投研会话,点击可继续 |
 
 右侧5个快捷入口可快速进入各功能模块。
@@ -288,6 +289,7 @@ AAPL (Apple), AMZN (Amazon), GOOGL (Alphabet), MSFT (Microsoft), NVDA (NVIDIA), 
 - 给公司打标签 (tech/ai/ev/megacap/value等)
 - 查看/更新公司的投资观点(Thesis): Bull/Bear/Neutral + 决策(buy/sell/hold/watch/pass)
 - 公司工作区:聚合视图(Thesis+最近研究+证据统计)
+- **关注/自选**: 自选已并入公司中心 — `is_active=true` 即自选。添加: `POST /api/v1/companies/watch`;移除: `PATCH /api/v1/companies/{id}` 设 `is_active=false`;优先级/目标价/理由挂在公司上 (`priority`/`target_price`/`reason`)
 
 **相关页面**:
 - `/companies` — 公司列表
@@ -309,7 +311,7 @@ GET  /api/v1/market/prices/AAPL                            # 查询采集的数�
 
 **A股数据** (6位数字代码, 如 `600519` 茅台):
 
-需连接外部 akshare MySQL（当前未连接，且其 MySQL 不在本项目 docker-compose 中）。API 端点已就绪:
+需要连接外部 akshare MySQL（其 MySQL 不在本项目 docker-compose 中，连接信息见 `AKSHARE_MYSQL_*` 配置）。API 端点已就绪:
 ```
 GET /api/v1/market/prices/600519       # 日K线数据
 GET /api/v1/market/search?query=茅台    # 搜索A股
@@ -328,11 +330,13 @@ GET /api/v1/market/symbols             # 列出所有可查询的A股代码
 
 **使用流程**:
 1. 进入文档中心,上传PDF文件(最大50MB,支持PDF/TXT/MD)
-2. 系统自动处理:解析PDF → 文本切片(chunk默认512字符,64重叠) → BGE-M3向量化(1024维) → 存入Qdrant
+2. 上传接口**立即返回(202)**,由后台任务异步执行:解析PDF → 文本切片(默认512字符,64重叠) → BGE-M3向量化(1024维) → 存入Qdrant;用 `GET /documents/{id}/status` 轮询进度
 3. 文档出现在列表中,可查看解析状态和切片数量
-4. 文档内容进入知识库,可被RAG搜索
+4. **财报类 PDF 表格自动结构化**: 按词坐标重建为 Markdown 表格,保留「集团/母公司」等列组表头,整块入库
+5. 文档内容进入知识库,可被RAG搜索与问答
 
-**上传时可选参数**: `title`(标题)、`doc_type`(类型:report/transcript/article/other)、`company_id`(关联公司)
+**上传时可选参数**: `title`(标题)、`doc_type`(类型:pdf/markdown/text/report等)、`company_id`(关联公司,从公司页上传会自动带上)
+**关联公司**: 文档列表「🔗 关联公司」可随时关联/改绑/解除 (`PATCH /documents/{id}`)
 
 **相关页面**: `/documents`
 
@@ -347,7 +351,16 @@ GET /api/v1/market/symbols             # 列出所有可查询的A股代码
 **使用流程**:
 1. 确保文档中心已有已索引的文档
 2. 在知识中心输入自然语言问题
-3. 系统执行: 向量化查询 → Qdrant向量搜索 → BM25关键词搜索 → RRF融合 → 返回相关段落+来源
+3. 系统执行: 向量化查询 → Qdrant向量搜索 → BM25关键词搜索(中文停用词+查询扩展) → RRF融合 → BGE Reranker重排序 → 返回相关段落+来源(命中词高亮、表格渲染)
+
+**文档问答**:
+```
+POST /api/v1/knowledge/ask
+Body: {"question": "中国银行2025年净利润是多少", "top_k": 8, "provider": "default", "model": null}
+```
+- 默认使用 DeepSeek(`provider=default`),可切换本地 Ollama 模型
+- `GET /api/v1/knowledge/llm/models` 列出默认模型与可用 Ollama 模型
+- 回答带来源引用 [1][2],关键数字加粗并注明单位/口径
 
 **API**:
 ```
@@ -437,7 +450,7 @@ POST /api/v1/research/sessions
 Body: {"company_id": "...", "question": "NVDA在AI芯片市场的竞争优势能持续多久?", "status": "draft"}
 ```
 
-状态流转: `draft` → `researching` → `completed`
+状态流转: `draft` → `researching` → `reviewing` → `completed`(界面显示为中文:草稿/研究中/评审中/已完成;决策显示为 买入/卖出/持有/关注/跳过)
 
 **Step 2 — 收集证据 (Evidence)**
 
@@ -504,7 +517,7 @@ PATCH /api/v1/companies/{company_id}           # 取消关注: {"is_active": fal
 **持仓管理 (Holdings)**:
 ```
 GET  /api/v1/portfolio/holdings                # 所有持仓
-POST /api/v1/portfolio/holdings               # 记录持仓 Body: {"company_id": "...", "quantity": 100, "avg_cost": 150.0}
+POST /api/v1/portfolio/holdings               # 记录持仓 Body: {"ticker": "AAPL", "shares": 100, "avg_cost_basis": 150.0}
 PATCH /api/v1/portfolio/holdings/{holding_id} # 更新持仓(如增持)
 POST /api/v1/portfolio/holdings/{holding_id}/close  # 平仓
 ```
@@ -512,9 +525,11 @@ POST /api/v1/portfolio/holdings/{holding_id}/close  # 平仓
 **投资日记 (Journal)**:
 ```
 GET  /api/v1/portfolio/journal                 # 日记列表
-POST /api/v1/portfolio/journal                # 写日记 Body: {"title": "...", "content": "...", "company_id": "...", "session_id": "..."}
+POST /api/v1/portfolio/journal                # 写日记 Body: {"entry_type": "idea", "ticker": "...", "title": "...", "content": "..."}
 GET  /api/v1/portfolio/journal/{entry_id}     # 日记详情
 ```
+
+> 持仓与投资日志当前仅有后端接口,前端页面待 V2(P&L 追踪)一并提供。
 
 **相关页面**:
 - `/portfolio` — 自选列表
@@ -563,7 +578,8 @@ POST /api/v1/scheduler/observe          # 手动触发一次观察
 | `knowledge` | 知识库元数据 |
 | `ai` | AI模板和工作流 |
 | `research` | 研究会话、证据、报告 |
-| `portfolio` | 自选股、持仓、日记 |
+| `portfolio` | 持仓、投资日记（自选已并入 company） |
+| `akshare` | 外部 akshare MySQL 镜像同步的行情/财务数据 |
 | `dashboard` | 聚合数据(已废弃,直接查询) |
 | `event_log` | 审计日志,所有写操作的记录追踪 |
 
@@ -660,7 +676,8 @@ OPENAI_MODEL=deepseek-v4-flash                # V4 Flash (快速/高性价比)
 ### Companies
 | 端点 | 方法 | 说明 |
 |------|------|------|
-| `/companies` | GET, POST | 列出/创建公司 |
+| `/companies` | GET, POST | 列出(支持 `?is_active=true` 只看自选)/创建公司 |
+| `/companies/watch` | POST | 加入自选(存在则激活,不存在则创建) |
 | `/companies/{company_id}` | GET, PATCH, DELETE | 获取/更新/删除公司 |
 | `/companies/by-ticker/{ticker}/thesis` | GET, POST | 获取/设置公司Thesis |
 | `/companies/by-ticker/{ticker}/workspace` | GET | 公司聚合视图(Thesis+研究+证据) |
@@ -679,14 +696,17 @@ OPENAI_MODEL=deepseek-v4-flash                # V4 Flash (快速/高性价比)
 | 端点 | 方法 | 说明 |
 |------|------|------|
 | `/documents` | GET | 文档列表 |
-| `/documents/upload` | POST | 上传文档(自动索引) |
-| `/documents/{document_id}` | GET, DELETE | 获取/删除文档 |
+| `/documents/upload` | POST | 上传文档(返回202,后台异步索引) |
+| `/documents/{document_id}` | GET, PATCH, DELETE | 获取/关联公司/删除文档 |
+| `/documents/{document_id}/status` | GET | 索引进度轮询 |
 
 ### Knowledge
 | 端点 | 方法 | 说明 |
 |------|------|------|
 | `/knowledge/search` | GET | 混合RAG搜索 |
 | `/knowledge/search/document/{document_id}` | GET | 在指定文档中搜索 |
+| `/knowledge/ask` | POST | 文档问答(带引用,可切换模型) |
+| `/knowledge/llm/models` | GET | 默认模型 + Ollama 可用模型 |
 
 ### AI
 | 端点 | 方法 | 说明 |
@@ -720,15 +740,13 @@ OPENAI_MODEL=deepseek-v4-flash                # V4 Flash (快速/高性价比)
 ### Portfolio
 | 端点 | 方法 | 说明 |
 |------|------|------|
-| `/portfolio/watchlists` | GET, POST | 列出/创建自选股列表 |
-| `/portfolio/watchlists/{watchlist_id}` | GET, DELETE | 获取/删除列表 |
-| `/portfolio/watchlists/{watchlist_id}/items` | POST | 添加股票到列表 |
-| `/portfolio/watchlists/items/{item_id}` | DELETE | 移除股票 |
 | `/portfolio/holdings` | GET, POST | 持仓列表/记录持仓 |
 | `/portfolio/holdings/{holding_id}` | PATCH | 更新持仓 |
 | `/portfolio/holdings/{holding_id}/close` | POST | 平仓 |
 | `/portfolio/journal` | GET, POST | 日记列表/写日记 |
 | `/portfolio/journal/{entry_id}` | GET | 日记详情 |
+
+> 自选列表接口已并入公司中心(`/companies/watch` 与 `is_active`)。
 
 ### Dashboard
 | 端点 | 方法 | 说明 |
@@ -865,7 +883,7 @@ docker compose -f docker/docker-compose.yml ps
 ```
 
 ### Q: A股数据无法获取
-当前 akshare MySQL 数据源未连接(A股需要外部MySQL服务)。可用美股替代:
+确认本机 akshare MySQL 可用（`AKSHARE_MYSQL_HOST/PORT/USER/PASSWORD` 配置正确），且 akshare 子进程 venv（`AKSHARE_MCP_DIR`）存在。行情页也可点公司详情「↻ 刷新」从 MySQL 拉取。
 ```bash
 POST /api/v1/market/prices/AAPL/ingest?provider=yfinance
 ```
