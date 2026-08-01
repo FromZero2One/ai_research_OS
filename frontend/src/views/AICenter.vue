@@ -1,12 +1,20 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-
-interface PromptTemplate { id: string; name: string; description: string | null; system_prompt: string | null; user_prompt_template: string | null; temperature: number | null; max_tokens: number | null; is_active: boolean }
+import { ref, computed } from 'vue'
+import { ElMessage } from 'element-plus'
+import {
+  useCreateTemplate,
+  useDeleteTemplate,
+  useExecuteTemplate,
+  useListTemplates,
+  useSummarize,
+  useUpdateTemplate,
+} from '@/stores/api'
 
 const text = ref('')
 const summary = ref('')
 const loading = ref(false)
-const templates = ref<PromptTemplate[]>([])
+
+const { data: templates } = useListTemplates()
 const showNew = ref(false)
 const newTmpl = ref({ name: '', description: '', system_prompt: '', user_prompt_template: '' })
 const editId = ref<string | null>(null)
@@ -17,25 +25,45 @@ const execVars = ref('')
 const execResult = ref('')
 const execLoading = ref(false)
 
-onMounted(() => { fetch('/api/ai/templates').then((r) => r.json()).then((data) => { templates.value = data }).catch(() => {}) })
+const summarize = useSummarize()
+const createTemplate = useCreateTemplate()
+const updateTemplate = useUpdateTemplate(computed(() => editId.value || ''))
+const deleteTemplate = useDeleteTemplate()
+const executeTemplate = useExecuteTemplate()
 
 async function handleSummarize() {
   if (!text.value.trim()) return
   loading.value = true
-  try { const resp = await fetch('/api/ai/summarize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: text.value, max_length: 300, format_: 'paragraph' }) }); const data = await resp.json(); summary.value = data.content || data.error || 'No response' } catch (e: any) { summary.value = 'Error: ' + e.message } finally { loading.value = false }
+  try {
+    const data = await summarize.mutateAsync({ text: text.value, max_length: 300, format_: 'paragraph' })
+    summary.value = data.content || data.error || 'No response'
+  } catch (e: any) { summary.value = 'Error: ' + e.message } finally { loading.value = false }
 }
 
 async function handleCreateTemplate() {
   if (!newTmpl.value.name.trim()) return
-  try { const resp = await fetch('/api/ai/templates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newTmpl.value) }); if (resp.ok) { const created = await resp.json(); templates.value = [...templates.value, created]; showNew.value = false; newTmpl.value = { name: '', description: '', system_prompt: '', user_prompt_template: '' } } } catch (e) { console.error(e) }
+  try {
+    await createTemplate.mutateAsync({ ...newTmpl.value })
+    showNew.value = false
+    newTmpl.value = { name: '', description: '', system_prompt: '', user_prompt_template: '' }
+    ElMessage.success('模板已创建')
+  } catch (e) { ElMessage.error((e as Error).message || '创建失败') }
 }
 
 async function handleUpdateTemplate(id: string) {
-  try { const resp = await fetch(`/api/ai/templates/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editTmpl.value) }); if (resp.ok) { const updated = await resp.json(); templates.value = templates.value.map((t) => (t.id === id ? updated : t)); editId.value = null } } catch (e) { console.error(e) }
+  editId.value = id
+  try {
+    await updateTemplate.mutateAsync({ ...editTmpl.value })
+    editId.value = null
+    ElMessage.success('模板已更新')
+  } catch (e) { ElMessage.error((e as Error).message || '更新失败') }
 }
 
 async function handleDeleteTemplate(id: string) {
-  try { await fetch(`/api/ai/templates/${id}`, { method: 'DELETE' }); templates.value = templates.value.filter((t) => t.id !== id) } catch (e) { console.error(e) }
+  try {
+    await deleteTemplate.mutateAsync(id)
+    ElMessage.success('模板已删除')
+  } catch (e) { ElMessage.error((e as Error).message || '删除失败') }
 }
 
 async function handleExecute(id: string) {
@@ -43,8 +71,8 @@ async function handleExecute(id: string) {
   try {
     const variables: Record<string, string> = {}
     execVars.value.split('\n').filter(Boolean).forEach((line) => { const idx = line.indexOf('='); if (idx > 0) variables[line.slice(0, idx).trim()] = line.slice(idx + 1).trim() })
-    const resp = await fetch('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt_name: id, variables }) })
-    const data = await resp.json(); execResult.value = data.content || data.error || 'No response'
+    const data = await executeTemplate.mutateAsync({ prompt_name: id, variables })
+    execResult.value = data.content || data.error || 'No response'
   } catch (e: any) { execResult.value = 'Error: ' + e.message } finally { execLoading.value = false }
 }
 </script>
@@ -70,9 +98,9 @@ async function handleExecute(id: string) {
         <el-button @click="handleCreateTemplate" :disabled="!newTmpl.name.trim()" type="success" size="small">保存</el-button>
       </div>
 
-      <div v-if="templates.length === 0" class="text-sm text-secondary">暂无模板，点击"新建"创建</div>
+      <div v-if="!templates?.length" class="text-sm text-secondary">暂无模板，点击"新建"创建</div>
       <div v-else class="space-y-2">
-        <div v-for="t in templates" :key="t.id">
+        <div v-for="t in templates || []" :key="t.id">
           <div v-if="editId === t.id" class="edit-form">
             <el-input v-model="editTmpl.name" placeholder="名称" size="small" />
             <el-input v-model="editTmpl.description" placeholder="描述" size="small" />

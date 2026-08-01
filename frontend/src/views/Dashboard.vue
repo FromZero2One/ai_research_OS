@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import DOMPurify from 'dompurify'
+import { marked } from 'marked'
 import { useRouter } from 'vue-router'
-import { useQueryClient } from '@tanstack/vue-query'
-import { useDashboard } from '@/stores/api'
+import { useDashboard, useGenerateBrief } from '@/stores/api'
 
-const queryClient = useQueryClient()
 const { data, isLoading } = useDashboard()
 const router = useRouter()
-const generating = ref(false)
+const generateBrief = useGenerateBrief()
 
 const statusLabel: Record<string, { label: string; type: string }> = {
   normal: { label: '正常', type: 'success' },
@@ -16,31 +16,16 @@ const statusLabel: Record<string, { label: string; type: string }> = {
 }
 
 async function handleGenerateBrief() {
-  generating.value = true
-  await fetch('/api/dashboard/generate-brief', { method: 'POST' })
-  queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-  generating.value = false
+  await generateBrief.mutateAsync()
 }
 
 const today = new Date().toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
 
-function renderMarkdown(content: string) {
-  const lines = content.split('\n')
-  const els: any[] = []
-  let key = 0
-  for (const line of lines) {
-    const t = line.trim()
-    if (t.startsWith('## ')) { els.push({ type: 'h2', text: t.slice(3), key: key++ }) }
-    else if (t.startsWith('### ')) { els.push({ type: 'h3', text: t.slice(4), key: key++ }) }
-    else if (t.startsWith('- ')) { els.push({ type: 'li', text: inlineMd(t.slice(2)), key: key++ }) }
-    else if (/^\d+\.\s/.test(t)) { els.push({ type: 'li', text: inlineMd(t.replace(/^\d+\.\s/, '')), key: key++ }) }
-    else if (!t) { els.push({ type: 'spacer', key: key++ }) }
-    else { els.push({ type: 'p', text: inlineMd(t), key: key++ }) }
-  }
-  return els
-}
-
-function inlineMd(text: string) { return text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') }
+const briefHtml = computed(() => {
+  const content = data.value?.morning_brief?.content
+  if (!content) return ''
+  return DOMPurify.sanitize(marked.parse(content, { async: false }) as string)
+})
 </script>
 
 <template>
@@ -71,19 +56,11 @@ function inlineMd(text: string) { return text.replace(/\*\*(.+?)\*\*/g, '<strong
                 <span>📋 晨间简报</span>
                 <div class="flex items-center gap-2">
                   <span v-if="data?.morning_brief?.generated_at" class="text-xs text-secondary">{{ new Date(data.morning_brief.generated_at).toLocaleString('zh-CN') }}</span>
-                  <el-button @click="handleGenerateBrief" :disabled="generating" size="small">{{ generating ? '生成中...' : '🔄 生成' }}</el-button>
+                  <el-button @click="handleGenerateBrief" :disabled="generateBrief.isPending.value" size="small">{{ generateBrief.isPending.value ? '生成中...' : '🔄 生成' }}</el-button>
                 </div>
               </div>
             </template>
-            <div v-if="data?.morning_brief?.content" class="brief-content">
-              <template v-for="el in renderMarkdown(data.morning_brief.content)" :key="el.key">
-                <h2 v-if="el.type === 'h2'" class="brief-h2">{{ el.text }}</h2>
-                <h3 v-else-if="el.type === 'h3'" class="brief-h3">{{ el.text }}</h3>
-                <p v-else-if="el.type === 'p'" class="brief-p" v-html="el.text" />
-                <li v-else-if="el.type === 'li'" class="brief-li" v-html="el.text" />
-                <div v-else-if="el.type === 'spacer'" class="h-1" />
-              </template>
-            </div>
+            <div v-if="data?.morning_brief?.content" class="brief-content" v-html="briefHtml" />
             <el-empty v-else description="暂无简报。点击「生成」或系统将在工作日 6am 自动生成。" />
           </el-card>
         </el-col>
@@ -197,10 +174,12 @@ function inlineMd(text: string) { return text.replace(/\*\*(.+?)\*\*/g, '<strong
 .action-label { font-size: 14px; font-weight: 500; color: var(--text-primary); }
 .action-desc { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
 .brief-content { max-height: 384px; overflow-y: auto; }
-.brief-h2 { font-size: 18px; font-weight: 600; color: var(--text-primary); margin-top: 16px; margin-bottom: 8px; }
-.brief-h3 { font-size: 16px; font-weight: 600; color: var(--text-primary); margin-top: 12px; margin-bottom: 4px; }
-.brief-p { font-size: 14px; color: var(--text-primary); line-height: 1.6; margin-bottom: 4px; }
-.brief-li { font-size: 14px; color: var(--text-primary); margin-left: 16px; }
+.brief-content h1, .brief-content h2 { font-size: 18px; font-weight: 600; color: var(--text-primary); margin-top: 16px; margin-bottom: 8px; }
+.brief-content h3, .brief-content h4 { font-size: 16px; font-weight: 600; color: var(--text-primary); margin-top: 12px; margin-bottom: 4px; }
+.brief-content p { font-size: 14px; color: var(--text-primary); line-height: 1.6; margin-bottom: 4px; }
+.brief-content ul, .brief-content ol { font-size: 14px; color: var(--text-primary); padding-left: 20px; margin-bottom: 4px; }
+.brief-content li { margin-bottom: 2px; }
+.brief-content strong { color: var(--text-primary); font-weight: 600; }
 .reminder-item { padding: 8px; border-radius: 8px; background: var(--bg-tertiary); margin-bottom: 8px; }
 .reminder-name { font-size: 14px; font-weight: 500; color: var(--text-primary); }
 .reminder-days { font-size: 12px; color: var(--danger); }

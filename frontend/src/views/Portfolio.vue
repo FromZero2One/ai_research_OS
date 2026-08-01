@@ -1,63 +1,72 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-import { useQueryClient } from '@tanstack/vue-query'
-import { useWatchlists, useHoldings } from '@/stores/api'
+import { ref, computed } from 'vue'
+import { ElMessage } from 'element-plus'
+import {
+  useAddHolding,
+  useAddWatchlistItem,
+  useCompanies,
+  useHoldings,
+  useRemoveWatchlistItem,
+  useWatchlists,
+} from '@/stores/api'
 import StockSearch from '@/components/StockSearch.vue'
 
-const queryClient = useQueryClient()
 const { data: watchlists, isLoading: wlLoading } = useWatchlists()
-const refresh = () => queryClient.invalidateQueries({ queryKey: [] })
 const { data: holdings, isLoading: hdLoading } = useHoldings()
+const { data: companiesData } = useCompanies()
+
+const addHolding = useAddHolding()
+const removeWatchlistItem = useRemoveWatchlistItem()
+const activeWL = computed(() => (Array.isArray(watchlists.value) ? watchlists.value.find((w: any) => w.items?.length > 0) || watchlists.value[0] : null) as any)
+const addWatchlistItem = useAddWatchlistItem(computed(() => activeWL.value?.id || ''))
+
+// Company names for watchlist tickers — one query instead of N name lookups.
+const names = computed<Record<string, string>>(() => {
+  const m: Record<string, string> = {}
+  for (const c of companiesData.value?.items || []) m[c.ticker.toUpperCase()] = c.name
+  return m
+})
 
 const showNewHD = ref(false)
 const hdTicker = ref('')
 const hdShares = ref('')
 const hdCost = ref('')
-const msg = ref<{ type: 'success' | 'error'; text: string } | null>(null)
-
-function showMsg(type: 'success' | 'error', text: string) { msg.value = { type, text }; setTimeout(() => msg.value = null, 4000) }
-
-const activeWL = computed(() => (Array.isArray(watchlists.value) ? watchlists.value.find((w: any) => w.items?.length > 0) || watchlists.value[0] : null) as any)
+const adding = ref(false)
 
 async function handleCreateHolding() {
   if (!hdTicker.value.trim() || !hdShares.value) return
   try {
-    const resp = await fetch('/api/portfolio/holdings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticker: hdTicker.value.toUpperCase(), shares: parseFloat(hdShares.value), avg_cost_basis: hdCost.value ? parseFloat(hdCost.value) : null }) })
-    if (!resp.ok) throw new Error(await resp.text())
+    const ticker = hdTicker.value.toUpperCase()
+    await addHolding.mutateAsync({
+      ticker,
+      shares: parseFloat(hdShares.value),
+      avg_cost_basis: hdCost.value ? parseFloat(hdCost.value) : null,
+    })
     showNewHD.value = false; hdTicker.value = ''; hdShares.value = ''; hdCost.value = ''
-    showMsg('success', `持仓 ${hdTicker.value.toUpperCase()} 添加成功`)
-  } catch (e: any) { showMsg('error', e.message || '添加失败') }
+    ElMessage.success(`持仓 ${ticker} 添加成功`)
+  } catch (e: any) { ElMessage.error(e.message || '添加失败') }
 }
 
-// WatchlistCard component
-const adding = ref(false)
-const names = ref<Record<string, string>>({})
-
-watch(activeWL, async (wl: any) => {
-  if (!wl?.items?.length) return
-  const tickers = wl.items.map((i: any) => i.ticker).filter((t: string) => !names.value[t])
-  if (!tickers.length) return
-  for (const t of tickers) {
-    try { const resp = await fetch(`/api/market/search?query=${encodeURIComponent(t)}&limit=3`); const data = await resp.json(); const match = data.results?.find((r: any) => r.symbol.toUpperCase() === t.toUpperCase()); if (match?.name) names.value = { ...names.value, [t]: match.name } } catch {}
-  }
-}, { immediate: true })
-
 async function onStockSelect(item: { symbol: string; name: string }) {
-  const wl = activeWL.value
-  if (!wl) return
-  try { const resp = await fetch(`/api/portfolio/watchlists/${wl.id}/items`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticker: item.symbol }) }); if (!resp.ok) throw new Error(await resp.text()); adding.value = false; refresh(); showMsg('success', `${item.symbol} 已添加`) } catch (e: any) { showMsg('error', e.message || '添加失败') }
+  if (!activeWL.value) return
+  try {
+    await addWatchlistItem.mutateAsync({ ticker: item.symbol })
+    adding.value = false
+    ElMessage.success(`${item.symbol} 已添加`)
+  } catch (e: any) { ElMessage.error(e.message || '添加失败') }
 }
 
 async function handleRemove(itemId: string, ticker: string) {
-  try { const resp = await fetch(`/api/portfolio/watchlists/items/${itemId}`, { method: 'DELETE' }); if (!resp.ok) throw new Error(await resp.text()); refresh(); showMsg('success', `${ticker} 已移除`) } catch (e: any) { showMsg('error', e.message || '移除失败') }
+  try {
+    await removeWatchlistItem.mutateAsync(itemId)
+    ElMessage.success(`${ticker} 已移除`)
+  } catch (e: any) { ElMessage.error(e.message || '移除失败') }
 }
 </script>
 
 <template>
   <div class="page">
     <div class="page-header"><h1 class="page-title">💼 投资组合</h1><p class="page-desc">自选列表 · 持仓</p></div>
-
-    <div v-if="msg" class="msg-toast" :class="msg.type === 'success' ? 'msg-success' : 'msg-error'">{{ msg.text }}</div>
 
     <el-row :gutter="24">
       <el-col :span="12">
@@ -108,9 +117,6 @@ async function handleRemove(itemId: string, ticker: string) {
 .section-title { font-size: 18px; font-weight: 600; color: var(--text-primary); margin-bottom: 12px; }
 .loading-state { padding: 24px; border-radius: 12px; background: var(--bg-secondary); border: 1px solid var(--border); text-align: center; color: var(--text-secondary); font-size: 14px; }
 .empty-state-sm { padding: 24px; border-radius: 12px; background: var(--bg-secondary); border: 1px solid var(--border); text-align: center; color: var(--text-secondary); }
-.msg-toast { padding: 12px 16px; border-radius: 12px; font-size: 14px; }
-.msg-success { background: rgba(52,211,153,0.1); color: var(--success); border: 1px solid rgba(52,211,153,0.2); }
-.msg-error { background: rgba(248,113,113,0.1); color: var(--danger); border: 1px solid rgba(248,113,113,0.2); }
 .new-form { padding: 16px; border-radius: 12px; background: var(--bg-tertiary); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
 .holding-item { padding: 16px; border-radius: 12px; background: var(--bg-secondary); border: 1px solid var(--border); }
 .holding-ticker { font-size: 18px; font-weight: 700; color: var(--text-primary); margin-right: 8px; }

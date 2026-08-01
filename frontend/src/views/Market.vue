@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { useQueryClient } from '@tanstack/vue-query'
-import { useMarketPrices, useFinancialMetrics } from '@/stores/api'
+import { useFinancialMetrics, useIngestPrices, useMarketPrices, useStockSearch } from '@/stores/api'
+import FinancialBars from '@/components/FinancialBars.vue'
 import StockChart from '@/components/StockChart.vue'
 import StockSearch from '@/components/StockSearch.vue'
 
-const queryClient = useQueryClient()
 const tickerRef = ref('000002')
 const period = ref<'daily' | 'weekly' | 'monthly'>('daily')
 const tickerNames = ref<Record<string, string>>({})
 const autoIngested = ref<Set<string>>(new Set())
+const ingestPrices = useIngestPrices()
+const { data: nameData } = useStockSearch(computed(() => tickerRef.value))
 
 const { data: priceData, isPending } = useMarketPrices(tickerRef.value, 520)
 const { data: finData } = useFinancialMetrics(tickerRef.value)
@@ -17,22 +18,22 @@ const { data: finData } = useFinancialMetrics(tickerRef.value)
 const prices = computed(() => priceData.value?.prices || [])
 const financials = computed(() => finData.value?.metrics || [])
 
-watch(tickerRef, async (t) => {
-  if (!t || tickerNames.value[t]) return
-  try { const r = await fetch(`/api/market/search?query=${encodeURIComponent(t)}&limit=5`); const d = await r.json(); const m = d.results?.find((r: any) => r.symbol.toUpperCase() === t.toUpperCase()); if (m?.name) tickerNames.value = { ...tickerNames.value, [t]: m.name } } catch {}
-})
-
 const dataLoaded = computed(() => !isPending.value && priceData.value !== undefined)
 
 watch([dataLoaded, tickerRef], () => {
   if (!dataLoaded.value || !tickerRef.value || autoIngested.value.has(tickerRef.value)) return
   if (prices.value.length === 0) {
     autoIngested.value = new Set(autoIngested.value).add(tickerRef.value)
-    fetch(`/api/market/prices/${tickerRef.value}/ingest`, { method: 'POST' }).then(() => queryClient.invalidateQueries({ queryKey: ['market', tickerRef.value] })).catch(() => {})
+    ingestPrices.mutate(tickerRef.value)
   }
 })
 
-const activeName = computed(() => tickerNames.value[tickerRef.value])
+const activeName = computed(() => {
+  const known = tickerNames.value[tickerRef.value]
+  if (known) return known
+  const hit = nameData.value?.results.find((r) => r.symbol.toUpperCase() === tickerRef.value.toUpperCase())
+  return hit?.name || ''
+})
 const latestPrice = computed(() => prices.value.length > 0 ? prices.value[0].close : null)
 const prevClose = computed(() => prices.value.length > 1 ? prices.value[1].close : null)
 const change = computed(() => latestPrice.value != null && prevClose.value != null ? latestPrice.value - prevClose.value : null)
@@ -69,7 +70,6 @@ function onStockSelect(item: { symbol: string; name: string }) {
   if (item.name) tickerNames.value = { ...tickerNames.value, [item.symbol]: item.name }
 }
 
-function formatVal(v: number, fmt: 'num' | 'pct' = 'num') { if (fmt === 'pct') return `${(v * 100).toFixed(1)}%`; if (v > 1e9) return `$${(v / 1e9).toFixed(1)}B`; if (v > 1e6) return `$${(v / 1e6).toFixed(1)}M`; return `$${v.toFixed(0)}` }
 </script>
 
 <template>
@@ -108,17 +108,17 @@ function formatVal(v: number, fmt: 'num' | 'pct' = 'num') { if (fmt === 'pct') r
     <el-row :gutter="16">
       <el-col v-if="revenueData.length" :span="8">
         <el-card shadow="never"><template #header>营收趋势</template>
-          <div v-for="d in revenueData.slice(-8)" :key="d.fiscal_period" class="bar-row"><span class="bar-label">{{ d.fiscal_period }}</span><div class="bar-track"><div class="bar-fill" :style="{ width: `${(d.metric_value / Math.max(...revenueData.slice(-8).map(x => x.metric_value))) * 100}%`, backgroundColor: '#4f8cff' }" /></div><span class="bar-value">{{ formatVal(d.metric_value) }}</span></div>
+          <FinancialBars :data="revenueData" color="#4f8cff" />
         </el-card>
       </el-col>
       <el-col v-if="incomeData.length" :span="8">
         <el-card shadow="never"><template #header>净利润趋势</template>
-          <div v-for="d in incomeData.slice(-8)" :key="d.fiscal_period" class="bar-row"><span class="bar-label">{{ d.fiscal_period }}</span><div class="bar-track"><div class="bar-fill" :style="{ width: `${(d.metric_value / Math.max(...incomeData.slice(-8).map(x => x.metric_value))) * 100}%`, backgroundColor: '#34d399' }" /></div><span class="bar-value">{{ formatVal(d.metric_value) }}</span></div>
+          <FinancialBars :data="incomeData" color="#34d399" />
         </el-card>
       </el-col>
       <el-col v-if="marginData.length" :span="8">
         <el-card shadow="never"><template #header>运营利润率</template>
-          <div v-for="d in marginData.slice(-8)" :key="d.fiscal_period" class="bar-row"><span class="bar-label">{{ d.fiscal_period }}</span><div class="bar-track"><div class="bar-fill" :style="{ width: `${(d.metric_value / Math.max(...marginData.slice(-8).map(x => x.metric_value))) * 100}%`, backgroundColor: '#fbbf24' }" /></div><span class="bar-value">{{ formatVal(d.metric_value, 'pct') }}</span></div>
+          <FinancialBars :data="marginData" color="#fbbf24" format="pct" />
         </el-card>
       </el-col>
     </el-row>
@@ -131,9 +131,4 @@ function formatVal(v: number, fmt: 'num' | 'pct' = 'num') { if (fmt === 'pct') r
 .chart-empty { display: flex; align-items: center; justify-content: center; height: 256px; color: var(--text-secondary); }
 .text-success { color: var(--success); }
 .text-danger { color: var(--danger); }
-.bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 12px; }
-.bar-label { color: var(--text-secondary); width: 60px; flex-shrink: 0; }
-.bar-track { flex: 1; height: 16px; border-radius: 4px; background: var(--bg-tertiary); overflow: hidden; }
-.bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
-.bar-value { color: var(--text-primary); width: 80px; text-align: right; font-family: monospace; font-size: 11px; }
 </style>

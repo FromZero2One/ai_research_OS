@@ -1,16 +1,26 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { useQueryClient } from '@tanstack/vue-query'
+import { ElMessage } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
-import { useCompanies } from '@/stores/api'
+import {
+  useCompanies,
+  useCreateCompany,
+  useDeleteCompany,
+  useIngestFinancials,
+  useIngestProfile,
+  useUpdateCompany,
+} from '@/stores/api'
 import StockSearch from '@/components/StockSearch.vue'
 
-const queryClient = useQueryClient()
 const router = useRouter()
 const query = ref('')
 const { data, isLoading } = useCompanies(query)
-const refresh = () => queryClient.invalidateQueries({ queryKey: ['companies'] })
+
+const createCompany = useCreateCompany()
+const deleteCompany = useDeleteCompany()
+const ingestProfile = useIngestProfile()
+const ingestFinancials = useIngestFinancials()
 
 const showNew = ref(false)
 const newName = ref('')
@@ -24,30 +34,35 @@ const editSector = ref('')
 const editTags = ref('')
 const deletingId = ref<string | null>(null)
 const deleteDialogVisible = computed({ get: () => deletingId.value !== null, set: (v: boolean) => { if (!v) deletingId.value = null } })
-const msg = ref<{ type: 'success' | 'error'; text: string } | null>(null)
-
-function showMsg(type: 'success' | 'error', text: string) { msg.value = { type, text }; setTimeout(() => msg.value = null, 4000) }
+const updateCompany = useUpdateCompany(editingId)
 
 function onStockSelect(item: { symbol: string; name: string }) {
   newTicker.value = item.symbol; newName.value = item.name
-  if (symbol.startsWith('6')) newExchange.value = 'SSE'
-  else if (symbol.match(/^\d/)) newExchange.value = 'SZSE'
-  else if (symbol.match(/^0\d{4}HK/)) newExchange.value = 'HKEX'
+  if (item.symbol.startsWith('6')) newExchange.value = 'SSE'
+  else if (item.symbol.match(/^\d/)) newExchange.value = 'SZSE'
+  else if (item.symbol.match(/^0\d{4}HK/)) newExchange.value = 'HKEX'
   else newExchange.value = ''
 }
 
 async function handleCreate() {
   if (!newName.value.trim() || !newTicker.value.trim()) return
   try {
-    const resp = await fetch('/api/companies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newName.value, ticker: newTicker.value.toUpperCase(), exchange: newExchange.value, tags: newTags.value.split(',').map((t) => t.trim()).filter(Boolean) }) })
-    const body = await resp.json()
-    if (!resp.ok) { showMsg('error', (body?.detail || '').includes('already exists') ? `❌ 股票代码 ${newTicker.value.toUpperCase()} 已存在` : typeof body?.detail === 'string' ? body.detail : '创建失败'); return }
+    const ticker = newTicker.value.toUpperCase()
+    const name = newName.value.trim()
+    await createCompany.mutateAsync({
+      name,
+      ticker,
+      exchange: newExchange.value,
+      tags: newTags.value.split(',').map((t) => t.trim()).filter(Boolean),
+    })
     showNew.value = false; newName.value = ''; newTicker.value = ''; newExchange.value = ''; newTags.value = ''
-    refresh()
-    fetch(`/api/market/profile/${newTicker.value}/ingest`, { method: 'POST' }).catch(() => {})
-    fetch(`/api/market/financials/${newTicker.value}/ingest`, { method: 'POST' }).catch(() => {})
-    showMsg('success', `${newName.value} 创建成功`)
-  } catch (e: any) { showMsg('error', e.message || '创建失败') }
+    // Fire-and-forget enrichment (profile + financials).
+    ingestProfile.mutate(ticker)
+    ingestFinancials.mutate(ticker)
+    ElMessage.success(`${name} 创建成功`)
+  } catch (e: any) {
+    ElMessage.error((e.message || '').includes('already exists') ? `股票代码 ${newTicker.value.toUpperCase()} 已存在` : e.message || '创建失败')
+  }
 }
 
 function startEdit(company: any) {
@@ -57,21 +72,24 @@ function startEdit(company: any) {
 async function handleEdit() {
   if (!editingId.value) return
   try {
-    const resp = await fetch(`/api/companies/${editingId.value}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: editName.value, ticker: editTicker.value.toUpperCase(), sector: editSector.value, tags: editTags.value.split(',').map((t) => t.trim()).filter(Boolean) }) })
-    if (!resp.ok) throw new Error(await resp.text())
-    editingId.value = null; refresh(); showMsg('success', '更新成功')
-  } catch (e: any) { showMsg('error', e.message || '更新失败') }
+    await updateCompany.mutateAsync({
+      name: editName.value,
+      ticker: editTicker.value.toUpperCase(),
+      sector: editSector.value,
+      tags: editTags.value.split(',').map((t) => t.trim()).filter(Boolean),
+    })
+    editingId.value = null
+    ElMessage.success('更新成功')
+  } catch (e: any) { ElMessage.error(e.message || '更新失败') }
 }
 
 async function handleDelete(id: string) {
-  try { const resp = await fetch(`/api/companies/${id}`, { method: 'DELETE' }); if (!resp.ok) throw new Error(await resp.text()); deletingId.value = null; refresh(); showMsg('success', '已删除') } catch (e: any) { showMsg('error', e.message || '删除失败') }
+  try { await deleteCompany.mutateAsync(id); deletingId.value = null; ElMessage.success('已删除') } catch (e: any) { ElMessage.error(e.message || '删除失败') }
 }
 </script>
 
 <template>
   <div class="page">
-    <div v-if="msg" class="msg-toast" :class="msg.type === 'success' ? 'msg-success' : 'msg-error'">{{ msg.text }}</div>
-
     <div class="flex items-center justify-between">
       <div><h1 class="page-title">🏢 公司中心</h1><p class="page-desc">公司档案、行业分类与研究对象</p></div>
       <el-button @click="showNew = !showNew" type="primary" size="small">{{ showNew ? '取消' : '+ 新建' }}</el-button>
@@ -125,9 +143,6 @@ async function handleDelete(id: string) {
 
 <style scoped>
 .page { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
-.msg-toast { padding: 12px 16px; border-radius: 12px; font-size: 14px; }
-.msg-success { background: rgba(52,211,153,0.1); color: var(--success); border: 1px solid rgba(52,211,153,0.2); }
-.msg-error { background: rgba(248,113,113,0.1); color: var(--danger); border: 1px solid rgba(248,113,113,0.2); }
 .new-form { padding: 20px; border-radius: 12px; background: var(--bg-tertiary); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px; }
 .selected-stock { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; background: var(--bg-secondary); font-size: 14px; }
 .selected-stock .stock-code { font-family: monospace; color: var(--accent); }

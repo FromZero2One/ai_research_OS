@@ -1,17 +1,35 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useQueryClient } from '@tanstack/vue-query'
-import { useCompany, useDocuments, useResearchSessions, useMarketPrices, useFinancialMetrics, useCompanyWorkspace, useUpdateThesis } from '@/stores/api'
+import { ElMessage } from 'element-plus'
+import {
+  useCompany,
+  useCompanyWorkspace,
+  useDeleteCompany,
+  useDocuments,
+  useFinancialMetrics,
+  useIngestFinancials,
+  useIngestPrices,
+  useIngestProfile,
+  useMarketPrices,
+  useResearchSessions,
+  useUpdateCompany,
+  useUpdateThesis,
+} from '@/stores/api'
+import FinancialBars from '@/components/FinancialBars.vue'
 import StockChart from '@/components/StockChart.vue'
 
-const route = useRoute(); const router = useRouter(); const queryClient = useQueryClient()
+const route = useRoute(); const router = useRouter()
 const id = route.params.id as string
 const { data: company, isLoading } = useCompany(id)
-const refresh = () => queryClient.invalidateQueries({ queryKey: ['company', id] })
+
+const ingestPrices = useIngestPrices()
+const ingestFinancials = useIngestFinancials()
+const ingestProfile = useIngestProfile()
+const deleteCompany = useDeleteCompany()
+const updateCompany = useUpdateCompany(id)
 
 const activeTab = ref('概览')
-const msg = ref<{ type: 'success' | 'error'; text: string } | null>(null)
 const { data: docsData } = useDocuments(); const { data: sessions } = useResearchSessions()
 const { data: priceData } = useMarketPrices(company.value?.ticker || '', 260)
 const { data: finData } = useFinancialMetrics(company.value?.ticker || '')
@@ -31,26 +49,20 @@ const evidenceCounts = computed(() => workspace.value?.evidence_summary || { sup
 const relatedSessions = computed(() => sessions.value?.filter((s: any) => s.company_id === id) || [])
 const relatedDocs = computed(() => docsData.value?.items?.filter((d: any) => d.company_id === id) || [])
 
-function setMsg(type: 'success' | 'error', text: string) { msg.value = { type, text }; setTimeout(() => msg.value = null, 4000) }
-
 async function handleRefreshData() {
   if (!company.value?.ticker || ingesting.value) return
   ingesting.value = true
   try {
-    const resp = await fetch(`/api/market/prices/${company.value.ticker}/ingest`, { method: 'POST' })
-    if (!resp.ok) throw new Error((await resp.json())?.detail || '刷新失败')
-    fetch(`/api/market/financials/${company.value.ticker}/ingest`, { method: 'POST' }).catch(() => {})
-    fetch(`/api/market/profile/${company.value.ticker}/ingest`, { method: 'POST' }).catch(() => {})
-    queryClient.invalidateQueries({ queryKey: ['market', company.value.ticker] })
-    queryClient.invalidateQueries({ queryKey: ['financials', company.value.ticker] })
-    queryClient.invalidateQueries({ queryKey: ['company'] })
-    setMsg('success', '数据已刷新')
-  } catch (e: any) { setMsg('error', e.message) } finally { ingesting.value = false }
+    await ingestPrices.mutateAsync(company.value.ticker)
+    ingestFinancials.mutate(company.value.ticker)
+    ingestProfile.mutate(company.value.ticker)
+    ElMessage.success('数据已刷新')
+  } catch (e: any) { ElMessage.error(e.message || '刷新失败') } finally { ingesting.value = false }
 }
 
 async function handleDeleteCompany() {
   if (!id || deleting.value) return; deleting.value = true
-  try { const resp = await fetch(`/api/companies/${id}`, { method: 'DELETE' }); if (!resp.ok) throw new Error(await resp.text()); router.push('/companies') } catch (e: any) { setMsg('error', e.message || '删除失败'); deleting.value = false; showDeleteConfirm.value = false }
+  try { await deleteCompany.mutateAsync(id); router.push('/companies') } catch (e: any) { ElMessage.error(e.message || '删除失败'); deleting.value = false; showDeleteConfirm.value = false }
 }
 
 async function handleSaveThesis() {
@@ -61,13 +73,18 @@ async function handleSaveThesis() {
 
 async function handleSaveCompany() {
   try {
-    const resp = await fetch(`/api/companies/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: editName.value, sector: editSector.value || null, industry: editIndustry.value || null, description: editDesc.value || null, tags: editTags.value.split(',').map((t) => t.trim()).filter(Boolean) }) })
-    if (!resp.ok) throw new Error(await resp.text())
-    editingCompany.value = false; setMsg('success', '公司信息已更新'); refresh()
-  } catch (e: any) { setMsg('error', e.message || '更新失败') }
+    await updateCompany.mutateAsync({
+      name: editName.value,
+      sector: editSector.value || null,
+      industry: editIndustry.value || null,
+      description: editDesc.value || null,
+      tags: editTags.value.split(',').map((t) => t.trim()).filter(Boolean),
+    })
+    editingCompany.value = false
+    ElMessage.success('公司信息已更新')
+  } catch (e: any) { ElMessage.error(e.message || '更新失败') }
 }
 
-function num(v: number) { if (v > 1e9) return `$${(v / 1e9).toFixed(1)}B`; if (v > 1e6) return `$${(v / 1e6).toFixed(1)}M`; return `$${v.toFixed(0)}` }
 </script>
 
 <template>
@@ -87,8 +104,6 @@ function num(v: number) { if (v > 1e9) return `$${(v / 1e9).toFixed(1)}B`; if (v
     </div>
 
     <div class="flex gap-1.5 flex-wrap"><el-tag v-for="t in company.tags" :key="t.id" size="small">{{ t.tag }}</el-tag></div>
-    <div v-if="msg" class="msg-toast" :class="msg.type==='success'?'msg-success':'msg-error'">{{ msg.text }}</div>
-
     <div v-if="currentThesis?.thesis && !editingThesis" class="thesis-bar">
       <div class="flex-1 min-w-0"><div class="text-xs text-secondary mb-1">当前观点</div><p class="text-sm line-clamp-2" style="color:var(--text-primary)">{{ currentThesis.thesis }}</p></div>
       <div class="flex items-center gap-3 ml-4 shrink-0">
@@ -161,20 +176,12 @@ function num(v: number) { if (v > 1e9) return `$${(v / 1e9).toFixed(1)}B`; if (v
           <el-row :gutter="16">
             <el-col v-if="revenueData.length" :span="12">
               <el-card shadow="never"><template #header>营收趋势</template>
-                <div v-for="d in revenueData.slice(-8)" :key="d.fiscal_period" class="flex items-center gap-2 text-xs mb-1">
-                  <span class="text-secondary w-14 shrink-0">{{ d.fiscal_period }}</span>
-                  <div class="flex-1 h-4 rounded bg-tertiary overflow-hidden"><div class="h-full rounded" :style="{width:`${(d.metric_value/Math.max(...revenueData.slice(-8).map(x=>x.metric_value)))*100}%`,backgroundColor:'#4f8cff'}"/></div>
-                  <span class="text-primary w-20 text-right font-mono">{{ num(d.metric_value) }}</span>
-                </div>
+                <FinancialBars :data="revenueData" color="#4f8cff" />
               </el-card>
             </el-col>
             <el-col v-if="incomeData.length" :span="12">
               <el-card shadow="never"><template #header>净利润趋势</template>
-                <div v-for="d in incomeData.slice(-8)" :key="d.fiscal_period" class="flex items-center gap-2 text-xs mb-1">
-                  <span class="text-secondary w-14 shrink-0">{{ d.fiscal_period }}</span>
-                  <div class="flex-1 h-4 rounded bg-tertiary overflow-hidden"><div class="h-full rounded" :style="{width:`${(d.metric_value/Math.max(...incomeData.slice(-8).map(x=>x.metric_value)))*100}%`,backgroundColor:'#34d399'}"/></div>
-                  <span class="text-primary w-20 text-right font-mono">{{ num(d.metric_value) }}</span>
-                </div>
+                <FinancialBars :data="incomeData" color="#34d399" />
               </el-card>
             </el-col>
           </el-row>
@@ -216,9 +223,6 @@ function num(v: number) { if (v > 1e9) return `$${(v / 1e9).toFixed(1)}B`; if (v
 <style scoped>
 .loading-state { text-align: center; padding: 48px 0; color: var(--text-secondary); font-size: 16px; }
 .page { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
-.msg-toast { padding: 12px 16px; border-radius: 12px; font-size: 14px; }
-.msg-success { background: rgba(52,211,153,0.1); color: var(--success); border: 1px solid rgba(52,211,153,0.2); }
-.msg-error { background: rgba(248,113,113,0.1); color: var(--danger); border: 1px solid rgba(248,113,113,0.2); }
 .thesis-bar { display: flex; align-items: center; padding: 16px; border-radius: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-left: 4px solid var(--accent); }
 .thesis-block { padding: 12px; border-radius: 8px; }
 .evidence-stat { padding: 16px; border-radius: 8px; text-align: center; }
@@ -229,7 +233,6 @@ function num(v: number) { if (v > 1e9) return `$${(v / 1e9).toFixed(1)}B`; if (v
 .session-card { display: flex; align-items: center; justify-content: space-between; padding: 20px; border-radius: 12px; background: var(--bg-secondary); border: 1px solid var(--border); cursor: pointer; margin-bottom: 12px; }
 .session-card:hover { border-color: rgba(79,140,255,0.3); }
 .doc-card { padding: 16px; border-radius: 12px; background: var(--bg-secondary); border: 1px solid var(--border); margin-bottom: 8px; }
-.bg-tertiary { background: var(--bg-tertiary); }
 .text-success { color: var(--success); }
 .text-warning { color: var(--warning); }
 </style>

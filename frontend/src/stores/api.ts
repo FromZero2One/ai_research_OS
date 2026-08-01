@@ -79,6 +79,25 @@ export function useCreateCompany() {
   return useCreate<Company>('/companies', [['companies']])
 }
 
+export function useUpdateCompany(id: MaybeRefOrGetter<string | null>) {
+  const qc = useQueryClient()
+  return useMutation<Company, Error, Record<string, unknown>>({
+    mutationFn: (data) => fetchApi(`/companies/${toValue(id) ?? ''}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['company', id] })
+      qc.invalidateQueries({ queryKey: ['companies'] })
+    },
+  })
+}
+
+export function useDeleteCompany() {
+  const qc = useQueryClient()
+  return useMutation<void, Error, string>({
+    mutationFn: (id) => fetchApi(`/companies/${id}`, { method: 'DELETE' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['companies'] }) },
+  })
+}
+
 // ── Research ──
 export interface ResearchPlan {
   research_goal: string; sub_questions: string[]; analysis_dimensions: string[]
@@ -195,6 +214,30 @@ export function useStockSearch(query: MaybeRefOrGetter<string>) {
   })
 }
 
+export function useIngestPrices() {
+  const qc = useQueryClient()
+  return useMutation<unknown, Error, string>({
+    mutationFn: (ticker) => fetchApi(`/market/prices/${ticker}/ingest`, { method: 'POST' }),
+    onSuccess: (_, ticker) => { qc.invalidateQueries({ queryKey: ['market', ticker] }) },
+  })
+}
+
+export function useIngestFinancials() {
+  const qc = useQueryClient()
+  return useMutation<unknown, Error, string>({
+    mutationFn: (ticker) => fetchApi(`/market/financials/${ticker}/ingest`, { method: 'POST' }),
+    onSuccess: (_, ticker) => { qc.invalidateQueries({ queryKey: ['financials', ticker] }) },
+  })
+}
+
+export function useIngestProfile() {
+  const qc = useQueryClient()
+  return useMutation<unknown, Error, string>({
+    mutationFn: (ticker) => fetchApi(`/market/profile/${ticker}/ingest`, { method: 'POST' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['companies'] }) },
+  })
+}
+
 // ── Knowledge ──
 export interface SearchResult { content: string; score: number; document_id: string; title: string; doc_type: string }
 
@@ -205,8 +248,32 @@ export async function searchKnowledge(query: string, topK: number = 10, docType?
 }
 
 // ── Portfolio ──
-export function useWatchlists() { return useList<any[]>([], '/portfolio/watchlists') }
+export function useWatchlists() { return useList<any[]>(['watchlists'], '/portfolio/watchlists') }
 export function useHoldings() { return useList<any[]>(['holdings'], '/portfolio/holdings') }
+
+export function useAddHolding() {
+  const qc = useQueryClient()
+  return useMutation<unknown, Error, { ticker: string; shares: number; avg_cost_basis: number | null }>({
+    mutationFn: (body) => fetchApi('/portfolio/holdings', { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['holdings'] }) },
+  })
+}
+
+export function useAddWatchlistItem(watchlistId: MaybeRefOrGetter<string>) {
+  const qc = useQueryClient()
+  return useMutation<unknown, Error, { ticker: string }>({
+    mutationFn: (body) => fetchApi(`/portfolio/watchlists/${toValue(watchlistId)}/items`, { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['watchlists'] }) },
+  })
+}
+
+export function useRemoveWatchlistItem() {
+  const qc = useQueryClient()
+  return useMutation<unknown, Error, string>({
+    mutationFn: (itemId) => fetchApi(`/portfolio/watchlists/items/${itemId}`, { method: 'DELETE' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['watchlists'] }) },
+  })
+}
 
 // ── Dashboard ──
 export interface DashboardBrief { content: string; generated_at: string | null }
@@ -229,6 +296,82 @@ export interface DashboardData {
   market_overview?: DashboardMarketItem[]
 }
 export function useDashboard() { return useGet<DashboardData>(['dashboard'], '/dashboard') }
+
+export function useGenerateBrief() {
+  const qc = useQueryClient()
+  return useMutation<unknown, Error, void>({
+    mutationFn: () => fetchApi('/dashboard/generate-brief', { method: 'POST' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['dashboard'] }) },
+  })
+}
+
+// ── System ──
+export function useSchedulerStatus() {
+  return useQuery<{ running?: boolean; jobs?: any[] }>({
+    queryKey: ['scheduler-status'],
+    queryFn: () => fetchApi('/scheduler/status'),
+    refetchInterval: 30_000,
+  })
+}
+
+export function useObservations(limit = 10) {
+  return useGet<{ observations: any[] }>(['observations'], `/scheduler/observations?limit=${limit}`)
+}
+
+export function useHealth(path: string) {
+  return useQuery<unknown>({
+    queryKey: ['health', path],
+    queryFn: () => fetchApi(path),
+    retry: 0,
+  })
+}
+
+// ── AI Center ──
+export interface PromptTemplate {
+  id: string; name: string; description: string | null
+  system_prompt: string | null; user_prompt_template: string | null
+  temperature: number | null; max_tokens: number | null; is_active: boolean
+}
+
+export function useListTemplates() {
+  return useList<PromptTemplate[]>(['ai-templates'], '/ai/templates')
+}
+
+export function useCreateTemplate() {
+  const qc = useQueryClient()
+  return useMutation<PromptTemplate, Error, Record<string, unknown>>({
+    mutationFn: (body) => fetchApi('/ai/templates', { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['ai-templates'] }) },
+  })
+}
+
+export function useUpdateTemplate(id: MaybeRefOrGetter<string | null>) {
+  const qc = useQueryClient()
+  return useMutation<PromptTemplate, Error, Record<string, unknown>>({
+    mutationFn: (body) => fetchApi(`/ai/templates/${toValue(id) ?? ''}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['ai-templates'] }) },
+  })
+}
+
+export function useDeleteTemplate() {
+  const qc = useQueryClient()
+  return useMutation<unknown, Error, string>({
+    mutationFn: (id) => fetchApi(`/ai/templates/${id}`, { method: 'DELETE' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['ai-templates'] }) },
+  })
+}
+
+export function useExecuteTemplate() {
+  return useMutation<{ content: string; model: string; error?: string }, Error, { prompt_name: string; variables: Record<string, string> }>({
+    mutationFn: (body) => fetchApi('/ai/generate', { method: 'POST', body: JSON.stringify(body) }),
+  })
+}
+
+export function useSummarize() {
+  return useMutation<{ content: string; error?: string }, Error, { text: string; max_length: number; format_: string }>({
+    mutationFn: (body) => fetchApi('/ai/summarize', { method: 'POST', body: JSON.stringify(body) }),
+  })
+}
 
 // ── Quick Research ──
 export interface QuickResearchRequest { ticker: string; question: string; title?: string }

@@ -1,31 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useQuery } from '@tanstack/vue-query'
-import { useDashboard } from '@/stores/api'
-
-const API_BASE = '/api'
-
-function useSchedulerStatus() {
-  return useQuery<any>({ queryKey: ['scheduler-status'], queryFn: () => fetch(`${API_BASE}/scheduler/status`).then((r) => r.json()), refetchInterval: 30_000 })
-}
-function useObservations() {
-  return useQuery<any>({ queryKey: ['observations'], queryFn: () => fetch(`${API_BASE}/scheduler/observations?limit=10`).then((r) => r.json()) })
-}
+import { useDashboard, useHealth, useObservations, useSchedulerStatus } from '@/stores/api'
 
 const { data: scheduler } = useSchedulerStatus()
 const { data: obsData } = useObservations()
 const { data: dashboard } = useDashboard()
-
-const endpoints = [
-  { name: 'Dashboard', path: '/dashboard' },
-  { name: '研究', path: '/research/sessions?limit=1' },
-  { name: '公司', path: '/companies?limit=1' },
-  { name: '调度器', path: '/scheduler/status' },
-]
-
-function useHealth(path: string) {
-  return useQuery<any>({ queryKey: ['health', path], queryFn: () => fetch(`${API_BASE}${path}`).then((r) => (r.ok ? r.json() : Promise.reject(r.statusText))), retry: 0 })
-}
 
 const hDash = useHealth('/dashboard')
 const hResearch = useHealth('/research/sessions?limit=1')
