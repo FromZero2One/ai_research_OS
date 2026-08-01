@@ -12,8 +12,8 @@ const autoIngested = ref<Set<string>>(new Set())
 const ingestPrices = useIngestPrices()
 const { data: nameData } = useStockSearch(computed(() => tickerRef.value))
 
-const { data: priceData, isPending } = useMarketPrices(tickerRef.value, 520)
-const { data: finData } = useFinancialMetrics(tickerRef.value)
+const { data: priceData, isPending } = useMarketPrices(tickerRef, 520)
+const { data: finData } = useFinancialMetrics(tickerRef)
 
 const prices = computed(() => priceData.value?.prices || [])
 const financials = computed(() => finData.value?.metrics || [])

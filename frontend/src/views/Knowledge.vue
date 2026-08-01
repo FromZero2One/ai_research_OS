@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { searchKnowledge, type SearchResult } from '@/stores/api'
+import { searchKnowledge, useAskKnowledge, type SearchResult } from '@/stores/api'
 
 const query = ref('')
 const docType = ref('')
@@ -8,6 +8,11 @@ const results = ref<SearchResult[]>([])
 const loading = ref(false)
 const searched = ref(false)
 const expandedIdx = ref<number | null>(null)
+
+const askQuestion = ref('')
+const askResult = ref<{ answer: string; sources: { title: string; chunk_index: number; score: number; content: string }[] } | null>(null)
+const askLoading = ref(false)
+const ask = useAskKnowledge()
 
 const docTypes = [
   { value: '', label: '全部' },
@@ -23,6 +28,17 @@ async function handleSearch() {
   try { const data = await searchKnowledge(query.value, 10, docType.value || undefined); results.value = data.results; searched.value = true } finally { loading.value = false }
 }
 
+async function handleAsk() {
+  if (!askQuestion.value.trim()) return
+  askLoading.value = true
+  askResult.value = null
+  try {
+    askResult.value = await ask.mutateAsync({ question: askQuestion.value.trim(), top_k: 5 })
+  } catch (e: any) {
+    askResult.value = { answer: `问答失败: ${e.message}`, sources: [] }
+  } finally { askLoading.value = false }
+}
+
 function scoreColor(score: number) { return score > 0.7 ? '#34d399' : score > 0.4 ? '#fbbf24' : '#9aa0a6' }
 </script>
 
@@ -32,6 +48,34 @@ function scoreColor(score: number) { return score > 0.7 ? '#34d399' : score > 0.
       <h1 class="page-title">🧠 知识库</h1>
       <p class="page-desc">混合检索 RAG — 稠密向量 + BM25 + BGE Reranker 重排序</p>
     </div>
+
+    <el-alert type="info" :closable="false" class="mode-alert">
+      <template #title>搜索 vs 提问</template>
+      <div class="mode-desc">
+        <div><b>🔍 搜索</b> — 返回相关原文切片，可核对出处；适合浏览资料、确认数据</div>
+        <div><b>💬 提问</b> — AI 综合多个片段生成带引用 [1][2] 的回答；适合快速获取结论</div>
+        <div class="mode-note">⚠️ 重要数据请以「搜索」的原文为准</div>
+      </div>
+    </el-alert>
+
+    <el-card shadow="never" class="ask-card">
+      <template #header><span>💬 文档问答</span><span class="text-xs text-secondary ml-2">基于知识库内容生成带引用回答</span></template>
+      <div class="ask-input-row">
+        <el-input v-model="askQuestion" placeholder="例如：中国银行2025年营业收入是多少？" @keydown.enter="handleAsk" :disabled="askLoading" />
+        <el-button @click="handleAsk" :disabled="askLoading || !askQuestion.trim()" type="primary">{{ askLoading ? '思考中...' : '提问' }}</el-button>
+      </div>
+      <div v-if="askResult" class="ask-result">
+        <p class="ask-answer whitespace-pre-wrap">{{ askResult.answer }}</p>
+        <div v-if="askResult.sources.length" class="ask-sources">
+          <div class="text-xs text-secondary mb-1">来源</div>
+          <div v-for="(s, i) in askResult.sources" :key="i" class="ask-source">
+            <span class="ask-source-tag">[{{ i + 1 }}]</span>
+            <span class="ask-source-title">{{ s.title }}</span>
+            <span class="ask-source-meta">切片 {{ s.chunk_index }} · 得分 {{ s.score.toFixed(3) }}</span>
+          </div>
+        </div>
+      </div>
+    </el-card>
 
     <div class="search-bar">
       <el-input v-model="query" placeholder="搜索知识库..." clearable @keydown.enter="handleSearch">
@@ -84,4 +128,16 @@ function scoreColor(score: number) { return score > 0.7 ? '#34d399' : score > 0.
 .result-content { font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
 .result-content.line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .result-footer { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.ask-card { margin-bottom: 4px; }
+.mode-alert { margin-bottom: 4px; }
+.mode-desc { font-size: 13px; line-height: 1.7; color: var(--text-primary); }
+.mode-note { font-size: 12px; color: var(--warning); margin-top: 2px; }
+.ask-input-row { display: flex; gap: 8px; }
+.ask-result { margin-top: 12px; padding: 12px; border-radius: 8px; background: var(--bg-tertiary); }
+.ask-answer { font-size: 14px; line-height: 1.7; color: var(--text-primary); }
+.ask-sources { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.ask-source { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.ask-source-tag { color: var(--accent); font-weight: 600; }
+.ask-source-title { color: var(--text-primary); }
+.ask-source-meta { color: var(--text-secondary); margin-left: auto; }
 </style>

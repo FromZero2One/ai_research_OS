@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient, type UseQueryOptions } from '@tanstack/vue-query'
-import { toValue, type MaybeRefOrGetter } from 'vue'
+import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 
 const API_BASE = '/api'
 
@@ -28,8 +28,13 @@ export function useList<T>(key: string[], url: string, opts?: Partial<UseQueryOp
   return useQuery<T>({ queryKey: key, queryFn: () => fetchApi<T>(url), ...opts })
 }
 
-export function useGet<T>(key: string[], url: string, opts?: Partial<UseQueryOptions<T>>) {
-  return useQuery<T>({ queryKey: key, queryFn: () => fetchApi<T>(url), enabled: !!url, ...opts })
+export function useGet<T>(key: MaybeRefOrGetter<string[]>, url: MaybeRefOrGetter<string>, opts?: Partial<UseQueryOptions<T>>) {
+  return useQuery<T>({
+    queryKey: computed(() => toValue(key)),
+    queryFn: () => fetchApi<T>(toValue(url)),
+    enabled: computed(() => !!toValue(url)),
+    ...opts,
+  })
 }
 
 export function useCreate<TResult, TBody = any>(url: string, invalidateKeys?: string[][]) {
@@ -179,7 +184,10 @@ export function useDocuments(docType?: string) {
 
 export function useUploadDocument() {
   const qc = useQueryClient()
-  return useMutation<any, Error, File>({
+  return useMutation<{
+    id: string; title: string; doc_type: string
+    chunk_count: number; is_indexed: boolean; status: string; message: string
+  }, Error, File>({
     mutationFn: async (file) => {
       const formData = new FormData()
       formData.append('file', file)
@@ -192,18 +200,37 @@ export function useUploadDocument() {
   })
 }
 
+export interface DocumentIndexingStatus {
+  id: string; is_indexed: boolean; chunk_count: number | null
+  step: string; message: string; error?: string | null
+}
+
+export function useDocumentStatus(id: MaybeRefOrGetter<string | null>) {
+  return useGet<DocumentIndexingStatus>(
+    computed(() => ['document-status', toValue(id) || '']),
+    computed(() => (toValue(id) ? `/documents/${toValue(id)}/status` : '')),
+    { refetchInterval: 2000 },
+  )
+}
+
 // ── Market ──
 export interface PricePoint { date: string; open: number; high: number; low: number; close: number; volume: number }
 export interface MarketPricesResponse { ticker: string; count: number; prices: PricePoint[] }
 export interface FinancialMetricPoint { fiscal_year: number; fiscal_period: string; metric_name: string; metric_value: number }
 export interface StockSearchResult { symbol: string; name: string }
 
-export function useMarketPrices(ticker: string, limit: number = 120) {
-  return useGet<MarketPricesResponse>(['market', ticker], ticker ? `/market/prices/${ticker}?limit=${limit}` : '')
+export function useMarketPrices(ticker: MaybeRefOrGetter<string>, limit: number = 120) {
+  return useGet<MarketPricesResponse>(
+    computed(() => ['market', toValue(ticker)]),
+    computed(() => (toValue(ticker) ? `/market/prices/${toValue(ticker)}?limit=${limit}` : '')),
+  )
 }
 
-export function useFinancialMetrics(ticker: string) {
-  return useGet<{ ticker: string; count: number; metrics: FinancialMetricPoint[] }>(['financials', ticker], ticker ? `/market/financials/${ticker}` : '')
+export function useFinancialMetrics(ticker: MaybeRefOrGetter<string>) {
+  return useGet<{ ticker: string; count: number; metrics: FinancialMetricPoint[] }>(
+    computed(() => ['financials', toValue(ticker)]),
+    computed(() => (toValue(ticker) ? `/market/financials/${toValue(ticker)}` : '')),
+  )
 }
 
 export function useStockSearch(query: MaybeRefOrGetter<string>) {
@@ -245,6 +272,17 @@ export async function searchKnowledge(query: string, topK: number = 10, docType?
   let url = `/knowledge/search?query=${encodeURIComponent(query)}&top_k=${topK}`
   if (docType) url += `&doc_type=${encodeURIComponent(docType)}`
   return fetchApi(url)
+}
+
+export interface AskSource {
+  title: string; chunk_index: number; score: number
+  document_id: string; content: string
+}
+
+export function useAskKnowledge() {
+  return useMutation<{ answer: string; sources: AskSource[]; model?: string }, Error, { question: string; top_k?: number }>({
+    mutationFn: (body) => fetchApi('/knowledge/ask', { method: 'POST', body: JSON.stringify(body) }),
+  })
 }
 
 // ── Portfolio ──
@@ -437,8 +475,11 @@ export interface WorkspaceData {
   evidence_summary: { supporting: number; opposing: number; neutral: number }
 }
 
-export function useCompanyThesis(ticker: string) {
-  return useGet<ThesisData>(['thesis', ticker], ticker ? `/companies/by-ticker/${encodeURIComponent(ticker)}/thesis` : '')
+export function useCompanyThesis(ticker: MaybeRefOrGetter<string>) {
+  return useGet<ThesisData>(
+    computed(() => ['thesis', toValue(ticker)]),
+    computed(() => (toValue(ticker) ? `/companies/by-ticker/${encodeURIComponent(toValue(ticker))}/thesis` : '')),
+  )
 }
 
 export function useUpdateThesis() {
@@ -449,6 +490,9 @@ export function useUpdateThesis() {
   })
 }
 
-export function useCompanyWorkspace(ticker: string) {
-  return useGet<WorkspaceData>(['workspace', ticker], ticker ? `/companies/by-ticker/${encodeURIComponent(ticker)}/workspace` : '')
+export function useCompanyWorkspace(ticker: MaybeRefOrGetter<string>) {
+  return useGet<WorkspaceData>(
+    computed(() => ['workspace', toValue(ticker)]),
+    computed(() => (toValue(ticker) ? `/companies/by-ticker/${encodeURIComponent(toValue(ticker))}/workspace` : '')),
+  )
 }

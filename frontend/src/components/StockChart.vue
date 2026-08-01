@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, shallowRef } from 'vue'
+import { ref, onMounted, onUnmounted, watch, shallowRef, nextTick } from 'vue'
 import * as echarts from 'echarts'
 
 const props = withDefaults(defineProps<{
@@ -10,6 +10,17 @@ const props = withDefaults(defineProps<{
 
 const chartRef = ref<HTMLDivElement | null>(null)
 const chartInstance = shallowRef<echarts.ECharts | null>(null)
+let resizeObserver: ResizeObserver | null = null
+
+function ensureChart(): echarts.ECharts | null {
+  if (chartInstance.value) return chartInstance.value
+  const el = chartRef.value
+  // Defer init until the container actually has size — echarts.init on a
+  // 0-size element (e.g. inside a hidden el-tab-pane) warns and stays broken.
+  if (!el || el.clientWidth === 0 || el.clientHeight === 0) return null
+  chartInstance.value = echarts.init(el, undefined, { renderer: 'canvas' })
+  return chartInstance.value
+}
 
 function calcMA(prices: typeof props.prices, days: number): (number | null)[] {
   return prices.map((_, i) => {
@@ -67,22 +78,48 @@ function updateChart() {
 }
 
 onMounted(() => {
-  if (!chartRef.value) return
-  chartInstance.value = echarts.init(chartRef.value, undefined, { renderer: 'canvas' })
-  const handleResize = () => chartInstance.value?.resize()
-  window.addEventListener('resize', handleResize)
-  updateChart()
-  onUnmounted(() => { window.removeEventListener('resize', handleResize); chartInstance.value?.dispose() })
+  // The observer fires whenever the container size changes (including when a
+  // hidden tab pane becomes visible: 0 -> real size), so it both initializes
+  // the chart lazily and keeps it in sync with the layout.
+  if (chartRef.value) {
+    resizeObserver = new ResizeObserver(() => {
+      if (!chartInstance.value) {
+        if (ensureChart()) updateChart()
+      } else {
+        chartInstance.value.resize()
+      }
+    })
+    resizeObserver.observe(chartRef.value)
+  }
+  if (ensureChart()) updateChart()
+  onUnmounted(() => {
+    resizeObserver?.disconnect()
+    chartInstance.value?.dispose()
+  })
 })
 
-watch(() => props.prices, updateChart, { deep: true })
+watch(() => props.prices, async () => {
+  // Data can arrive after mount (first load, refetch after refresh). If the
+  // chart wasn't initialized yet, do it now — the container always exists.
+  if (props.prices.length && !chartInstance.value) {
+    await nextTick()
+    ensureChart()
+  }
+  updateChart()
+}, { deep: true })
 </script>
 
 <template>
-  <div v-if="!prices.length" class="empty-chart">暂无数据</div>
-  <div v-else ref="chartRef" :style="{ height: `${height}px`, width: '100%' }" />
+  <div class="chart-wrap" :style="{ height: `${height}px`, width: '100%' }">
+    <!-- ECharts owns this element's inner DOM — Vue must never re-render or
+         conditionally remove it, otherwise the vdom desyncs from the real DOM. -->
+    <div ref="chartRef" class="chart-canvas" />
+    <div v-if="!prices.length" class="empty-chart">暂无数据</div>
+  </div>
 </template>
 
 <style scoped>
-.empty-chart { display: flex; align-items: center; justify-content: center; height: 256px; border-radius: 12px; background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-secondary); }
+.chart-wrap { position: relative; }
+.chart-canvas { position: absolute; inset: 0; }
+.empty-chart { position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-secondary); }
 </style>

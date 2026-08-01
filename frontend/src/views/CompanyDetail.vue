@@ -31,9 +31,10 @@ const updateCompany = useUpdateCompany(id)
 
 const activeTab = ref('概览')
 const { data: docsData } = useDocuments(); const { data: sessions } = useResearchSessions()
-const { data: priceData } = useMarketPrices(company.value?.ticker || '', 260)
-const { data: finData } = useFinancialMetrics(company.value?.ticker || '')
-const { data: workspace } = useCompanyWorkspace(company.value?.ticker || '')
+const ticker = computed(() => company.value?.ticker || '')
+const { data: priceData } = useMarketPrices(ticker, 260)
+const { data: finData } = useFinancialMetrics(ticker)
+const { data: workspace } = useCompanyWorkspace(ticker)
 const updateThesis = useUpdateThesis()
 
 const prices = computed(() => priceData.value?.prices || [])

@@ -1,23 +1,43 @@
 <script setup lang="ts">
-import { ref, useTemplateRef } from 'vue'
-import { useDocuments, useUploadDocument } from '@/stores/api'
+import { ref, useTemplateRef, watch } from 'vue'
+import { useQueryClient } from '@tanstack/vue-query'
+import { useDocumentStatus, useDocuments, useUploadDocument } from '@/stores/api'
 
+const queryClient = useQueryClient()
 const docType = ref('all')
 const isDragOver = ref(false)
 const uploading = ref(false)
 const uploadMsg = ref<{ type: 'success' | 'error'; text: string } | null>(null)
+const indexingId = ref<string | null>(null)
 const fileInputRef = useTemplateRef<HTMLInputElement>('fileInput')
 
 const { data, isLoading } = useDocuments(docType.value === 'all' ? undefined : docType.value)
 const uploadDoc = useUploadDocument()
+const { data: indexingStatus } = useDocumentStatus(indexingId)
 
 const docTypes = ['all', 'pdf', 'markdown', 'text', 'report', 'transcript']
 
 async function handleFile(file: File) {
   if (file.size > 50 * 1024 * 1024) { uploadMsg.value = { type: 'error', text: `文件过大 (${(file.size / 1024 / 1024).toFixed(1)}MB)，最大 50MB` }; return }
   uploading.value = true; uploadMsg.value = null
-  try { const result = await uploadDoc.mutateAsync(file); uploadMsg.value = { type: 'success', text: `"${result.title}" 上传成功 — ${result.chunk_count} 个切片，${result.is_indexed ? '已索引' : '索引中'}` } } catch (e: any) { uploadMsg.value = { type: 'error', text: e.message || '上传失败' } } finally { uploading.value = false }
+  try {
+    const result = await uploadDoc.mutateAsync(file)
+    indexingId.value = result.id
+    uploadMsg.value = { type: 'success', text: `"${result.title}" 上传成功，正在后台索引...` }
+  } catch (e: any) { uploadMsg.value = { type: 'error', text: e.message || '上传失败' } } finally { uploading.value = false }
 }
+
+// Poll the background indexing task; refresh the list when it finishes/fails.
+watch(indexingStatus, (st) => {
+  if (!st || !indexingId.value) return
+  if (st.is_indexed || st.error) {
+    indexingId.value = null
+    queryClient.invalidateQueries({ queryKey: ['documents'] })
+    uploadMsg.value = st.error
+      ? { type: 'error', text: st.message || '索引失败' }
+      : { type: 'success', text: `索引完成 — ${st.chunk_count ?? 0} 个切片` }
+  }
+})
 
 function onDrop(e: DragEvent) { e.preventDefault(); isDragOver.value = false; const file = e.dataTransfer?.files?.[0]; if (file) handleFile(file) }
 function onSelect(e: Event) { const file = (e.target as HTMLInputElement).files?.[0]; if (file) handleFile(file); if (fileInputRef.value) fileInputRef.value.value = '' }
@@ -48,7 +68,7 @@ function onSelect(e: Event) { const file = (e.target as HTMLInputElement).files?
     <div v-else class="doc-list">
       <div v-for="doc in data.items" :key="doc.id" class="doc-item">
         <div class="doc-info"><div class="doc-title">{{ doc.title }}</div><div class="doc-meta"><span>{{ doc.doc_type }}</span><span>·</span><span>{{ doc.chunk_count || 0 }} 切片</span><span v-if="doc.source">· {{ doc.source }}</span></div></div>
-        <el-tag :type="doc.is_indexed ? 'success' : 'warning'" size="small">{{ doc.is_indexed ? '已索引' : '待处理' }}</el-tag>
+        <el-tag :type="doc.is_indexed ? 'success' : 'warning'" size="small">{{ doc.is_indexed ? '已索引' : '索引中...' }}</el-tag>
       </div>
     </div>
   </div>
