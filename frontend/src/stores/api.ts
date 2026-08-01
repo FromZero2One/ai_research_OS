@@ -266,7 +266,10 @@ export function useIngestProfile() {
 }
 
 // ── Knowledge ──
-export interface SearchResult { content: string; score: number; document_id: string; title: string; doc_type: string }
+export interface SearchResult {
+  content: string; score: number; document_id: string; title: string; doc_type: string
+  snippet?: string; highlights?: string[]
+}
 
 export async function searchKnowledge(query: string, topK: number = 10, docType?: string): Promise<{ query: string; count: number; results: SearchResult[] }> {
   let url = `/knowledge/search?query=${encodeURIComponent(query)}&top_k=${topK}`
@@ -280,9 +283,18 @@ export interface AskSource {
 }
 
 export function useAskKnowledge() {
-  return useMutation<{ answer: string; sources: AskSource[]; model?: string }, Error, { question: string; top_k?: number }>({
+  return useMutation<{ answer: string; sources: AskSource[]; model?: string }, Error, {
+    question: string; top_k?: number; provider?: 'default' | 'ollama'; model?: string | null
+  }>({
     mutationFn: (body) => fetchApi('/knowledge/ask', { method: 'POST', body: JSON.stringify(body) }),
   })
+}
+
+export function useLlmModels() {
+  return useGet<{ default: { provider: string; model: string }; ollama: string[] }>(
+    ['llm-models'],
+    '/knowledge/llm/models',
+  )
 }
 
 // ── Portfolio ──

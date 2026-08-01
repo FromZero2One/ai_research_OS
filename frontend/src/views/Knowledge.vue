@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { searchKnowledge, useAskKnowledge, type SearchResult } from '@/stores/api'
+import { computed, ref } from 'vue'
+import DOMPurify from 'dompurify'
+import { marked } from 'marked'
+import { searchKnowledge, useAskKnowledge, useLlmModels, type SearchResult } from '@/stores/api'
 
 const query = ref('')
 const docType = ref('')
@@ -10,9 +12,33 @@ const searched = ref(false)
 const expandedIdx = ref<number | null>(null)
 
 const askQuestion = ref('')
+const askModel = ref(localStorage.getItem('askModel') || 'default')
 const askResult = ref<{ answer: string; sources: { title: string; chunk_index: number; score: number; content: string }[] } | null>(null)
 const askLoading = ref(false)
 const ask = useAskKnowledge()
+const { data: llmModels } = useLlmModels()
+const expandedSource = ref<number | null>(null)
+
+const askHtml = computed(() => {
+  const answer = askResult.value?.answer
+  if (!answer) return ''
+  return DOMPurify.sanitize(marked.parse(answer, { async: false }) as string)
+})
+
+function highlightSnippet(text: string, terms: string[]): string {
+  const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  let html = escape(text)
+  for (const t of terms || []) {
+    if (!t) continue
+    const escaped = escape(t)
+    html = html.split(escaped).join(`<mark>${escaped}</mark>`)
+  }
+  return html
+}
+
+function renderMarkdown(text: string): string {
+  return DOMPurify.sanitize(marked.parse(text, { async: false }) as string)
+}
 
 const docTypes = [
   { value: '', label: '全部' },
@@ -33,7 +59,14 @@ async function handleAsk() {
   askLoading.value = true
   askResult.value = null
   try {
-    askResult.value = await ask.mutateAsync({ question: askQuestion.value.trim(), top_k: 5 })
+    const isOllama = askModel.value !== 'default'
+    localStorage.setItem('askModel', askModel.value)
+    askResult.value = await ask.mutateAsync({
+      question: askQuestion.value.trim(),
+      top_k: 8,
+      provider: isOllama ? 'ollama' : 'default',
+      model: isOllama ? askModel.value : null,
+    })
   } catch (e: any) {
     askResult.value = { answer: `问答失败: ${e.message}`, sources: [] }
   } finally { askLoading.value = false }
@@ -61,17 +94,23 @@ function scoreColor(score: number) { return score > 0.7 ? '#34d399' : score > 0.
     <el-card shadow="never" class="ask-card">
       <template #header><span>💬 文档问答</span><span class="text-xs text-secondary ml-2">基于知识库内容生成带引用回答</span></template>
       <div class="ask-input-row">
+        <el-select v-model="askModel" class="ask-model-select" :disabled="askLoading">
+          <el-option label="DeepSeek（默认）" value="default" />
+          <el-option v-for="m in llmModels?.ollama || []" :key="m" :label="`Ollama · ${m}`" :value="m" />
+        </el-select>
         <el-input v-model="askQuestion" placeholder="例如：中国银行2025年营业收入是多少？" @keydown.enter="handleAsk" :disabled="askLoading" />
         <el-button @click="handleAsk" :disabled="askLoading || !askQuestion.trim()" type="primary">{{ askLoading ? '思考中...' : '提问' }}</el-button>
       </div>
       <div v-if="askResult" class="ask-result">
-        <p class="ask-answer whitespace-pre-wrap">{{ askResult.answer }}</p>
+        <div class="ask-answer markdown-body" v-html="askHtml" />
         <div v-if="askResult.sources.length" class="ask-sources">
-          <div class="text-xs text-secondary mb-1">来源</div>
+          <div class="text-xs text-secondary mb-1">来源（点击展开原文）</div>
           <div v-for="(s, i) in askResult.sources" :key="i" class="ask-source">
             <span class="ask-source-tag">[{{ i + 1 }}]</span>
             <span class="ask-source-title">{{ s.title }}</span>
             <span class="ask-source-meta">切片 {{ s.chunk_index }} · 得分 {{ s.score.toFixed(3) }}</span>
+            <el-button text size="small" class="ask-source-toggle" @click="expandedSource = expandedSource === i ? null : i">{{ expandedSource === i ? '收起' : '查看' }}</el-button>
+            <div v-if="expandedSource === i" class="ask-source-content markdown-body" v-html="renderMarkdown(s.content)" />
           </div>
         </div>
       </div>
@@ -99,7 +138,8 @@ function scoreColor(score: number) { return score > 0.7 ? '#34d399' : score > 0.
           <div class="result-meta"><el-tag size="small">{{ r.doc_type }}</el-tag><span class="result-title">{{ r.title }}</span></div>
           <div class="score-bar"><div class="score-track"><div class="score-fill" :style="{ width: `${Math.min(r.score * 100, 100)}%`, backgroundColor: scoreColor(r.score) }" /></div><span class="score-text" :style="{ color: scoreColor(r.score) }">{{ r.score.toFixed(3) }}</span></div>
         </div>
-        <p class="result-content" :class="{ 'line-clamp-3': expandedIdx !== i }">{{ r.content }}</p>
+        <p v-if="expandedIdx !== i" class="result-content line-clamp-3" v-html="highlightSnippet(r.snippet || r.content.slice(0, 220), r.highlights || [])" />
+        <div v-else class="result-content markdown-body result-full" v-html="renderMarkdown(r.content)" />
         <div class="result-footer">
           <el-button text size="small" @click="expandedIdx = expandedIdx === i ? null : i">{{ expandedIdx === i ? '收起' : '展开全部' }}</el-button>
           <span class="text-xs text-gray">文档ID: {{ r.document_id.slice(0, 8) }}...</span>
@@ -126,6 +166,8 @@ function scoreColor(score: number) { return score > 0.7 ? '#34d399' : score > 0.
 .score-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
 .score-text { font-size: 11px; }
 .result-content { font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
+.result-content mark { background: rgba(251,191,36,0.28); color: var(--text-primary); border-radius: 2px; padding: 0 1px; }
+.result-full { white-space: pre-wrap; word-break: break-word; }
 .result-content.line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .result-footer { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
 .ask-card { margin-bottom: 4px; }
@@ -133,11 +175,21 @@ function scoreColor(score: number) { return score > 0.7 ? '#34d399' : score > 0.
 .mode-desc { font-size: 13px; line-height: 1.7; color: var(--text-primary); }
 .mode-note { font-size: 12px; color: var(--warning); margin-top: 2px; }
 .ask-input-row { display: flex; gap: 8px; }
+.ask-model-select { width: 190px; flex-shrink: 0; }
 .ask-result { margin-top: 12px; padding: 12px; border-radius: 8px; background: var(--bg-tertiary); }
-.ask-answer { font-size: 14px; line-height: 1.7; color: var(--text-primary); }
+.markdown-body { font-size: 14px; line-height: 1.7; color: var(--text-primary); }
+.markdown-body p { margin-bottom: 6px; }
+.markdown-body strong { color: var(--text-primary); font-weight: 600; }
+.markdown-body table { border-collapse: collapse; margin: 8px 0; font-size: 13px; display: block; max-width: 100%; overflow-x: auto; }
+.markdown-body th, .markdown-body td { border: 1px solid var(--border); padding: 4px 10px; text-align: left; white-space: nowrap; }
+.markdown-body th { background: var(--bg-tertiary); }
+.markdown-body ul, .markdown-body ol { padding-left: 20px; margin: 4px 0; }
+.ask-answer { margin: 0; }
 .ask-sources { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
-.ask-source { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.ask-source { display: flex; align-items: center; gap: 8px; font-size: 12px; flex-wrap: wrap; }
 .ask-source-tag { color: var(--accent); font-weight: 600; }
 .ask-source-title { color: var(--text-primary); }
 .ask-source-meta { color: var(--text-secondary); margin-left: auto; }
+.ask-source-toggle { margin-left: 0; }
+.ask-source-content { flex-basis: 100%; padding: 8px; border-radius: 6px; background: var(--bg-tertiary); font-size: 12px; line-height: 1.6; max-height: 240px; overflow-y: auto; }
 </style>
