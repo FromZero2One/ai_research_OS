@@ -31,7 +31,9 @@ class TestKnowledgeSearch:
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_search_after_document_upload(self, async_client: httpx.AsyncClient):
+    async def test_search_after_document_upload(
+        self, async_client: httpx.AsyncClient, test_session
+    ):
         """Upload a document, then search for its content."""
         # Upload document
         content = (
@@ -43,7 +45,15 @@ class TestKnowledgeSearch:
             files={"file": ("nvidia.md", BytesIO(content), "text/markdown")},
             data={"title": "NVIDIA Report", "doc_type": "markdown"},
         )
-        assert upload_resp.status_code == 201
+        assert upload_resp.status_code == 202
+
+        # Upload is two-phase: index synchronously in the test (no worker).
+        from core.container import create_container
+
+        svc = create_container(test_session).document_service
+        doc = await svc.index_document(upload_resp.json()["id"])
+        await test_session.commit()
+        assert doc.is_indexed is True
 
         # Search for content
         resp = await async_client.get("/api/v1/knowledge/search?query=revenue+growth&top_k=5")
@@ -61,15 +71,21 @@ class TestKnowledgeSearch:
         assert result["score"] > 0
 
     @pytest.mark.asyncio
-    async def test_search_with_doc_type_filter(self, async_client: httpx.AsyncClient):
+    async def test_search_with_doc_type_filter(self, async_client: httpx.AsyncClient, test_session):
         """Search filtered by doc_type."""
         # Upload
         content = b"# Financial Report\n\nEarnings per share grew 20%."
-        await async_client.post(
+        upload_resp = await async_client.post(
             "/api/v1/documents/upload",
             files={"file": ("report.md", BytesIO(content), "text/markdown")},
             data={"title": "Report", "doc_type": "markdown"},
         )
+        from core.container import create_container
+
+        svc = create_container(test_session).document_service
+        doc = await svc.index_document(upload_resp.json()["id"])
+        await test_session.commit()
+        assert doc.is_indexed is True
 
         # Search with matching doc_type
         resp = await async_client.get("/api/v1/knowledge/search?query=earnings&doc_type=markdown")

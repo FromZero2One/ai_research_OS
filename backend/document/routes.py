@@ -8,16 +8,18 @@ from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 
 from core.container import Container
 from core.database import get_container
+from core.task_manager import run_in_background
 from document.schemas import (
     DocumentListResponse,
     DocumentResponse,
+    DocumentStatusResponse,
     DocumentUploadResponse,
 )
 
 router = APIRouter(prefix="/documents", tags=["Document Center"])
 
 
-@router.post("/upload", response_model=DocumentUploadResponse, status_code=201)
+@router.post("/upload", response_model=DocumentUploadResponse, status_code=202)
 async def upload_document(
     file: UploadFile = File(...),
     title: str | None = Form(None),
@@ -25,24 +27,31 @@ async def upload_document(
     company_id: str | None = Form(None),
     container: Container = Depends(get_container),
 ):
-    """Upload a document → parse → chunk → embed → index."""
+    """Upload a document — created immediately, indexed in the background."""
     content = await file.read()
     svc = container.document_service
     company_uuid = uuid.UUID(company_id) if company_id else None
-    doc = await svc.process_upload(
+    doc = await svc.create_from_upload(
         file_bytes=content,
         filename=file.filename or "unknown",
         title=title,
         doc_type=doc_type,
         company_id=company_uuid,
     )
+    await container.session.commit()  # row must exist before the worker picks it up
+    await run_in_background(
+        "document_index",
+        str(doc.id),
+        {"document_id": str(doc.id)},
+    )
     return DocumentUploadResponse(
         id=doc.id,
         title=doc.title,
         doc_type=doc.doc_type,
-        chunk_count=doc.chunk_count or 0,
-        is_indexed=doc.is_indexed,
-        message="Document processed and indexed successfully",
+        chunk_count=0,
+        is_indexed=False,
+        status="indexing",
+        message="Document uploaded — indexing in background",
     )
 
 
@@ -80,6 +89,16 @@ async def get_document(
     svc = container.document_service
     doc = await svc.get(document_id)
     return doc
+
+
+@router.get("/{document_id}/status", response_model=DocumentStatusResponse)
+async def document_indexing_status(
+    document_id: uuid.UUID,
+    container: Container = Depends(get_container),
+):
+    """Poll indexing progress for a document (used by the frontend)."""
+    svc = container.document_service
+    return await svc.get_indexing_status(document_id)
 
 
 @router.delete("/{document_id}", status_code=204)

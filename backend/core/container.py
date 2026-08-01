@@ -232,7 +232,9 @@ class Container:
         if self._knowledge is None:
             from knowledge.service import KnowledgeService
 
-            self._knowledge = KnowledgeService(self.session)
+            # Cross-encoder re-ranker improves precision on top of hybrid RRF;
+            # search falls back to RRF automatically if the model is missing.
+            self._knowledge = KnowledgeService(self.session, use_reranker=True)
         return self._knowledge
 
     @property

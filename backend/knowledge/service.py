@@ -22,6 +22,116 @@ from core.interfaces import EmbeddingModel, VectorStore
 from core.logging import logger
 from document.models import Document, DocumentChunk
 
+# Chinese function-word stopwords for BM25. Keeps high-frequency tokens like
+# "如何/的/和" from outranking real content terms (e.g. "营收") in the sparse
+# index — previously queries like "营收如何" ranked accounting-policy chunks
+# full of "如何评估/如何管理" above actual revenue figures.
+_BM25_STOPWORDS = {
+    "的",
+    "了",
+    "和",
+    "与",
+    "及",
+    "或",
+    "等",
+    "如何",
+    "什么",
+    "怎样",
+    "怎么",
+    "一个",
+    "以及",
+    "在",
+    "是",
+    "有",
+    "为",
+    "对",
+    "中",
+    "上",
+    "下",
+    "之",
+    "其",
+    "该",
+    "本",
+    "将",
+    "已",
+    "不",
+    "也",
+    "都",
+    "而",
+    "被",
+    "于",
+    "从",
+    "向",
+    "把",
+    "让",
+    "以",
+    "就",
+    "并",
+    "且",
+    "但",
+    "因",
+    "此",
+    "若",
+    "则",
+    "再",
+    "还",
+    "要",
+    "会",
+    "能",
+    "可",
+    "可以",
+    "进行",
+    "通过",
+    "我们",
+    "他们",
+    "它们",
+}
+
+
+def _tokenize(text: str) -> list[str]:
+    """Tokenize for BM25, dropping Chinese function-word stopwords."""
+    return [t for t in jieba.lcut(text) if t.strip() and t not in _BM25_STOPWORDS]
+
+
+# Short-form → full financial term expansion for the sparse (BM25) query.
+# Users ask "营收/净利/不良率/分红", the annual report says "营业收入/净利润/
+# 不良贷款率/现金分红" — expanding before BM25 makes short queries hit.
+_QUERY_EXPANSION: dict[str, list[str]] = {
+    "营收": ["营业收入"],
+    "净利": ["净利润"],
+    "利润": ["净利润", "利润总额"],
+    "分红": ["股利", "现金分红"],
+    "股息": ["股利"],
+    "不良": ["不良贷款率"],
+    "不良率": ["不良贷款率"],
+    "拨备": ["拨备覆盖率"],
+    "资本充足": ["资本充足率"],
+    "资本充足率": ["核心一级资本"],
+    "roe": ["净资产收益率"],
+    "收益": ["收益率"],
+}
+
+ASK_SYSTEM_PROMPT = (
+    "你是一名严谨的投资研究助理。根据下面给出的文档片段回答用户的问题。要求：\n"
+    "1. 只依据提供的片段回答，不要编造数据；片段中没有的信息明确说“资料中未提及”。\n"
+    "2. 引用来源时用 [1]、[2] 等标注对应片段编号。\n"
+    "3. 用中文回答，简洁、结构化。"
+)
+
+
+def _expand_tokens(tokens: list[str]) -> list[str]:
+    """Append synonym terms so short-form query tokens match report terms.
+
+    Expansion terms are tokenized with the same pipeline as the corpus, so the
+    added tokens match what BM25 actually indexed (e.g. "不良贷款率" is indexed
+    as ["不良贷款", "率"] — adding the raw term would never match).
+    """
+    extra: list[str] = []
+    for tok in tokens:
+        for term in _QUERY_EXPANSION.get(tok, []):
+            extra.extend(_tokenize(term))
+    return tokens + extra
+
 
 @dataclass
 class SearchResult:
@@ -172,7 +282,7 @@ class KnowledgeService:
         if not bm25 or not query:
             return []
 
-        scores = bm25.get_scores(jieba.lcut(query))
+        scores = bm25.get_scores(_expand_tokens(_tokenize(query)))
         top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
 
         results = []
@@ -231,7 +341,7 @@ class KnowledgeService:
         if not chunks:
             return None
 
-        tokenized_corpus = [jieba.lcut(c.content) for c in chunks]
+        tokenized_corpus = [_tokenize(c.content) for c in chunks]
         bm25 = BM25Okapi(tokenized_corpus)
         bm25.ids = [c.embedding_id for c in chunks]
         bm25.metadata = [
@@ -335,3 +445,40 @@ class KnowledgeService:
             )
             for row in rows
         ]
+
+    async def ask(self, question: str, top_k: int = 5) -> dict:
+        """Document Q&A — retrieve top chunks, then answer with citations."""
+        from core.adapters.llm import create_llm
+        from core.interfaces import LLMMessage
+
+        results = await self.search(question, top_k=top_k)
+        if not results:
+            return {"answer": "知识库中没有找到相关资料。", "sources": []}
+
+        fragments = "\n\n".join(
+            f"[{i}] (score {r.score:.2f}) {r.content[:600]}" for i, r in enumerate(results, 1)
+        )
+        llm = create_llm()
+        response = await llm.generate(
+            messages=[
+                LLMMessage(role="system", content=ASK_SYSTEM_PROMPT),
+                LLMMessage(role="user", content=f"问题: {question}\n\n文档片段:\n{fragments}"),
+            ],
+            temperature=0.2,
+            max_tokens=1024,
+        )
+        sources = [
+            {
+                "title": r.title,
+                "chunk_index": r.chunk_index,
+                "score": round(r.score, 4),
+                "document_id": str(r.document_id),
+                "content": r.content[:300],
+            }
+            for r in results
+        ]
+        return {
+            "answer": response.content,
+            "sources": sources,
+            "model": response.model,
+        }

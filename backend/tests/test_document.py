@@ -90,7 +90,7 @@ class TestDocumentUploadAsync:
     """Async tests — full upload pipeline including Qdrant indexing."""
 
     @pytest.mark.asyncio
-    async def test_upload_markdown(self, async_client: httpx.AsyncClient):
+    async def test_upload_markdown(self, async_client: httpx.AsyncClient, test_session):
         content = (
             b"# Test Doc\n\nSimple test document content.\n\nWith multiple paragraphs for chunking."
         )
@@ -99,24 +99,44 @@ class TestDocumentUploadAsync:
             files={"file": ("test.md", BytesIO(content), "text/markdown")},
             data={"title": "Test Doc", "doc_type": "markdown"},
         )
-        assert resp.status_code == 201, resp.text
+        assert resp.status_code == 202, resp.text
         data = resp.json()
         assert data["title"] == "Test Doc"
-        assert data["is_indexed"] is True
-        assert data["chunk_count"] >= 1
+        assert data["status"] == "indexing"
+        assert data["is_indexed"] is False
         assert "id" in data
 
+        # Upload is two-phase: index synchronously in the test (no worker).
+        from core.container import create_container
+
+        svc = create_container(test_session).document_service
+        doc = await svc.index_document(data["id"])
+        await test_session.commit()
+        assert doc.is_indexed is True
+        assert doc.chunk_count >= 1
+
+        # Verify via API + status endpoint.
+        resp2 = await async_client.get(f"/api/v1/documents/{data['id']}")
+        assert resp2.json()["is_indexed"] is True
+        status = await async_client.get(f"/api/v1/documents/{data['id']}/status")
+        assert status.json()["is_indexed"] is True
+        assert status.json()["step"] == "completed"
+
     @pytest.mark.asyncio
-    async def test_upload_txt(self, async_client: httpx.AsyncClient):
+    async def test_upload_txt(self, async_client: httpx.AsyncClient, test_session):
         content = b"Plain text file content for testing."
         resp = await async_client.post(
             "/api/v1/documents/upload",
             files={"file": ("test.txt", BytesIO(content), "text/plain")},
             data={"title": "Plain Text", "doc_type": "text"},
         )
-        assert resp.status_code == 201, resp.text
-        data = resp.json()
-        assert data["is_indexed"] is True
+        assert resp.status_code == 202, resp.text
+        from core.container import create_container
+
+        svc = create_container(test_session).document_service
+        doc = await svc.index_document(resp.json()["id"])
+        await test_session.commit()
+        assert doc.is_indexed is True
 
     @pytest.mark.asyncio
     async def test_upload_invalid_file_type(self, async_client: httpx.AsyncClient):
@@ -127,8 +147,8 @@ class TestDocumentUploadAsync:
             files={"file": ("test.xyz", BytesIO(content), "application/octet-stream")},
             data={"title": "Unknown", "doc_type": "other"},
         )
-        # Should handle gracefully (parse as plain text)
-        assert resp.status_code in (201, 400), resp.text
+        # Accepted for background processing (parsed as plain text later).
+        assert resp.status_code == 202, resp.text
 
     @pytest.mark.asyncio
     async def test_get_document_after_upload(self, async_client: httpx.AsyncClient):
@@ -140,7 +160,7 @@ class TestDocumentUploadAsync:
             files={"file": ("get_test.md", BytesIO(content), "text/markdown")},
             data={"title": "Get Test", "doc_type": "markdown"},
         )
-        assert upload_resp.status_code == 201
+        assert upload_resp.status_code == 202
         doc_id = upload_resp.json()["id"]
 
         # Get by ID
@@ -160,7 +180,7 @@ class TestDocumentUploadAsync:
             files={"file": ("delete_test.md", BytesIO(content), "text/markdown")},
             data={"title": "Delete Test", "doc_type": "markdown"},
         )
-        assert upload_resp.status_code == 201
+        assert upload_resp.status_code == 202
         doc_id = upload_resp.json()["id"]
 
         # Delete
@@ -172,7 +192,7 @@ class TestDocumentUploadAsync:
         assert get_resp.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_upload_empty_file(self, async_client: httpx.AsyncClient):
+    async def test_upload_empty_file(self, async_client: httpx.AsyncClient, test_session):
         """Empty file should still be accepted and indexed (0 chunks)."""
         content = b""
         resp = await async_client.post(
@@ -180,7 +200,11 @@ class TestDocumentUploadAsync:
             files={"file": ("empty.md", BytesIO(content), "text/markdown")},
             data={"title": "Empty", "doc_type": "markdown"},
         )
-        assert resp.status_code == 201, resp.text
-        data = resp.json()
-        assert data["is_indexed"] is True
-        assert data["chunk_count"] == 0
+        assert resp.status_code == 202, resp.text
+        from core.container import create_container
+
+        svc = create_container(test_session).document_service
+        doc = await svc.index_document(resp.json()["id"])
+        await test_session.commit()
+        assert doc.is_indexed is True
+        assert doc.chunk_count == 0

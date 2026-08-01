@@ -55,4 +55,14 @@ class DocumentUploadResponse(BaseModel):
     doc_type: str
     chunk_count: int
     is_indexed: bool
+    status: str = "completed"
     message: str
+
+
+class DocumentStatusResponse(BaseModel):
+    id: UUID
+    is_indexed: bool
+    chunk_count: int | None
+    step: str
+    message: str
+    error: str | None = None

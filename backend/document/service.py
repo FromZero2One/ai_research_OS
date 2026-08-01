@@ -21,7 +21,57 @@ from core.config import settings
 from core.event_service import EventLogger
 from core.exceptions import DocumentParsingError, NotFoundError
 from core.interfaces import DocumentParser, EmbeddingModel, VectorStore
+from core.logging import logger
 from document.models import Document, DocumentChunk
+
+
+async def embed_chunks_safely(
+    embedder: EmbeddingModel,
+    texts: list[str],
+    batch_size: int = 32,
+) -> list[list[float] | None]:
+    """Embed texts in batches, isolating provider failures per text.
+
+    Some inputs make bge-m3 produce NaN (Ollama returns HTTP 500), and the
+    adapter converts any failed request into zero vectors — which would poison
+    the whole batch. This helper retries failing texts individually with
+    control characters stripped, and returns ``None`` for texts that still
+    cannot be embedded (callers skip those chunks instead of indexing zeros).
+    """
+    out: list[list[float] | None] = [None] * len(texts)
+
+    def _cleaned(t: str) -> str:
+        return "".join(ch for ch in t if ch.isprintable() or ch in "\n\t")
+
+    async def _embed_one(text: str) -> list[float] | None:
+        try:
+            vec = (await embedder.embed([text]))[0]
+            if any(vec):
+                return vec
+        except Exception:
+            pass
+        cleaned = _cleaned(text)
+        if cleaned != text:
+            try:
+                vec = (await embedder.embed([cleaned]))[0]
+                if any(vec):
+                    return vec
+            except Exception:
+                pass
+        return None
+
+    for start in range(0, len(texts), batch_size):
+        batch = list(range(start, min(start + batch_size, len(texts))))
+        try:
+            vectors = await embedder.embed([texts[i] for i in batch])
+        except Exception:
+            vectors = [[0.0]] * len(batch)
+        for i, vec in zip(batch, vectors):
+            if any(vec):
+                out[i] = vec
+            else:
+                out[i] = await _embed_one(texts[i])
+    return out
 
 
 class DocumentService:
@@ -113,7 +163,9 @@ class DocumentService:
 
     # ── Pipeline: Upload → Parse → Chunk → Embed → Index ─────────
 
-    async def process_upload(
+    # ── Upload (two-phase: create row, then index in background) ──────────
+
+    async def create_from_upload(
         self,
         file_bytes: bytes,
         filename: str,
@@ -122,17 +174,19 @@ class DocumentService:
         company_id: uuid.UUID | None = None,
         metadata: dict | None = None,
     ) -> Document:
-        """Full pipeline: save file → parse → chunk → embed → index."""
+        """Save the file and create the document row — no parsing/indexing.
+
+        Indexing runs separately (``index_document``) via the background task
+        worker so large PDFs don't block the upload request.
+        """
         doc_type = doc_type or self._infer_doc_type(filename)
         title = title or Path(filename).stem
 
-        # 1. Save file
         upload_dir = Path(settings.UPLOAD_DIR)
         upload_dir.mkdir(parents=True, exist_ok=True)
         file_path = upload_dir / f"{uuid.uuid4().hex}_{filename}"
         file_path.write_bytes(file_bytes)
 
-        # 2. Create document record
         doc = await self.create(
             title=title,
             doc_type=doc_type,
@@ -143,13 +197,23 @@ class DocumentService:
             mime_type=self._guess_mime(filename),
             extra_metadata=metadata or {},
         )
+        self._set_progress(doc, "queued", "等待索引...")
+        await self.session.flush()
+        return doc
 
-        # 3. Parse
-        raw_text = await self._parse(file_bytes, filename)
+    async def index_document(self, document_id: uuid.UUID) -> Document:
+        """Run parse → chunk → embed → index, tracking progress per step."""
+        doc = await self.get(document_id)
+        self._set_progress(doc, "parsing", "正在解析文档...")
+        await self.session.flush()
+
+        file_bytes = Path(doc.file_path).read_bytes() if doc.file_path else b""
+        raw_text = await self._parse(file_bytes, doc.source or "")
         doc.raw_text = raw_text
         await self.session.flush()
 
-        # 4. Chunk
+        self._set_progress(doc, "chunking", "正在分块...")
+        await self.session.flush()
         chunks = self._chunk_text(raw_text)
         for i, chunk_text in enumerate(chunks):
             self.session.add(
@@ -162,11 +226,14 @@ class DocumentService:
             )
         await self.session.flush()
 
-        # 5. Embed & Index (batch)
-        await self._embed_and_index(doc)
+        if chunks:
+            self._set_progress(doc, "embedding", f"正在嵌入 {len(chunks)} 个切片...")
+            await self.session.flush()
+            await self._embed_and_index(doc)
 
         doc.chunk_count = len(chunks)
         doc.is_indexed = True
+        self._set_progress(doc, "completed", "索引完成", chunks=len(chunks))
         await self.session.flush()
         await self.session.refresh(doc)
 
@@ -178,10 +245,61 @@ class DocumentService:
             payload={
                 "title": doc.title,
                 "chunks": len(chunks),
-                "file_size": len(file_bytes),
+                "file_size": doc.file_size_bytes,
             },
         )
         return doc
+
+    async def process_upload(
+        self,
+        file_bytes: bytes,
+        filename: str,
+        title: str | None = None,
+        doc_type: str | None = None,
+        company_id: uuid.UUID | None = None,
+        metadata: dict | None = None,
+    ) -> Document:
+        """Synchronous convenience: create + index in one call (tests/scripts)."""
+        doc = await self.create_from_upload(
+            file_bytes=file_bytes,
+            filename=filename,
+            title=title,
+            doc_type=doc_type,
+            company_id=company_id,
+            metadata=metadata,
+        )
+        return await self.index_document(doc.id)
+
+    # ── Indexing progress ────────────────────────────────────────────────
+
+    def _set_progress(self, doc: Document, step: str, message: str, **extra) -> None:
+        # Build a NEW dict: JSONB columns don't detect in-place mutation, so
+        # reassigning the same object would silently drop the update.
+        meta = dict(doc.extra_metadata or {})
+        meta["indexing"] = {"step": step, "message": message, **extra}
+        doc.extra_metadata = meta
+
+    async def get_indexing_status(self, document_id: uuid.UUID) -> dict:
+        doc = await self.get(document_id)
+        prog = (doc.extra_metadata or {}).get("indexing") or {}
+        return {
+            "id": str(doc.id),
+            "is_indexed": doc.is_indexed,
+            "chunk_count": doc.chunk_count,
+            "step": prog.get("step", "queued"),
+            "message": prog.get("message", ""),
+            "error": prog.get("error"),
+        }
+
+    async def set_indexing_error(self, document_id: uuid.UUID, error: str) -> None:
+        doc = await self.get(document_id)
+        meta = dict(doc.extra_metadata or {})
+        meta["indexing"] = {
+            "step": "error",
+            "message": f"索引失败: {error[:200]}",
+            "error": error[:500],
+        }
+        doc.extra_metadata = meta
 
     async def _parse(self, content: bytes, filename: str) -> str:
         """Parse file content to plain text based on extension."""
@@ -264,9 +382,25 @@ class DocumentService:
             return
 
         # Batch embed first — this auto-discovers the real dimension
-        # from the Ollama (or other provider) response.
+        # from the Ollama (or other provider) response, isolating texts the
+        # provider cannot embed (e.g. NaN-producing pages) instead of indexing
+        # zero vectors.
         texts = [c.content for c in chunks]
-        vectors = await self.embedder.embed(texts)
+        vectors = await embed_chunks_safely(self.embedder, texts)
+
+        indexed = [(chunk, vec) for chunk, vec in zip(chunks, vectors) if vec is not None]
+        skipped = len(chunks) - len(indexed)
+        if not indexed:
+            raise DocumentParsingError(
+                f"Embedding failed for '{doc.title}' — provider returned no usable vectors"
+            )
+        if skipped:
+            logger.warning(
+                "  [document] %s: %d/%d chunks un-embeddable, skipped",
+                doc.title,
+                skipped,
+                len(chunks),
+            )
 
         # Now create the collection with the (now-correct) dimension.
         # If the collection already exists, this is a no-op.
@@ -277,7 +411,7 @@ class DocumentService:
         from core.interfaces import VectorRecord
 
         records = []
-        for chunk, vector in zip(chunks, vectors):
+        for chunk, vector in indexed:
             embedding_id = str(uuid.uuid5(doc.id, f"chunk_{chunk.chunk_index}"))
             chunk.embedding_id = embedding_id
             records.append(
@@ -294,7 +428,8 @@ class DocumentService:
                 )
             )
 
-        await self.vector_store.upsert(settings.QDRANT_COLLECTION, records)
+        if records:
+            await self.vector_store.upsert(settings.QDRANT_COLLECTION, records)
 
     # ── Helpers ───────────────────────────────────────────────────
 

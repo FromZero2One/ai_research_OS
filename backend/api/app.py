@@ -55,6 +55,7 @@ from core.task_manager import *  # noqa: F401, F403
 from dashboard.routes import router as dashboard_router
 from document.models import *  # noqa: F401, F403
 from document.routes import router as document_router
+from document.tasks import *  # noqa: F401, F403
 from knowledge.routes import router as knowledge_router
 from market.models import *  # noqa: F401, F403
 from market.routes.financial_routes import router as market_financial_router

@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     QDRANT_COLLECTION: str = "documents"
     EMBEDDING_PROVIDER: str = "ollama"
     EMBEDDING_MODEL: str = "BAAI/bge-m3"
-    EMBEDDING_DIMENSION: int = 768  # matches nomic-embed-text (default Ollama model); BGE-M3 = 1024
+    EMBEDDING_DIMENSION: int = 1024  # BGE-M3 (default Ollama embedding model)
     EMBEDDING_DEVICE: str = "cpu"
     EMBEDDING_PREWARM: bool = True  # pre-warm the embedding model at startup (set False in tests)
 

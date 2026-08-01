@@ -188,6 +188,20 @@ def clean_env(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture(autouse=True)
+def _disable_background_tasks(monkeypatch: pytest.MonkeyPatch):
+    """Stub background task dispatch in tests.
+
+    Real tasks would write TaskRecords to the dev database and touch a second
+    event loop — none of which runs here (the worker isn't part of tests).
+    """
+
+    async def _noop(task_type: str, task_key: str, payload: dict | None = None) -> bool:
+        return True
+
+    monkeypatch.setattr("document.routes.run_in_background", _noop)
+
+
+@pytest.fixture(autouse=True)
 def clean_tables():
     """Truncate all project tables before each test.
 
@@ -225,6 +239,13 @@ async def async_client() -> httpx.AsyncClient:
         trust_env=False,
     ) as ac:
         yield ac
+
+
+@pytest.fixture
+async def test_session() -> AsyncGenerator[AsyncSession, None]:
+    """Test DB session bound to the isolated test engine — for direct service calls."""
+    async for session in _get_test_db():
+        yield session
 
 
 # ── Sample data helpers ───────────────────────────────────────────────
