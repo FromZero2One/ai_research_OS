@@ -16,7 +16,7 @@ const navItems = [
   { label: '知识库', route: '/knowledge', icon: Collection },
   { label: '行情', route: '/market', icon: TrendCharts },
   { label: 'AI 中心', route: '/ai', icon: Cpu },
-  { label: '投资组合', route: '/portfolio', icon: Money },
+  { label: '自选列表', route: '/portfolio', icon: Money },
   { label: '系统状态', route: '/system', icon: Monitor },
 ]
 

@@ -27,7 +27,7 @@ const commands: Command[] = [
   { id: 'knowledge', label: '知识库搜索', description: '混合 RAG 搜索全部文档', icon: '🧠', route: '/knowledge', keywords: ['知识库', '搜索', 'rag', 'knowledge'] },
   { id: 'market', label: '行情', description: '市场行情与 K 线', icon: '📊', route: '/market', keywords: ['行情', '市场', 'k线', 'market', 'stock'] },
   { id: 'ai', label: 'AI 中心', description: 'Prompt 模板与 AI 工具', icon: '⚡', route: '/ai', keywords: ['ai', 'prompt', '模板', '生成'] },
-  { id: 'portfolio', label: '投资组合', description: '自选列表、持仓与研究日志', icon: '💼', route: '/portfolio', keywords: ['组合', '持仓', '自选', 'portfolio'] },
+  { id: 'portfolio', label: '自选列表', description: '关注的公司', icon: '💼', route: '/portfolio', keywords: ['自选', '关注', '组合', 'watchlist'] },
   { id: 'system', label: '系统状态', description: '调度器状态与执行记录', icon: '📡', route: '/system', keywords: ['系统', '状态', '调度', 'scheduler'] },
 ]
 

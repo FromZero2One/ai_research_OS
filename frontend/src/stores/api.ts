@@ -66,15 +66,18 @@ export interface Company {
   id: string; ticker: string; name: string
   description: string | null; sector: string | null; industry: string | null
   headquarters: string | null; website: string | null; is_active: boolean
+  priority: number; target_price: number | null; reason: string | null
   tags: { id: string; tag: string }[]; created_at: string
 }
 
-export function useCompanies(query?: MaybeRefOrGetter<string>) {
+export function useCompanies(query?: MaybeRefOrGetter<string>, opts?: { active?: boolean }) {
   return useQuery<{ items: Company[]; total: number }>({
-    queryKey: computed(() => ['companies', toValue(query) || 'all']),
+    queryKey: computed(() => ['companies', toValue(query) || 'all', opts?.active ? 'active' : 'all']),
     queryFn: () => {
       const q = toValue(query)
-      return fetchApi(q ? `/companies?query=${encodeURIComponent(q)}` : '/companies')
+      let url = q ? `/companies?query=${encodeURIComponent(q)}` : '/companies'
+      if (opts?.active) url += `${url.includes('?') ? '&' : '?'}is_active=true`
+      return fetchApi(url)
     },
   })
 }
@@ -245,6 +248,17 @@ export function useUpdateDocumentCompany() {
   })
 }
 
+export function useWatchCompany() {
+  const qc = useQueryClient()
+  return useMutation<Company, Error, { ticker: string; name?: string; priority?: number; target_price?: number | null; reason?: string }>({
+    mutationFn: (body) => fetchApi('/companies/watch', { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['companies'] })
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+}
+
 // ── Market ──
 export interface PricePoint { date: string; open: number; high: number; low: number; close: number; volume: number }
 export interface MarketPricesResponse { ticker: string; count: number; prices: PricePoint[] }
@@ -330,7 +344,6 @@ export function useLlmModels() {
 }
 
 // ── Portfolio ──
-export function useWatchlists() { return useList<any[]>(['watchlists'], '/portfolio/watchlists') }
 export function useHoldings() { return useList<any[]>(['holdings'], '/portfolio/holdings') }
 
 export function useAddHolding() {
@@ -338,22 +351,6 @@ export function useAddHolding() {
   return useMutation<unknown, Error, { ticker: string; shares: number; avg_cost_basis: number | null }>({
     mutationFn: (body) => fetchApi('/portfolio/holdings', { method: 'POST', body: JSON.stringify(body) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['holdings'] }) },
-  })
-}
-
-export function useAddWatchlistItem(watchlistId: MaybeRefOrGetter<string>) {
-  const qc = useQueryClient()
-  return useMutation<unknown, Error, { ticker: string }>({
-    mutationFn: (body) => fetchApi(`/portfolio/watchlists/${toValue(watchlistId)}/items`, { method: 'POST', body: JSON.stringify(body) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['watchlists'] }) },
-  })
-}
-
-export function useRemoveWatchlistItem() {
-  const qc = useQueryClient()
-  return useMutation<unknown, Error, string>({
-    mutationFn: (itemId) => fetchApi(`/portfolio/watchlists/items/${itemId}`, { method: 'DELETE' }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['watchlists'] }) },
   })
 }
 
