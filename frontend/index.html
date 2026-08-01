@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AI 投研系统</title>
+    <script>
+      // Apply the saved theme before first paint to avoid a flash.
+      document.documentElement.classList.add(localStorage.getItem('theme') || 'dark')
+    </script>
   </head>
   <body>
     <div id="app"></div>

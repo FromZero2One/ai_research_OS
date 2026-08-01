@@ -12,7 +12,30 @@
   --danger: #f87171;
 }
 
-html.dark {
+/* Light palette — switch via html.light (toggled in the sidebar). */
+html.light {
+  --bg-primary: #f4f6fa;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #eef1f6;
+  --text-primary: #1f2430;
+  --text-secondary: #5b6472;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --border: #d8dee8;
+  --success: #16a34a;
+  --warning: #d97706;
+  --danger: #dc2626;
+
+  --el-color-primary-light-3: #93c5fd;
+  --el-color-primary-light-5: #bfdbfe;
+  --el-color-primary-dark-2: #1d4ed8;
+  --el-mask-color: rgba(0, 0, 0, 0.4);
+}
+
+/* Element Plus variable mapping — same structure in both themes; values flow
+   from the theme-specific custom properties above. */
+html.dark,
+html.light {
   --el-bg-color: var(--bg-primary);
   --el-bg-color-overlay: var(--bg-secondary);
   --el-border-color: var(--border);
@@ -32,6 +55,72 @@ html.dark {
   --el-fill-color-light: var(--bg-secondary);
   --el-fill-color-lighter: var(--bg-tertiary);
   --el-mask-color: rgba(0, 0, 0, 0.6);
+}
+
+/* Dark-mode component-level overrides — Element Plus defaults to light values
+   for these, which look washed out / unreadable on dark backgrounds. */
+html.dark {
+  --el-text-color-placeholder: #8a91a0;
+  --el-border-color-darker: #3a4152;
+  --el-border-color-hover: #3a4152;
+  --el-border-color-extra-light: #2d3140;
+  --el-bg-color-blank: var(--bg-secondary);
+  --el-fill-color-blank: var(--bg-secondary);
+  --el-fill-color: var(--bg-tertiary);
+  --el-fill-color-light: var(--bg-secondary);
+  --el-fill-color-lighter: var(--bg-tertiary);
+  --el-fill-color-extra-light: var(--bg-tertiary);
+  --el-fill-color-dark: #2d3140;
+  --el-fill-color-darker: #343a4c;
+  --el-disabled-bg-color: #232736;
+  --el-disabled-text-color: #6b7280;
+  --el-disabled-border-color: #2d3140;
+  --el-text-color-disabled: #6b7280;
+  --el-drawer-bg-color: var(--bg-secondary);
+  --el-dialog-bg-color: var(--bg-secondary);
+  --el-message-box-bg-color: var(--bg-secondary);
+  --el-message-bg-color: var(--bg-secondary);
+  --el-message-text-color: var(--text-primary);
+  --el-message-border-color: var(--border);
+  --el-overlay-color-lighter: rgba(0, 0, 0, 0.65);
+  --el-overlay-color: rgba(0, 0, 0, 0.75);
+  --el-pagination-bg-color: var(--bg-secondary);
+  --el-pagination-text-color: var(--text-secondary);
+  --el-pagination-button-disabled-bg-color: var(--bg-tertiary);
+  --el-tooltip-bg-color: var(--bg-tertiary);
+  --el-tooltip-text-color: var(--text-primary);
+  --el-tooltip-border-color: var(--border);
+  --el-box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --el-box-shadow-light: 0 0 12px rgba(0, 0, 0, 0.35);
+  --el-box-shadow-lighter: 0 0 6px rgba(0, 0, 0, 0.3);
+  --el-loading-mask-bg-color: rgba(15, 17, 23, 0.7);
+
+  /* Semantic color tints — EP's light-9 etc. default to near-white fills. */
+  --el-color-primary-light-7: #3d6fca;
+  --el-color-primary-light-8: #335daa;
+  --el-color-primary-light-9: #2a4d8c;
+  --el-color-success-light-3: #1f9e6e;
+  --el-color-success-light-5: #1b8a60;
+  --el-color-success-light-7: #15704e;
+  --el-color-success-light-8: #11593e;
+  --el-color-success-light-9: #0e4a34;
+  --el-color-warning-light-3: #b58a1f;
+  --el-color-warning-light-5: #997317;
+  --el-color-warning-light-7: #7a5c12;
+  --el-color-warning-light-8: #63490e;
+  --el-color-warning-light-9: #4f3a0b;
+  --el-color-danger-light-3: #d05656;
+  --el-color-danger-light-5: #b84a4a;
+  --el-color-danger-light-7: #963c3c;
+  --el-color-danger-light-8: #7a3030;
+  --el-color-danger-light-9: #612626;
+  --el-color-info: #a3a6ad;
+  --el-color-info-light-3: #7d8189;
+  --el-color-info-light-5: #6b6f77;
+  --el-color-info-light-7: #565a63;
+  --el-color-info-light-8: #4a4e57;
+  --el-color-info-light-9: #3a3f4a;
+  --el-color-info-dark-2: #b6b9bf;
 }
 
 body {

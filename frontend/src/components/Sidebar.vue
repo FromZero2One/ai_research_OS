@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { HomeFilled, Lightning, Search, Timer, Briefcase, Document, Collection, TrendCharts, Cpu, Money, Monitor, Setting } from '@element-plus/icons-vue'
 
@@ -28,6 +28,17 @@ const activeIndex = computed(() => {
 function handleSelect(idx: string) {
   router.push(navItems[Number(idx)].route)
 }
+
+const theme = ref<'dark' | 'light'>(
+  document.documentElement.classList.contains('light') ? 'light' : 'dark',
+)
+
+function toggleTheme() {
+  theme.value = theme.value === 'dark' ? 'light' : 'dark'
+  document.documentElement.classList.remove('dark', 'light')
+  document.documentElement.classList.add(theme.value)
+  localStorage.setItem('theme', theme.value)
+}
 </script>
 
 <template>
@@ -45,6 +56,11 @@ function handleSelect(idx: string) {
       <el-icon><component :is="item.icon" /></el-icon>
       <span>{{ item.label }}</span>
     </el-menu-item>
+    <div class="sidebar-footer">
+      <el-button text size="small" @click="toggleTheme" class="theme-toggle">
+        {{ theme === 'dark' ? '☀️ 白天模式' : '🌙 暗黑模式' }}
+      </el-button>
+    </div>
   </el-menu>
 </template>
 
@@ -78,5 +94,14 @@ function handleSelect(idx: string) {
 }
 .sidebar-menu .el-menu-item.is-active {
   background-color: rgba(79, 140, 255, 0.1);
+}
+.sidebar-footer {
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+}
+.theme-toggle {
+  color: var(--text-secondary);
+  width: 100%;
 }
 </style>
