@@ -10,7 +10,7 @@ A personal AI-powered investment research assistant. Company → Knowledge → A
                     User
                      │
               Research Workspace
-              (Next.js Dashboard)
+              (Vue 3 Dashboard)
                      │
                      ▼
               API Gateway (FastAPI)

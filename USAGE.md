@@ -380,13 +380,12 @@ GET /api/v1/knowledge/search/document/{document_id}?query=...  # 只搜索指定
 
 ### 类型系统
 
-```bash
-# 从后端 OpenAPI 模式重新生成前端类型
-cd frontend && npm run gen
+前端视图当前使用 `src/stores/api.ts` 中手写的 TypeScript 接口；OpenAPI 类型生成管线保留为按需工具（当前视图未引用生成的类型文件）：
 
+```bash
+# 从后端 OpenAPI 模式按需生成前端类型
+cd frontend && npm run gen
 # 生成: backend/scripts/generate_openapi.py → openapi.json → src/types/api.ts
-# 使用: import type { ApiResponse } from '@/types/helpers'
-#       type CompanyList = ApiResponse<'list_companies_api_v1_companies_get'>
 ```
 
 **API示例**:
@@ -828,6 +827,17 @@ CHUNK_OVERLAP=64
 # 市场数据
 AKSHARE_ENABLED=true               # A股 akshare MySQL
 YFINANCE_ENABLED=true              # 美股 yfinance
+
+# 外部数据源（机器相关，按需修改）
+AKSHARE_MCP_DIR=/home/wsm/codes/akshare_mcp     # akshare 子进程 venv 目录
+# AKSHARE_CLOUD_MCP_URL=http://8.137.104.120:8088/mcp   # 云端 MCP 兜底层（留空禁用）
+AKSHARE_MYSQL_HOST=127.0.0.1       # akshare MySQL 镜像（只读）
+AKSHARE_MYSQL_PORT=3306
+AKSHARE_MYSQL_USER=root
+AKSHARE_MYSQL_PASSWORD=root
+AKSHARE_MYSQL_DATABASE=akshare
+NEWSNOW_MCP_SERVER_PATH=/home/wsm/codes/newsnow/tools/mcp-server.ts
+NEWSNOW_BASE_URL=https://newsnow.busiyi.world
 
 # 调度器
 SCHEDULER_ENABLED=false            # true=开启定时任务

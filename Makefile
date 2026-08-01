@@ -3,7 +3,7 @@
 # ── Development ──────────────────────────────────────────────────────
 
 dev: dev-db migrate dev-backend
-	@echo "AI Research OS running on http://localhost:3000"
+	@echo "AI Research OS running on http://localhost:5173"
 
 dev-db:
 	docker compose -f docker/docker-compose.yml up -d
