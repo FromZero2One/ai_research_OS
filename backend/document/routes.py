@@ -13,6 +13,7 @@ from document.schemas import (
     DocumentListResponse,
     DocumentResponse,
     DocumentStatusResponse,
+    DocumentUpdateRequest,
     DocumentUploadResponse,
 )
 
@@ -88,6 +89,21 @@ async def get_document(
 ):
     svc = container.document_service
     doc = await svc.get(document_id)
+    return doc
+
+
+@router.patch("/{document_id}", response_model=DocumentResponse)
+async def update_document(
+    document_id: uuid.UUID,
+    data: DocumentUpdateRequest,
+    container: Container = Depends(get_container),
+):
+    """Update document metadata (currently: link/unlink a company)."""
+    svc = container.document_service
+    doc = await svc.get(document_id)
+    doc.company_id = data.company_id
+    await container.session.flush()
+    await container.session.refresh(doc)
     return doc
 
 

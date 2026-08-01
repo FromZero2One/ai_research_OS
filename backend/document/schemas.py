@@ -66,3 +66,7 @@ class DocumentStatusResponse(BaseModel):
     step: str
     message: str
     error: str | None = None
+
+
+class DocumentUpdateRequest(BaseModel):
+    company_id: UUID | None = None

@@ -202,7 +202,7 @@ async function handleSaveCompany() {
 
       <el-tab-pane label="文档" name="文档">
         <div class="space-y-4">
-          <div class="flex items-center justify-between"><span class="text-sm text-secondary">已上传文档</span><el-button @click="router.push('/documents')" type="primary" size="small">+ 上传文档</el-button></div>
+          <div class="flex items-center justify-between"><span class="text-sm text-secondary">已上传文档</span><el-button @click="router.push(`/documents?company=${id}`)" type="primary" size="small">+ 上传文档</el-button></div>
           <div v-if="!relatedDocs.length" class="empty-card"><div class="text-3xl mb-3">📄</div><div class="font-medium">暂无关联文档</div><div class="text-sm text-secondary mt-1">上传相关财报或研究报告，上传后会自动索引到知识库</div></div>
           <div v-else v-for="doc in relatedDocs" :key="doc.id" class="doc-card"><div class="font-medium">{{ doc.title }}</div><div class="flex gap-3 text-xs text-secondary mt-1"><span>{{ doc.doc_type?.toUpperCase() }}</span><span :class="doc.is_indexed?'text-success':'text-warning'">{{ doc.is_indexed?'✅ 已索引':'⏳ 未索引' }}</span><span v-if="doc.chunk_count!=null">{{ doc.chunk_count }} 切片</span></div></div>
         </div>
