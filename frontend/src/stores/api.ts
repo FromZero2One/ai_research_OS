@@ -122,6 +122,22 @@ export interface ResearchSessionDetail extends ResearchSession {
   evidences: any[]; reports: any[]
 }
 
+export const RESEARCH_STATUS_LABELS: Record<string, string> = {
+  draft: '草稿',
+  researching: '研究中',
+  reviewing: '评审中',
+  completed: '已完成',
+  archived: '已归档',
+}
+
+export const DECISION_LABELS: Record<string, string> = {
+  buy: '买入',
+  sell: '卖出',
+  hold: '持有',
+  watch: '关注',
+  pass: '跳过',
+}
+
 export function useResearchSessions(status?: string) {
   const params = status ? `?status=${status}` : ''
   return useList<ResearchSession[]>(['research', status || 'all'], `/research/sessions${params}`)

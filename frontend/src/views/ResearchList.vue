@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { useResearchSessions, useCreateResearch, useCompanies } from '@/stores/api'
+import { DECISION_LABELS, RESEARCH_STATUS_LABELS, useResearchSessions, useCreateResearch, useCompanies } from '@/stores/api'
 
 const status = ref('all')
 const { data: sessions, isLoading } = useResearchSessions(status.value === 'all' ? undefined : status.value)
@@ -14,7 +14,13 @@ const newTitle = ref('')
 const newQuestion = ref('')
 const newCompanyId = ref('')
 
-const statusOptions = ['all', 'draft', 'researching', 'reviewing', 'completed']
+const statusOptions = [
+  { value: 'all', label: '全部' },
+  { value: 'draft', label: '草稿' },
+  { value: 'researching', label: '研究中' },
+  { value: 'reviewing', label: '评审中' },
+  { value: 'completed', label: '已完成' },
+]
 
 const filteredSessions = computed(() => {
   if (!sessions.value) return []
@@ -61,7 +67,7 @@ function getStatusType(s: string) {
     </div>
 
     <el-radio-group v-model="status" class="filter-bar">
-      <el-radio-button v-for="s in statusOptions" :key="s" :value="s">{{ s.charAt(0).toUpperCase() + s.slice(1) }}</el-radio-button>
+      <el-radio-button v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</el-radio-button>
     </el-radio-group>
 
     <div v-if="isLoading" class="loading-state">加载中...</div>
@@ -78,8 +84,8 @@ function getStatusType(s: string) {
           <div v-if="session.thesis" class="session-thesis">论点: {{ session.thesis }}</div>
         </div>
         <div class="session-meta">
-          <el-tag v-if="session.decision" :type="session.decision === 'buy' ? 'success' : session.decision === 'sell' ? 'danger' : 'warning'" size="small" effect="dark">{{ session.decision.toUpperCase() }}</el-tag>
-          <el-tag :type="getStatusType(session.status)" size="small">{{ session.status }}</el-tag>
+          <el-tag v-if="session.decision" :type="session.decision === 'buy' ? 'success' : session.decision === 'sell' ? 'danger' : 'warning'" size="small" effect="dark">{{ DECISION_LABELS[session.decision] || session.decision }}</el-tag>
+          <el-tag :type="getStatusType(session.status)" size="small">{{ RESEARCH_STATUS_LABELS[session.status] || session.status }}</el-tag>
         </div>
       </div>
     </div>

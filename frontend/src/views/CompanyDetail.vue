@@ -3,6 +3,8 @@ import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
+  DECISION_LABELS,
+  RESEARCH_STATUS_LABELS,
   useCompany,
   useCompanyWorkspace,
   useDeleteCompany,
@@ -108,7 +110,7 @@ async function handleSaveCompany() {
     <div v-if="currentThesis?.thesis && !editingThesis" class="thesis-bar">
       <div class="flex-1 min-w-0"><div class="text-xs text-secondary mb-1">当前观点</div><p class="text-sm line-clamp-2" style="color:var(--text-primary)">{{ currentThesis.thesis }}</p></div>
       <div class="flex items-center gap-3 ml-4 shrink-0">
-        <el-tag v-if="currentThesis.decision" :type="currentThesis.decision==='buy'?'success':currentThesis.decision==='sell'?'danger':'warning'" size="small" effect="dark">{{ currentThesis.decision.toUpperCase() }}</el-tag>
+        <el-tag v-if="currentThesis.decision" :type="currentThesis.decision==='buy'?'success':currentThesis.decision==='sell'?'danger':'warning'" size="small" effect="dark">{{ DECISION_LABELS[currentThesis.decision] || currentThesis.decision }}</el-tag>
         <span v-if="currentThesis.confidence!=null" class="text-xs text-secondary">{{ Math.round(currentThesis.confidence*100) }}%</span>
         <el-button text size="small" @click="thesisText=currentThesis.thesis||''; thesisDecision=currentThesis.decision||'watch'; thesisConfidence=currentThesis.confidence||0.6; editingThesis=true">编辑</el-button>
       </div>
@@ -142,7 +144,7 @@ async function handleSaveCompany() {
             <div v-else-if="currentThesis?.thesis">
               <p class="leading-relaxed">{{ currentThesis.thesis }}</p>
               <div class="flex items-center gap-3 mt-3">
-                <el-tag v-if="currentThesis.decision" :type="currentThesis.decision==='buy'?'success':currentThesis.decision==='sell'?'danger':'warning'" size="small" effect="dark">{{ currentThesis.decision.toUpperCase() }}</el-tag>
+                <el-tag v-if="currentThesis.decision" :type="currentThesis.decision==='buy'?'success':currentThesis.decision==='sell'?'danger':'warning'" size="small" effect="dark">{{ DECISION_LABELS[currentThesis.decision] || currentThesis.decision }}</el-tag>
                 <span v-if="currentThesis.confidence!=null" class="text-sm text-secondary">置信度: {{ Math.round(currentThesis.confidence*100) }}%</span>
                 <span v-if="currentThesis.updated_at" class="text-xs text-secondary">更新于 {{ new Date(currentThesis.updated_at).toLocaleDateString('zh-CN') }}</span>
                 <el-button text size="small" class="ml-auto" @click="thesisText=currentThesis.thesis||''; thesisDecision=currentThesis.decision||'watch'; thesisConfidence=currentThesis.confidence||0.6; editingThesis=true">编辑</el-button>
@@ -164,7 +166,7 @@ async function handleSaveCompany() {
             <template #header>📋 近期研究</template>
             <div v-for="s in workspace.recent_research" :key="s.id" class="research-item" @click="router.push(`/research/${s.id}`)">
               <div><div class="text-sm">{{ s.title }}</div><div class="text-xs text-secondary mt-0.5">{{ s.created_at?new Date(s.created_at).toLocaleDateString('zh-CN'):'' }}</div></div>
-              <div class="flex items-center gap-2"><el-tag v-if="s.decision" size="small" type="success">{{ s.decision.toUpperCase() }}</el-tag><span class="text-xs text-secondary">{{ s.status }}</span></div>
+              <div class="flex items-center gap-2"><el-tag v-if="s.decision" size="small" type="success">{{ DECISION_LABELS[s.decision] || s.decision }}</el-tag><span class="text-xs text-secondary">{{ RESEARCH_STATUS_LABELS[s.status] || s.status }}</span></div>
             </div>
           </el-card>
         </div>
@@ -195,7 +197,7 @@ async function handleSaveCompany() {
           <div v-if="!relatedSessions.length" class="empty-card"><div class="text-3xl mb-3">🔬</div><div class="font-medium">暂无研究</div><div class="text-sm text-secondary mt-1">点击上方 "新建研究会话" 开始研究</div></div>
           <div v-else v-for="s in relatedSessions" :key="s.id" class="session-card" @click="router.push(`/research/${s.id}`)">
             <div><div class="font-medium text-primary">{{ s.title }}</div><div class="text-sm text-secondary mt-1 line-clamp-1">{{ s.question }}</div></div>
-            <div class="flex items-center gap-2 ml-3"><el-tag v-if="s.decision" :type="s.decision==='buy'?'success':s.decision==='sell'?'danger':'warning'" size="small" effect="dark">{{ s.decision.toUpperCase() }}</el-tag><el-tag size="small">{{ s.status }}</el-tag></div>
+            <div class="flex items-center gap-2 ml-3"><el-tag v-if="s.decision" :type="s.decision==='buy'?'success':s.decision==='sell'?'danger':'warning'" size="small" effect="dark">{{ DECISION_LABELS[s.decision] || s.decision }}</el-tag><el-tag size="small">{{ RESEARCH_STATUS_LABELS[s.status] || s.status }}</el-tag></div>
           </div>
         </div>
       </el-tab-pane>

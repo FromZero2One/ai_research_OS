@@ -1,7 +1,16 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useResearchSession, useGeneratePlan, useAutoGatherEvidence, useGenerateReport, useFinalizeResearch, useSessionTimeline } from '@/stores/api'
+import {
+  DECISION_LABELS,
+  RESEARCH_STATUS_LABELS,
+  useResearchSession,
+  useGeneratePlan,
+  useAutoGatherEvidence,
+  useGenerateReport,
+  useFinalizeResearch,
+  useSessionTimeline,
+} from '@/stores/api'
 
 const route = useRoute(); const router = useRouter()
 const id = route.params.id as string
@@ -50,8 +59,8 @@ function toggleEvidence(id: string) { const s = new Set(expandedEvidence.value);
     <div><el-button text @click="router.push('/research')">← 研究中心</el-button>
       <h1 class="page-title mt-2">{{ session.title }}</h1>
       <div class="flex items-center gap-3 mt-2">
-        <el-tag :type="statusType(session.status)" size="small">{{ session.status }}</el-tag>
-        <el-tag v-if="session.decision" :type="decisionType(session.decision)" size="small" effect="dark">{{ session.decision.toUpperCase() }}</el-tag>
+        <el-tag :type="statusType(session.status)" size="small">{{ RESEARCH_STATUS_LABELS[session.status] || session.status }}</el-tag>
+        <el-tag v-if="session.decision" :type="decisionType(session.decision)" size="small" effect="dark">{{ DECISION_LABELS[session.decision] || session.decision }}</el-tag>
         <span v-if="session.confidence != null" class="text-sm text-secondary">置信度: {{ Math.round(session.confidence * 100) }}%</span>
       </div>
     </div>
