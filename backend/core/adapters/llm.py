@@ -52,9 +52,14 @@ class OllamaLLM:
         self,
         base_url: str = settings.OLLAMA_BASE_URL,
         model: str = settings.OLLAMA_MODEL,
+        think: bool = False,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._model = model
+        # qwen3-family models default to a long internal "thinking" chain that
+        # can consume the whole token budget and return an empty final answer.
+        # Disable it by default; callers can opt into reasoning with think=True.
+        self._think = think
 
     @property
     def model_name(self) -> str:
@@ -72,6 +77,7 @@ class OllamaLLM:
             "model": self._model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "options": {"temperature": temperature, "num_predict": max_tokens},
+            "think": self._think,
             "stream": stream,
         }
 

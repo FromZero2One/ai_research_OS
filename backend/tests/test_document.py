@@ -61,6 +61,27 @@ class TestChunker:
         assert text.endswith(chunks[-1])
         assert all(f"[{i:05d}]" in joined for i in range(400))
 
+    def test_markdown_table_kept_whole(self):
+        """A reconstructed financial table must not be split across chunks —
+        the header row has to stay with its data rows."""
+        header = (
+            "| 科目 | 中国银行集团 2025年 | 中国银行集团 2024年 | 中国银行 2025年 | 中国银行 2024年 |\n"  # noqa: E501
+            "| --- | --- | --- | --- | --- |\n"
+        )
+        rows = "\n".join(
+            f"| 项目{i} | {1000 + i} | {900 + i} | {800 + i} | {700 + i} |" for i in range(20)
+        )
+        text = f"{header}{rows}\n\n结尾段落。"
+        chunks = chunk_text(text, chunk_size=128, chunk_overlap=16)
+
+        # Find the chunk that contains the table header; it must also contain
+        # the last table row (i.e. the whole table is in one chunk).
+        table_chunks = [c for c in chunks if "中国银行集团 2025年" in c]
+        assert len(table_chunks) == 1
+        assert "项目19" in table_chunks[0]
+        # And the surrounding text still chunked normally.
+        assert any("结尾" in c for c in chunks)
+
 
 class TestDocumentCRUD:
     """Synchronous DB-only tests — no Qdrant needed."""

@@ -307,8 +307,7 @@ class DocumentService:
 
         try:
             if ext == ".pdf":
-                result = await self.pdf_parser.parse(content, filename)
-                return result.text
+                return await self._parse_pdf_with_tables(content)
             elif ext in (".md", ".markdown"):
                 return content.decode("utf-8", errors="replace")
             elif ext == ".txt":
@@ -329,6 +328,42 @@ class DocumentService:
             raise DocumentParsingError(f"Failed to parse PDF {filename}: {e}")
         except (UnicodeDecodeError, ValueError) as e:
             raise DocumentParsingError(f"Failed to parse {filename}: {e}")
+
+    async def _parse_pdf_with_tables(self, content: bytes) -> str:
+        """Parse a PDF page by page, reconstructing financial tables.
+
+        Pages with a recognizable table (year header + numeric columns) are
+        replaced by a Markdown table with explicit scope labels (集团/母公司),
+        so chunking, embedding and LLM reading never lose the column groups.
+        Falls back to the PyMuPDF parser if pdfplumber is unavailable or fails.
+        """
+        import io
+
+        try:
+            import pdfplumber
+
+            from document.table_extractor import (
+                extract_tables_from_page,
+                table_to_markdown,
+            )
+        except ImportError:
+            result = await self.pdf_parser.parse(content, "")
+            return result.text
+
+        try:
+            pages_text: list[str] = []
+            with pdfplumber.open(io.BytesIO(content)) as pdf:
+                for page in pdf.pages:
+                    tables = extract_tables_from_page(page)
+                    if tables:
+                        pages_text.append(table_to_markdown(tables[0]))
+                    else:
+                        pages_text.append(page.extract_text() or "")
+            return "\n\n".join(pages_text)
+        except Exception as e:
+            logger.warning("  [document] pdfplumber parse failed (%s) — falling back", e)
+            result = await self.pdf_parser.parse(content, "")
+            return result.text
 
     async def _parse_html(self, content: bytes) -> str:
         """Strip HTML tags to get plain text."""

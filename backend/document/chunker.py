@@ -36,9 +36,21 @@ def chunk_text(
 
     chunks: list[str] = []
     start = 0
+    table_spans = _table_spans(text)
 
     while start < len(text):
         end = _find_chunk_end(text, start, chunk_size)
+
+        # Keep a Markdown table whole: if the current window touches a table,
+        # extend through the table end (header stays with its rows).
+        table_end = None
+        for t_start, t_end in table_spans:
+            if t_start <= start < t_end:
+                table_end = t_end
+                break
+        if table_end is not None and table_end > end:
+            end = table_end
+
         if end <= start:
             break  # Safety: no forward progress (should not happen with valid size)
 
@@ -50,10 +62,14 @@ def chunk_text(
         if end >= len(text):
             break
 
-        # Move start, accounting for overlap
-        next_start = end - chunk_overlap
-        # Guarantee forward progress even with degenerate overlap settings.
-        start = next_start if next_start > start else start + 1
+        if table_end is not None and end == table_end:
+            # Table finished — continue after it without overlap re-processing.
+            start = end
+        else:
+            # Move start, accounting for overlap.
+            next_start = end - chunk_overlap
+            # Guarantee forward progress even with degenerate overlap settings.
+            start = next_start if next_start > start else start + 1
 
     return chunks
 
@@ -84,3 +100,27 @@ def _find_chunk_end(text: str, start: int, chunk_size: int) -> int:
 
     # 4. Hard cut
     return start + chunk_size
+
+
+def _table_spans(text: str, max_table_size: int = 8000) -> list[tuple[int, int]]:
+    """Ranges of contiguous Markdown table blocks (lines starting with '|').
+
+    Financial tables are reconstructed as Markdown; splitting one across two
+    chunks would separate the header row from its data rows and make the
+    result unreadable. Keep each table in a single chunk (capped).
+    """
+    spans: list[tuple[int, int]] = []
+    start: int | None = None
+    pos = 0
+    for line in text.splitlines(keepends=True):
+        if line.lstrip().startswith("|"):
+            if start is None:
+                start = pos
+        else:
+            if start is not None:
+                spans.append((start, pos))
+                start = None
+        pos += len(line)
+    if start is not None:
+        spans.append((start, len(text)))
+    return [(s, min(e, s + max_table_size)) for s, e in spans]

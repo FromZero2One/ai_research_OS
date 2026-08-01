@@ -6,7 +6,7 @@ No Knowledge Graph — that's V2.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import jieba
 from rank_bm25 import BM25Okapi
@@ -115,7 +115,12 @@ ASK_SYSTEM_PROMPT = (
     "你是一名严谨的投资研究助理。根据下面给出的文档片段回答用户的问题。要求：\n"
     "1. 只依据提供的片段回答，不要编造数据；片段中没有的信息明确说“资料中未提及”。\n"
     "2. 引用来源时用 [1]、[2] 等标注对应片段编号。\n"
-    "3. 用中文回答，简洁、结构化。"
+    "3. 用中文回答，简洁、结构化。\n"
+    "4. 数字要整理成易读的格式：关键数据用 **加粗**，多组数据用列表或 Markdown 表格呈现，"
+    "并明确标注单位（如 百万元/亿元）与口径（集团 vs 母公司、是否归属于母公司股东）。\n"
+    "5. 单位换算必须准确：百万元→亿元 除以 100（例如 257,936 百万元 = 2,579.36 亿元）。"
+    "若对换算没有把握，直接保留原文单位（百万元），不要自行换算。\n"
+    "6. 不要原样粘贴大段原始表格文本，只提炼对回答问题有用的数字。"
 )
 
 
@@ -143,6 +148,44 @@ class SearchResult:
     chunk_index: int
     title: str
     doc_type: str
+    snippet: str = ""
+    highlights: list[str] = field(default_factory=list)
+
+
+def _make_snippet(content: str, query_tokens: list[str]) -> tuple[str, list[str]]:
+    """Build a match-centered snippet + the matched terms for highlighting.
+
+    Shows the window around the first matched term instead of the chunk head,
+    so users see *why* the chunk was retrieved.
+    """
+    lowered = content.lower()
+    found = [t for t in query_tokens if t and t.lower() in lowered]
+    if found:
+        first = min(lowered.find(t.lower()) for t in found)
+        # If the match sits inside a Markdown table, start the snippet at the
+        # table header so column meaning (集团/母公司, years) is visible.
+        header_pos = -1
+        pos = 0
+        for line in content.splitlines(keepends=True):
+            stripped = line.strip()
+            if stripped.startswith("|") and (
+                "科目" in stripped or any(y in stripped for y in ("2025年", "2024年"))
+            ):
+                header_pos = pos
+            if pos > first:
+                break
+            pos += len(line)
+        if header_pos != -1 and first - header_pos < 800:
+            start = header_pos
+        else:
+            start = max(0, first - 100)
+        end = min(len(content), first + 220)
+        snippet = ("…" if start > 0 else "") + content[start:end]
+        if end < len(content):
+            snippet += "…"
+        return snippet, found[:5]
+    truncated = content[:220]
+    return truncated + ("…" if len(content) > 220 else ""), []
 
 
 # Module-level BM25 cache (shared across requests, rebuilt on TTL expiry).
@@ -244,7 +287,12 @@ class KnowledgeService:
             },
         )
 
-        return enriched[:top_k]
+        # Attach match-centered snippets + highlight terms for display.
+        query_tokens = _expand_tokens(_tokenize(query))
+        results = enriched[:top_k]
+        for r in results:
+            r.snippet, r.highlights = _make_snippet(r.content, query_tokens)
+        return results
 
     async def search_by_document(
         self,
@@ -446,10 +494,21 @@ class KnowledgeService:
             for row in rows
         ]
 
-    async def ask(self, question: str, top_k: int = 5) -> dict:
-        """Document Q&A — retrieve top chunks, then answer with citations."""
-        from core.adapters.llm import create_llm
-        from core.interfaces import LLMMessage
+    async def ask(
+        self,
+        question: str,
+        top_k: int = 5,
+        provider: str = "default",
+        model: str | None = None,
+    ) -> dict:
+        """Document Q&A — retrieve top chunks, then answer with citations.
+
+        ``provider`` is "default" (configured LLM, e.g. DeepSeek) or "ollama"
+        (local models; ``model`` selects one, falling back to the configured
+        Ollama model).
+        """
+        from core.adapters.llm import OllamaLLM, create_llm
+        from core.interfaces import LLM, LLMMessage
 
         results = await self.search(question, top_k=top_k)
         if not results:
@@ -458,7 +517,14 @@ class KnowledgeService:
         fragments = "\n\n".join(
             f"[{i}] (score {r.score:.2f}) {r.content[:600]}" for i, r in enumerate(results, 1)
         )
-        llm = create_llm()
+        llm: LLM
+        if provider == "ollama":
+            llm = OllamaLLM(
+                base_url=settings.OLLAMA_BASE_URL,
+                model=model or settings.OLLAMA_MODEL,
+            )
+        else:
+            llm = create_llm()
         response = await llm.generate(
             messages=[
                 LLMMessage(role="system", content=ASK_SYSTEM_PROMPT),
@@ -482,3 +548,36 @@ class KnowledgeService:
             "sources": sources,
             "model": response.model,
         }
+
+    async def list_llm_models(self) -> dict:
+        """Return the default LLM and locally available Ollama chat models."""
+        default = {
+            "provider": settings.LLM_PROVIDER,
+            "model": (
+                settings.OPENAI_MODEL
+                if settings.LLM_PROVIDER == "openai"
+                else settings.OLLAMA_MODEL
+            ),
+        }
+
+        ollama_models: list[str] = []
+        try:
+            import httpx
+
+            async with httpx.AsyncClient(
+                base_url=settings.OLLAMA_BASE_URL,
+                timeout=5,
+            ) as client:
+                resp = await client.get("/api/tags")
+                if resp.status_code == 200:
+                    for m in resp.json().get("models", []):
+                        name = (m or {}).get("name", "")
+                        # Skip embedding-only models (they can't chat).
+                        if name and not any(
+                            tag in name.lower() for tag in ("bge", "embed", "nomic")
+                        ):
+                            ollama_models.append(name)
+        except Exception:
+            pass
+
+        return {"default": default, "ollama": ollama_models}
