@@ -10,7 +10,6 @@ from typing import Any
 
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 
 class DashboardService:
@@ -39,39 +38,28 @@ class DashboardService:
     # ── Watchlist Summary (batch-queried) ─────────────────────────
 
     async def get_watchlist_summary(self) -> list[dict[str, Any]]:
-        """Fetch all watchlists with items enriched with company info + prices + research.
+        """Watched companies (is_active) enriched with prices + research.
 
-        Before: O(1 + N*3) queries — one per item.
-        After:  O(1 + 3) queries — batch all companies, prices, and research.
+        The watchlist merged into Company — watched == is_active. Response keeps
+        the old shape (a single "自选" group) so the frontend is unchanged.
         """
         from company.models import Company
         from market.models import StockPrice
-        from portfolio.models import Watchlist
         from research.models import ResearchSession
 
-        # 1. Load watchlists with items
+        # 1. Load watched companies
         result = await self.session.execute(
-            select(Watchlist).options(selectinload(Watchlist.items))
+            select(Company).where(Company.is_active.is_(True))
         )
-        watchlists = list(result.scalars().all())
+        companies = list(result.scalars().all())
 
-        # Collect all tickers and company_ids in one pass
-        all_tickers: list[str] = []
-        for wl in watchlists:
-            for item in wl.items:
-                all_tickers.append(item.ticker)
-
-        if not all_tickers:
+        if not companies:
             return []
 
-        # 2. Batch-load companies by ticker → {ticker: Company}
-        comp_result = await self.session.execute(
-            select(Company).where(Company.ticker.in_(all_tickers))
-        )
-        company_by_ticker: dict[str, Company] = {c.ticker: c for c in comp_result.scalars().all()}
-        company_ids = [c.id for c in company_by_ticker.values()]
+        all_tickers = [c.ticker for c in companies]
+        company_ids = [c.id for c in companies]
 
-        # 3. Batch-load latest price per ticker (GROUP BY → max date)
+        # 2. Batch-load latest price per ticker (GROUP BY → max date)
         subq = (
             select(StockPrice.ticker, func.max(StockPrice.date).label("max_date"))
             .where(StockPrice.ticker.in_(all_tickers))
@@ -88,7 +76,7 @@ class DashboardService:
             p.ticker: p for p in latest_px.scalars().all()
         }
 
-        # 4. Batch-load latest research per company (GROUP BY → max created_at)
+        # 3. Batch-load latest research per company (GROUP BY → max created_at)
         research_by_company: dict[str, ResearchSession] = {}
         if company_ids:
             subq_rs = (
@@ -110,60 +98,57 @@ class DashboardService:
             for rs in rs_result.scalars().all():
                 research_by_company[str(rs.company_id)] = rs
 
-        # 5. Assemble (no per-item queries)
-        summaries = []
-        for wl in watchlists:
-            items_data = []
-            for item in wl.items:
-                company = company_by_ticker.get(item.ticker)
-                price = latest_price_by_ticker.get(item.ticker)
-                research = research_by_company.get(str(company.id)) if company else None
+        # 4. Assemble (no per-item queries)
+        items_data = []
+        for company in companies:
+            price = latest_price_by_ticker.get(company.ticker)
+            research = research_by_company.get(str(company.id))
 
-                days_since_research = None
-                status = "normal"
-                if research and research.created_at:
-                    delta = datetime.now(UTC) - research.created_at
-                    days_since_research = delta.days
-                    if days_since_research and days_since_research > 30:
-                        status = "need_research"
-                    elif days_since_research and days_since_research > 14:
-                        status = "attention"
+            days_since_research = None
+            status = "normal"
+            if research and research.created_at:
+                delta = datetime.now(UTC) - research.created_at
+                days_since_research = delta.days
+                if days_since_research and days_since_research > 30:
+                    status = "need_research"
+                elif days_since_research and days_since_research > 14:
+                    status = "attention"
 
-                items_data.append(
-                    {
-                        "id": str(item.id),
-                        "ticker": item.ticker,
-                        "company_name": company.name if company else item.ticker,
-                        "sector": company.sector if company else None,
-                        "priority": item.priority,
-                        "target_price": item.target_price,
-                        "reason": item.reason,
-                        "latest_price": price.close if price else None,
-                        "price_date": price.date.isoformat() if price and price.date else None,
-                        "price_change": (
-                            round(((price.close - price.open) / price.open) * 100, 2)
-                            if (price and price.open is not None and price.close is not None)
-                            else None
-                        ),
-                        "status": status,
-                        "thesis": research.thesis if research else None,
-                        "last_research_at": (
-                            research.created_at.isoformat()
-                            if research and research.created_at
-                            else None
-                        ),
-                        "days_since_research": days_since_research,
-                    }
-                )
-
-            items_data.sort(key=lambda x: (x["priority"], x["ticker"]))
-            summaries.append(
+            items_data.append(
                 {
-                    "watchlist_id": str(wl.id),
-                    "watchlist_name": wl.name,
-                    "items": items_data,
+                    "id": str(company.id),
+                    "ticker": company.ticker,
+                    "company_name": company.name,
+                    "sector": company.sector,
+                    "priority": company.priority,
+                    "target_price": company.target_price,
+                    "reason": company.reason,
+                    "latest_price": price.close if price else None,
+                    "price_date": price.date.isoformat() if price and price.date else None,
+                    "price_change": (
+                        round(((price.close - price.open) / price.open) * 100, 2)
+                        if (price and price.open is not None and price.close is not None)
+                        else None
+                    ),
+                    "status": status,
+                    "thesis": research.thesis if research else None,
+                    "last_research_at": (
+                        research.created_at.isoformat()
+                        if research and research.created_at
+                        else None
+                    ),
+                    "days_since_research": days_since_research,
                 }
             )
+
+        items_data.sort(key=lambda x: (x["priority"], x["ticker"]))
+        summaries = [
+            {
+                "watchlist_id": "watched",
+                "watchlist_name": "自选",
+                "items": items_data,
+            }
+        ]
 
         return summaries
 
@@ -176,22 +161,16 @@ class DashboardService:
         After:  O(1 + 2) — batch companies, then batch research.
         """
         from company.models import Company
-        from portfolio.models import WatchlistItem
         from research.models import ResearchSession
 
-        result = await self.session.execute(select(WatchlistItem))
+        result = await self.session.execute(
+            select(Company).where(Company.is_active.is_(True))
+        )
         items = list(result.scalars().all())
         if not items:
             return []
 
-        all_tickers = [item.ticker for item in items]
-
-        # 2. Batch companies by ticker
-        comp_result = await self.session.execute(
-            select(Company).where(Company.ticker.in_(all_tickers))
-        )
-        company_by_ticker: dict[str, Company] = {c.ticker: c for c in comp_result.scalars().all()}
-        company_ids = [c.id for c in company_by_ticker.values()]
+        company_ids = [c.id for c in items]
 
         # 3. Batch latest research per company
         research_by_company: dict[str, ResearchSession] = {}
@@ -217,11 +196,7 @@ class DashboardService:
 
         # 4. Assemble (no per-item queries)
         reminders: list[dict[str, Any]] = []
-        for item in items:
-            company = company_by_ticker.get(item.ticker)
-            if not company:
-                continue
-
+        for company in items:
             research = research_by_company.get(str(company.id))
             days_since = None
             if research and research.created_at:
@@ -235,11 +210,11 @@ class DashboardService:
             if reasons:
                 reminders.append(
                     {
-                        "ticker": item.ticker,
+                        "ticker": company.ticker,
                         "company_name": company.name,
                         "days_since_research": days_since,
                         "reasons": reasons,
-                        "priority": item.priority,
+                        "priority": company.priority,
                     }
                 )
 

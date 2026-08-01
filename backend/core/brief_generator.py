@@ -7,7 +7,6 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import desc, func, select, text
-from sqlalchemy.orm import selectinload
 
 from company.models import Company
 from core.adapters.llm import create_llm
@@ -16,7 +15,6 @@ from core.interfaces import LLMMessage
 from core.logging import logger
 from core.morning_brief import MorningBrief
 from core.news_fetcher import fetch_news_akshare, fetch_newsnow
-from portfolio.models import Watchlist
 from research.models import ResearchSession
 
 OVERVIEW_PROMPT = (
@@ -57,12 +55,11 @@ FOCUS_THRESHOLD_DAYS = 30
 async def morning_brief() -> dict:
     """Two-layer morning brief: overview + per-stock deep dives for focus stocks."""
     async with managed_session() as session:
-        # 1. Collect all watchlist tickers
-        watchlist_tickers: list[str] = []
-        wl_result = await session.execute(select(Watchlist).options(selectinload(Watchlist.items)))
-        for wl in wl_result.scalars().all():
-            watchlist_tickers.extend(item.ticker for item in wl.items)
-        watchlist_tickers = list(set(watchlist_tickers))
+        # 1. Watched companies == is_active (watchlist merged into Company).
+        wl_result = await session.execute(
+            select(Company).where(Company.is_active.is_(True))
+        )
+        watchlist_tickers = [c.ticker for c in wl_result.scalars().all()]
 
         # 2. Batch query: fetch ALL prices, companies, and research data at once
         active_tickers = watchlist_tickers[:20]

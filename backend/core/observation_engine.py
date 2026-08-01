@@ -27,32 +27,25 @@ async def run_observation_cycle() -> dict:
     Returns summary of observations generated.
     """
     from sqlalchemy import desc, select
-    from sqlalchemy.orm import selectinload
 
     from company.models import Company
     from core.database import managed_session
-    from portfolio.models import Watchlist, WatchlistItem
     from research.models import ResearchSession
 
     async with managed_session() as session:
         observations = []
 
-        # Get all watchlist items
-        result = await session.execute(select(Watchlist).options(selectinload(Watchlist.items)))
-        watchlists = list(result.scalars().all())
-
-        all_items: list[WatchlistItem] = []
-        for wl in watchlists:
-            all_items.extend(wl.items)
+        # Watched companies == is_active (watchlist merged into Company).
+        result = await session.execute(select(Company).where(Company.is_active.is_(True)))
+        all_items = list(result.scalars().all())
 
         if not all_items:
-            logger.info("Observation: no watchlist items to scan")
+            logger.info("Observation: no watched companies to scan")
             return {"status": "ok", "items_scanned": 0, "observations": 0}
 
-        logger.info("Observation: scanning %d watchlist items", len(all_items))
+        logger.info("Observation: scanning %d watched companies", len(all_items))
 
-        # ── Batch preload: resolve all tickers → companies ────────────
-        tickers = list({item.ticker for item in all_items})
+        tickers = [item.ticker for item in all_items]
         companies_result = await session.execute(select(Company).where(Company.ticker.in_(tickers)))
         companies_by_ticker: dict[str, Company] = {
             c.ticker: c for c in companies_result.scalars().all()

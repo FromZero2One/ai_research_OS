@@ -1,4 +1,7 @@
-"""Portfolio Center ORM models — watchlists, holdings, investment journal."""
+"""Portfolio Center ORM models — holdings, investment journal.
+
+The watchlist concept merged into Company (watched == is_active).
+"""
 
 from __future__ import annotations
 
@@ -6,40 +9,9 @@ import uuid
 
 from sqlalchemy import Float, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from core.base import Base, TimestampMixin, UUIDMixin
-
-
-class Watchlist(Base, UUIDMixin, TimestampMixin):
-    __tablename__ = "watchlists"
-    __table_args__ = {"schema": "portfolio"}
-
-    name: Mapped[str] = mapped_column(String(256), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    items: Mapped[list[WatchlistItem]] = relationship(
-        back_populates="watchlist", cascade="all, delete-orphan"
-    )
-
-
-class WatchlistItem(Base, UUIDMixin, TimestampMixin):
-    __tablename__ = "watchlist_items"
-    __table_args__ = {"schema": "portfolio"}
-
-    watchlist_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("portfolio.watchlists.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    ticker: Mapped[str] = mapped_column(String(16), nullable=False)
-    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    target_price: Mapped[float | None] = mapped_column(Float, nullable=True)
-    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    priority: Mapped[int] = mapped_column(default=3, nullable=False)
-
-    watchlist: Mapped[Watchlist] = relationship(back_populates="items")
 
 
 class Holding(Base, UUIDMixin, TimestampMixin):

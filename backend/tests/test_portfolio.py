@@ -1,8 +1,7 @@
-"""Tests for Portfolio Center — watchlists, holdings, journal."""
+"""Tests for Portfolio Center — watched companies, holdings, journal."""
 
 from fastapi.testclient import TestClient
 
-SAMPLE_WATCHLIST = {"name": "AI Stocks", "description": "Top AI companies to watch"}
 SAMPLE_HOLDING = {"ticker": "AAPL", "shares": 100, "avg_cost_basis": 150.0, "sector": "Technology"}
 SAMPLE_JOURNAL = {
     "entry_type": "idea",
@@ -12,47 +11,39 @@ SAMPLE_JOURNAL = {
 }
 
 
-class TestWatchlist:
-    def test_create_watchlist(self, client: TestClient):
-        resp = client.post("/api/v1/portfolio/watchlists", json=SAMPLE_WATCHLIST)
-        assert resp.status_code == 201, resp.text
-        data = resp.json()
-        assert data["name"] == "AI Stocks"
-        assert "id" in data
+class TestWatchedCompanies:
+    """Watchlist merged into Company — watched == is_active."""
 
-    def test_list_watchlists_empty(self, client: TestClient):
-        resp = client.get("/api/v1/portfolio/watchlists")
+    def test_company_active_by_default(self, client: TestClient):
+        client.post("/api/v1/companies", json={"ticker": "WATCH1", "name": "Watch One"})
+        resp = client.get("/api/v1/companies?is_active=true")
         assert resp.status_code == 200
-        assert resp.json() == []
+        assert any(c["ticker"] == "WATCH1" for c in resp.json()["items"])
 
-    def test_list_watchlists_with_data(self, client: TestClient):
-        client.post("/api/v1/portfolio/watchlists", json=SAMPLE_WATCHLIST)
-        resp = client.get("/api/v1/portfolio/watchlists")
-        assert resp.status_code == 200
-        assert len(resp.json()) == 1
+    def test_unwatch_and_rewatch_company(self, client: TestClient):
+        created = client.post(
+            "/api/v1/companies", json={"ticker": "WATCH2", "name": "Watch Two"}
+        ).json()
+        cid = created["id"]
 
-    def test_add_item_to_watchlist(self, client: TestClient):
-        wl = client.post("/api/v1/portfolio/watchlists", json=SAMPLE_WATCHLIST).json()
-        resp = client.post(
-            f"/api/v1/portfolio/watchlists/{wl['id']}/items",
-            json={"ticker": "NVDA", "notes": "AI leader", "reason": "Strong growth"},
+        resp = client.patch(f"/api/v1/companies/{cid}", json={"is_active": False})
+        assert resp.json()["is_active"] is False
+        resp = client.get("/api/v1/companies?is_active=true")
+        assert all(c["ticker"] != "WATCH2" for c in resp.json()["items"])
+
+        client.patch(f"/api/v1/companies/{cid}", json={"is_active": True})
+        resp = client.get("/api/v1/companies?is_active=true")
+        assert any(c["ticker"] == "WATCH2" for c in resp.json()["items"])
+
+    def test_dashboard_watchlist_sources_active_companies(self, client: TestClient):
+        client.post(
+            "/api/v1/companies",
+            json={"ticker": "WATCH3", "name": "Watch Three", "priority": 2},
         )
-        assert resp.status_code == 201, resp.text
-        assert resp.json()["ticker"] == "NVDA"
-
-    def test_get_watchlist_with_items(self, client: TestClient):
-        wl = client.post("/api/v1/portfolio/watchlists", json=SAMPLE_WATCHLIST).json()
-        client.post(f"/api/v1/portfolio/watchlists/{wl['id']}/items", json={"ticker": "NVDA"})
-        resp = client.get(f"/api/v1/portfolio/watchlists/{wl['id']}")
-        assert resp.status_code == 200
-        assert len(resp.json()["items"]) == 1
-
-    def test_delete_watchlist(self, client: TestClient):
-        wl = client.post("/api/v1/portfolio/watchlists", json=SAMPLE_WATCHLIST).json()
-        resp = client.delete(f"/api/v1/portfolio/watchlists/{wl['id']}")
-        assert resp.status_code == 204
-        resp = client.get(f"/api/v1/portfolio/watchlists/{wl['id']}")
-        assert resp.status_code == 404
+        resp = client.get("/api/v1/dashboard")
+        wl = resp.json()["watchlist"]
+        assert wl and wl[0]["watchlist_name"] == "自选"
+        assert any(i["ticker"] == "WATCH3" for i in wl[0]["items"])
 
 
 class TestHolding:

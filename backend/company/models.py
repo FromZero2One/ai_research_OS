@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,7 +24,11 @@ class Company(Base, UUIDMixin, TimestampMixin):
     founded_year: Mapped[int | None] = mapped_column(nullable=True)
     employees: Mapped[int | None] = mapped_column(nullable=True)
     website: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Watchlist semantics merged into the company row: watched == is_active.
+    priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    target_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships
     tags: Mapped[list[CompanyTag]] = relationship(

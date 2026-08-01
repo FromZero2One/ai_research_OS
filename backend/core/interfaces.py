@@ -285,24 +285,6 @@ class TimelineService(Protocol):
 
 
 @runtime_checkable
-class WatchlistService(Protocol):
-    """Interface for watchlist CRUD and item management."""
-
-    async def create_watchlist(self, name: str, description: str | None = None) -> Any: ...
-
-    async def get_watchlist(self, watchlist_id: Any) -> Any: ...
-
-    async def list_watchlists(self) -> list[Any]: ...
-
-    async def delete_watchlist(self, watchlist_id: Any) -> None: ...
-
-    async def update_watchlist(self, watchlist_id: Any, **kwargs) -> Any: ...
-
-    async def add_to_watchlist(self, watchlist_id: Any, ticker: str, **kwargs) -> Any: ...
-
-    async def remove_from_watchlist(self, item_id: Any) -> None: ...
-
-
 @runtime_checkable
 class HoldingService(Protocol):
     """Interface for holding (position) management."""
@@ -371,6 +353,7 @@ class CompanyService(Protocol):
         sector: str | None = None,
         industry: str | None = None,
         tag: str | None = None,
+        is_active: bool | None = None,
         skip: int = 0,
         limit: int = 50,
     ) -> tuple[list[Any], int]: ...

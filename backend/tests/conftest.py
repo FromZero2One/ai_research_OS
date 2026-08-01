@@ -74,12 +74,25 @@ def _ensure_test_db() -> None:
             conn.execute(text(f'CREATE DATABASE "{TEST_DB_NAME}"'))
     admin_engine.dispose()
 
-    # 2. Extensions + schema. Models are already registered on Base.metadata
-    #    by the `from api.app import create_app` import above.
+    # 2. Extensions + schemas (models reference e.g. company.* / ai.*) then
+    #    create tables. Models are already registered on Base.metadata by the
+    #    `from api.app import create_app` import above.
     test_engine = create_engine(_sync(TEST_DATABASE_URL), pool_pre_ping=True)
     with test_engine.begin() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+        for schema in (
+            "company",
+            "market",
+            "document",
+            "knowledge",
+            "ai",
+            "research",
+            "portfolio",
+            "core",
+            "akshare",
+        ):
+            conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
     Base.metadata.create_all(test_engine)
     test_engine.dispose()
 
@@ -172,8 +185,6 @@ ALL_TABLES = [
     "research.research_sessions",
     "research.research_evidences",
     "research.research_reports",
-    "portfolio.watchlists",
-    "portfolio.watchlist_items",
     "portfolio.holdings",
     "portfolio.investment_journal",
     "core.event_log",

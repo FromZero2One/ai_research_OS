@@ -1,4 +1,4 @@
-"""Portfolio Center — watchlists, holdings, investment journal.
+"""Portfolio Center — holdings and investment journal.
 
 Sub-services live in ``portfolio.service``; the DI container in
 ``core.container`` wires them into routes. No facade needed.

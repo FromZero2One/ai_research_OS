@@ -38,6 +38,9 @@ class CompanyService:
             "founded_year",
             "employees",
             "website",
+            "priority",
+            "target_price",
+            "reason",
         ):
             if field in kwargs and kwargs[field] is not None:
                 setattr(company, field, kwargs[field])
@@ -83,6 +86,7 @@ class CompanyService:
         sector: str | None = None,
         industry: str | None = None,
         tag: str | None = None,
+        is_active: bool | None = None,
         skip: int = 0,
         limit: int = 50,
     ) -> tuple[list[Company], int]:
@@ -101,6 +105,8 @@ class CompanyService:
             stmt = stmt.join(CompanyTag, CompanyTag.company_id == Company.id).where(
                 CompanyTag.tag == tag
             )
+        if is_active is not None:
+            stmt = stmt.where(Company.is_active.is_(is_active))
 
         # Count total
         count_stmt = stmt.with_only_columns(func.count(Company.id)).order_by(None)
@@ -125,6 +131,9 @@ class CompanyService:
             "employees",
             "website",
             "is_active",
+            "priority",
+            "target_price",
+            "reason",
         }
 
         for key, value in data.items():

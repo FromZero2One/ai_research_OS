@@ -488,18 +488,14 @@ POST /api/v1/research/sessions/{id}/finalize
 
 ### 4.8 投资组合 `/portfolio`
 
-功能:管理自选股、持仓记录、投资日记。
+功能:自选列表（已并入公司中心）、持仓记录、投资日记。
 
-**自选股列表 (Watchlist)**:
+**自选列表 (Watchlist — 已并入 Company)**:
+自选 = `is_active=True` 的公司。关注/取消关注直接操作公司：
 ```
-GET  /api/v1/portfolio/watchlists              # 列出所有自选股列表
-POST /api/v1/portfolio/watchlists             # 创建自选股列表 Body: {"name": "科技股", "description": "..."}
-GET  /api/v1/portfolio/watchlists/{watchlist_id}  # 某个列表详情
-DELETE /api/v1/portfolio/watchlists/{watchlist_id} # 删除列表
-
-POST /api/v1/portfolio/watchlists/{watchlist_id}/items  # 添加股票到列表
-Body: {"company_id": "...", "ticker": "AAPL", "priority": 1, "thesis": "生态壁垒高"}
-DELETE /api/v1/portfolio/watchlists/items/{item_id}    # 从列表移除
+GET  /api/v1/companies?is_active=true          # 列出关注中的公司
+POST /api/v1/companies/watch                   # 加入自选 Body: {"ticker": "AAPL", "name": "...", "priority": 1, "reason": "..."}
+PATCH /api/v1/companies/{company_id}           # 取消关注: {"is_active": false}
 ```
 
 股票状态标签: `normal`(正常,绿色) / `attention`(关注,橙色) / `need_research`(需研究,红色)
@@ -521,8 +517,7 @@ GET  /api/v1/portfolio/journal/{entry_id}     # 日记详情
 ```
 
 **相关页面**:
-- `/portfolio` — 总览
-- `/portfolio/watchlists` — 管理自选股列表
+- `/portfolio` — 自选列表
 - `/portfolio/journal` — 投资日记
 
 ---

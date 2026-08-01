@@ -8,42 +8,6 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
-class WatchlistCreate(BaseModel):
-    name: str = Field(..., max_length=256)
-    description: str | None = None
-
-
-class WatchlistResponse(WatchlistCreate):
-    id: UUID
-    items: list[WatchlistItemResponse] = []
-    created_at: datetime
-    updated_at: datetime | None
-
-    model_config = {"from_attributes": True}
-
-
-class WatchlistUpdate(BaseModel):
-    name: str | None = Field(None, max_length=256)
-    description: str | None = None
-
-
-class WatchlistItemCreate(BaseModel):
-    ticker: str = Field(..., max_length=16)
-    notes: str | None = None
-    target_price: float | None = None
-    reason: str | None = None
-    priority: int = Field(3, ge=1, le=5)
-
-
-class WatchlistItemResponse(WatchlistItemCreate):
-    id: UUID
-    watchlist_id: UUID
-    created_at: datetime
-    priority: int = 3
-
-    model_config = {"from_attributes": True}
-
-
 class HoldingCreate(BaseModel):
     ticker: str = Field(..., max_length=16)
     shares: float = Field(..., gt=0)

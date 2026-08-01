@@ -75,9 +75,6 @@ from core.interfaces import (
 from core.interfaces import (
     TimelineService as TimelineServiceProtocol,
 )
-from core.interfaces import (
-    WatchlistService as WatchlistServiceProtocol,
-)
 
 
 class Container:
@@ -98,7 +95,6 @@ class Container:
         self._gather: ResearchGatherServiceProtocol | None = None
         self._thesis: ResearchThesisServiceProtocol | None = None
         self._timeline: TimelineServiceProtocol | None = None
-        self._watchlist: WatchlistServiceProtocol | None = None
         self._holding: HoldingServiceProtocol | None = None
         self._journal: JournalServiceProtocol | None = None
         self._knowledge: KnowledgeServiceProtocol | None = None
@@ -202,14 +198,6 @@ class Container:
 
             self._timeline = TimelineService(self.session)
         return self._timeline
-
-    @property
-    def watchlist_service(self) -> WatchlistServiceProtocol:
-        if self._watchlist is None:
-            from portfolio.service.watchlist_service import WatchlistService
-
-            self._watchlist = WatchlistService(self.session)
-        return self._watchlist
 
     @property
     def holding_service(self) -> HoldingServiceProtocol:
