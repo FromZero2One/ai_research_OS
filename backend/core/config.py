@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from secrets import token_hex
 from typing import Literal
 
@@ -23,10 +22,6 @@ class Settings(BaseSettings):
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
     ENV: Literal["development", "staging", "production"] = "development"
-
-    # --- Paths ---
-    PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent
-    DATA_DIR: Path = PROJECT_ROOT.parent / "data"
 
     # --- Database ---
     DATABASE_URL: str = "postgresql+asyncpg://airesearch:airesearch_dev@127.0.0.1:5432/airesearch"
