@@ -769,7 +769,6 @@ ai_research_os/
 │   ├── Dockerfile.backend
 │   └── init.sql             # 9个schema初始化
 ├── backend/mcp_company/     # MCP 工具内部实现
-├── docs/                    # 项目计划文档
 ├── USAGE.md                 # 本文档
 └── README.md
 ```

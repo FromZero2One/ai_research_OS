@@ -49,4 +49,3 @@ metadata:
 ## 相关文档
 - **启动命令** → [`USAGE.md`](../USAGE.md)「服务启动与停止」
 - **关键设计决策** → [`README.md`](../README.md)「Key Design Decisions」
-- **架构设计史** → [`docs/design/architecture-optimisation.md`](../docs/design/architecture-optimisation.md)
