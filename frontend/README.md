@@ -20,7 +20,7 @@ src/
 ├── views/             # 页面视图（13 个）
 ├── components/        # 共享组件
 ├── stores/api.ts      # 数据层：fetch + TanStack Query 泛型 hooks
-├── types/             # 类型定义
+├── types/             # OpenAPI 生成类型（`npm run gen` 后生成 api.ts，默认空）
 └── styles/            # 全局样式
 ```
 
@@ -33,7 +33,7 @@ npm run dev            # http://localhost:5173
 ```
 
 - vite 代理：`/api` → `http://localhost:8000/api/v1`（`VITE_API_PROXY_TARGET` 可覆盖）
-- 类型检查：`npm run typecheck`（vue-tsc，当前零错误）
+- 类型检查：`npx vue-tsc --noEmit`（或 `npm run build` 内部先跑 `vue-tsc -b`；当前零错误）
 - 构建：`npm run build`
 
 ## 视图与路由
