@@ -1,12 +1,6 @@
 """Market Center API route modules.
 
-Use ``from market.routes import router`` to get the aggregate router that
-mounts every sub-router (backwards compatible with the old single
-``market/routes.py``). Each sub-router is also importable directly.
+Each sub-domain lives in its own module (price_routes, financial_routes,
+profile_routes, news_routes, search_routes, freshness_routes) and is
+mounted directly in ``api/app.py``.
 """
-
-from __future__ import annotations
-
-from market.routes.aggregate import router
-
-__all__ = ["router"]

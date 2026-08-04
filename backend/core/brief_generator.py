@@ -14,7 +14,6 @@ from core.database import managed_session
 from core.interfaces import LLMMessage
 from core.logging import logger
 from core.morning_brief import MorningBrief
-from core.news_fetcher import fetch_news_akshare, fetch_newsnow
 from research.models import ResearchSession
 
 OVERVIEW_PROMPT = (
@@ -50,6 +49,29 @@ STOCK_BRIEF_PROMPT = (
 
 FOCUS_THRESHOLD_CHANGE = 3.0
 FOCUS_THRESHOLD_DAYS = 30
+
+
+async def fetch_newsnow(sectors: list[str] | None = None) -> list[str]:
+    """Fetch financial news relevant to given sectors via persistent MCP."""
+    from core.adapters.newsnow_mcp import get_headlines
+
+    return await get_headlines(sectors=sectors)
+
+
+async def fetch_news_akshare(ticker: str) -> list[dict]:
+    """Fetch stock news via the akshare subprocess (ticker passed via env).
+
+    Single source of truth: ``NewsService.fetch_news`` owns the subprocess
+    code; this module is a thin scheduled-job-friendly wrapper.
+    """
+    from market.service.news_service import NewsService
+
+    try:
+        news, _source = await NewsService().fetch_news(ticker)
+        return news
+    except Exception:
+        logger.debug("akshare news subprocess failed")
+        return []
 
 
 async def morning_brief() -> dict:

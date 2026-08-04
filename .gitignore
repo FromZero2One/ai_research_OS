@@ -8,8 +8,6 @@ build/
 .venv/
 venv/
 *.db
-data/uploads/*
-data/processed/*
 backend/data/uploads/*
 backend/data/processed/*
 

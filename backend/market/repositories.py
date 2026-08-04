@@ -11,7 +11,7 @@ from datetime import UTC, date, datetime
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import desc, func, select, tuple_
 
-from core.crud import DomainRepository
+from market.crud import DomainRepository
 from market.domain import FinancialMetricEntry, FreshnessEntry, PriceEntry
 from market.models import DataFreshness, FinancialMetric, StockPrice
 
