@@ -4,6 +4,12 @@
 
 A personal AI-powered investment research assistant. Company → Knowledge → AI → Research → Portfolio.
 
+## 文档
+
+- **[USAGE.md](USAGE.md)** — 全栈使用手册（启动、功能模块详解、投研流程、FAQ）
+- **[backend/README.md](backend/README.md)** — 后端开发文档（数据库、API、配置、AI、测试）
+- **[frontend/README.md](frontend/README.md)** — 前端开发文档（技术栈、目录、类型生成）
+
 ## Architecture
 
 ```text
@@ -134,10 +140,7 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 
 ## API (when backend is running)
 
-| Module | API Prefix | Docs |
-|--------|-----------|------|
-| All | `/api/v1/...` | http://localhost:8000/docs |
-| Health | `/health` | — |
+后端 API 前缀统一为 `/api/v1`，交互式文档见 http://localhost:8000/docs；接口速查见 [backend/README.md](backend/README.md)。
 
 ## Key Design Decisions
 

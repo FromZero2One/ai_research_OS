@@ -1,5 +1,12 @@
 # 项目架构优化设计文档
 
+> **归档说明**：本文记录 2024-07 架构优化 sprint 的设计与实施。代码此后持续演进，文中部分引用已过时，请以当前代码为准：
+> - 前端已改为 Vue 3 + Vite（非本文件讨论范围）
+> - 自选列表已并入公司中心（`Company.is_active`），watchlist 表已删除
+> - `core/crud.py` 已移至 `market/crud.py`
+> - `market/routes/aggregate.py`、`core/news_fetcher.py`、`core/security.py` 已删除
+> - `MarketFacade` 等后向兼容层已移除
+
 ## 1. 背景与目标
 
 当前项目已具备深模块/Adapter 基础结构，但在可维护性和可扩展性方面仍有提升空间。主要痛点包括业务 Service 体积大、职责混杂；业务层直接使用 ORM；依赖分散；异常体系不统一；文件结构不够细分。
