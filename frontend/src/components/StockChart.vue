@@ -39,10 +39,9 @@ function updateChart() {
     ? [...props.prices].reverse()
     : props.prices
 
-  const firstYear = sorted[0].date.slice(0, 4)
-  const lastYear = sorted[sorted.length - 1].date.slice(0, 4)
-  const multiYear = firstYear !== lastYear
-  const dates = sorted.map((p) => multiYear ? p.date.slice(0, 7) : p.date.slice(5))
+  // Keep full "YYYY-MM-DD" strings so the tooltip shows the complete date;
+  // the axis formatter renders them compactly (MM-DD) to avoid overlap.
+  const dates = sorted.map((p) => p.date)
   const ohlc = sorted.map((p) => [p.open, p.close, p.low, p.high])
   const volumes = sorted.map((p) => p.volume)
   const ma5 = calcMA(sorted, 5)
@@ -54,7 +53,7 @@ function updateChart() {
       ? [{ left: '8%', right: '8%', top: '8%', height: '60%' }, { left: '8%', right: '8%', top: '78%', height: '15%' }]
       : [{ left: '8%', right: '8%', top: '8%', bottom: '8%' }],
     xAxis: [
-      { type: 'category', data: dates, axisLine: { lineStyle: { color: '#2d3140' } }, axisLabel: { color: '#9aa0a6', fontSize: 10 }, splitLine: { show: false } },
+      { type: 'category', data: dates, axisLine: { lineStyle: { color: '#2d3140' } }, axisLabel: { color: '#9aa0a6', fontSize: 10, formatter: (value: string) => value.slice(5) }, splitLine: { show: false } },
       { type: 'category', gridIndex: 1, data: dates, axisLabel: { show: false }, splitLine: { show: false } },
     ],
     yAxis: [
