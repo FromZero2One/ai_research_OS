@@ -7,27 +7,6 @@ metadata:
 
 # AI Research OS — 进度快照
 
-## ⚠️ 待提交（2026-08-04）
-**原因**：删除 `mcp_company/` 后准备 commit/push，但分类器临时不可用被拦，暂停。
-
-待提交改动：
-- `D backend/mcp_company/`（零引用孤儿模块，外部 MCP 实际走 akshare_executor + newsnow_mcp）
-- `M backend/README.md`（MCP 段改为"外部 MCP 数据源"）
-- `M USAGE.md`（目录树删 mcp_company 行）
-- `M memory/ai-research-os-session.md`（本文件变更日志）
-- `M backend/market/service/profile_service.py` + `backend/market/routes/profile_routes.py`（过时 docstring）
-
-提交命令（下次会话直接用，或 `!` 前缀绕过分类器）：
-```bash
-git add -A -- backend/mcp_company backend/README.md USAGE.md memory/ai-research-os-session.md backend/market/service/profile_service.py backend/market/routes/profile_routes.py
-git commit -m "refactor: remove orphaned mcp_company module
-
-- backend/mcp_company/ had zero consumers (no in-repo imports, no external refs)
-- Rewrite backend README MCP section for real external MCP wiring (akshare_executor + newsnow_mcp)
-- Drop stale mcp-company docstrings in profile service/routes"
-git push origin main
-```
-
 ## 位置
 `/home/wsm/codes/ai_research_OS/`
 
