@@ -43,6 +43,8 @@ const prices = computed(() => priceData.value?.prices || [])
 const financials = computed(() => finData.value?.metrics || [])
 const revenueData = computed(() => financials.value.filter((m) => m.metric_name === 'revenue').reverse())
 const incomeData = computed(() => financials.value.filter((m) => m.metric_name === 'net_income').reverse())
+const marginData = computed(() => financials.value.filter((m) => m.metric_name === 'operating_margin').reverse())
+const epsData = computed(() => financials.value.filter((m) => m.metric_name === 'eps').reverse())
 
 const editingThesis = ref(false); const thesisText = ref(''); const thesisDecision = ref('watch'); const thesisConfidence = ref(0.6)
 const editingCompany = ref(false); const editName = ref(''); const editSector = ref(''); const editIndustry = ref(''); const editDesc = ref(''); const editTags = ref('')
@@ -185,6 +187,16 @@ async function handleSaveCompany() {
             <el-col v-if="incomeData.length" :span="12">
               <el-card shadow="never"><template #header>净利润趋势</template>
                 <FinancialBars :data="incomeData" color="#34d399" />
+              </el-card>
+            </el-col>
+            <el-col v-if="marginData.length" :span="12">
+              <el-card shadow="never"><template #header>运营利润率</template>
+                <FinancialBars :data="marginData" color="#fbbf24" format="pct" />
+              </el-card>
+            </el-col>
+            <el-col v-if="epsData.length" :span="12">
+              <el-card shadow="never"><template #header>每股收益 EPS</template>
+                <FinancialBars :data="epsData" color="#a78bfa" />
               </el-card>
             </el-col>
           </el-row>

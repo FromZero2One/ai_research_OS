@@ -14,6 +14,7 @@ from datetime import date
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.adapters.akshare_mysql import AkshareMySQLAdapter
+from core.config import settings
 from core.event_service import EventLogger
 from core.logging import logger
 from market.akshare_executor import (
@@ -198,11 +199,14 @@ class PriceService:
         """
         warnings: list[str] = []
 
-        # Layer 1: akshare MySQL
+        # Layer 1: akshare MySQL mirror. Serve it only while fresh — the mirror
+        # is updated out-of-band (akshare_mcp data pipeline), so without a
+        # staleness check a stale mirror would silently shadow the realtime
+        # layers and the refresh button would return frozen prices.
         try:
             mysql = await self._get_mysql()
             rows = await mysql.get_prices(ticker, limit=520)
-            if rows:
+            if rows and (date.today() - rows[0].date).days <= settings.PRICE_STALE_DAYS:
                 logger.info("  [akshare] Layer 1 MySQL: %d rows for %s", len(rows), ticker)
                 return [
                     {
@@ -215,7 +219,13 @@ class PriceService:
                     }
                     for r in rows
                 ], []
-            warnings.append("Layer 1 (MySQL): no data")
+            if rows:
+                warnings.append(
+                    f"Layer 1 (MySQL): stale (latest {rows[0].date}, "
+                    f"threshold {settings.PRICE_STALE_DAYS}d)"
+                )
+            else:
+                warnings.append("Layer 1 (MySQL): no data")
         except Exception as e:
             warnings.append(f"Layer 1 (MySQL): {e}")
 

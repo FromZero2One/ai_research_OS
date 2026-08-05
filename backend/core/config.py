@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     # --- Market ---
     AKSHARE_ENABLED: bool = True
     YFINANCE_ENABLED: bool = True
+    # Max age (calendar days) before the akshare MySQL mirror counts as stale.
+    # fetch_akshare Layer 1 serves the mirror only while it's fresher than this;
+    # otherwise it falls through to the realtime subprocess layer (Layer 2).
+    PRICE_STALE_DAYS: int = 5
 
     # --- External data sources (machine-specific, override in .env) ---
     # Directory of the akshare_mcp venv used for the subprocess data layer.

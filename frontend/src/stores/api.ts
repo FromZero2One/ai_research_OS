@@ -307,7 +307,13 @@ export function useIngestProfile() {
   const qc = useQueryClient()
   return useMutation<unknown, Error, string>({
     mutationFn: (ticker) => fetchApi(`/market/profile/${ticker}/ingest`, { method: 'POST' }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['companies'] }) },
+    // Profile ingest writes the Company row; invalidate both the list
+    // ('companies') and the detail query ('company', id) so the refreshed
+    // name/sector/description show up without a manual page reload.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['companies'] })
+      qc.invalidateQueries({ queryKey: ['company'] })
+    },
   })
 }
 

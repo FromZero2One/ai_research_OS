@@ -11,6 +11,7 @@ metadata:
 `/home/wsm/codes/ai_research_OS/`
 
 ## 变更日志
+- **2026-08-05**: 修 K 线刷新不更新 — 根因是 akshare MySQL 镜像(`stock_zh_a_hist`)停更，而 `fetch_akshare` Layer 1 不查新鲜度直接返回旧数据。修复：`config.py` 加 `PRICE_STALE_DAYS=5`；`price_service.py` Layer 1 超过阈值自动落到 Layer 2 实时子进程；Makefile 加 `make refresh-market`(跑 akshare_mcp 管道增量 + curl ingest 同步 PG)。另发现 `useIngestProfile` invalidate key 写 `['companies']`，详情页用 `['company', id]`，刷新后公司资料不刷新。
 - **2026-08-04**: 目录与模块清理 — 删 `scripts/`、顶层 `data/`、`docs/`；删死代码 `security.py`/`aggregate.py`/`news_fetcher.py`/`mcp_company/`(外部 MCP 实际走 akshare_executor + newsnow_mcp)；`crud.py` → `market/`；新增 `backend/README.md`/`frontend/README.md`(经代码核对)，USAGE 瘦身，前端删死 `lint` script。测试 125 passed。
 - **2026-08-01**: 文档与代码对齐，前端 Vue 3 完成度约 80%。
 

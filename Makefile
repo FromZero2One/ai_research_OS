@@ -1,4 +1,4 @@
-.PHONY: dev dev-db dev-backend dev-frontend migrate lint clean
+.PHONY: dev dev-db dev-backend dev-frontend migrate lint clean refresh-market
 
 # ── Development ──────────────────────────────────────────────────────
 
@@ -51,6 +51,18 @@ test-cov:
 
 ingest-sample:
 	cd backend && python scripts/seed_data.py
+
+# Refresh the akshare MySQL mirror (A-stock prices) via the external
+# akshare_mcp data pipeline, then sync it into PostgreSQL. The mirror is the
+# Layer 1 source for A-stock prices — if it goes stale (> PRICE_STALE_DAYS),
+# the refresh button falls through to the realtime subprocess layer instead.
+refresh-market:
+	uv run --directory /home/wsm/codes/akshare_mcp python -m services.data_pipeline \
+		--scope custom --symbols "000001,300750,601988" --data-types kline --mode incremental
+	@echo "Syncing into PostgreSQL..."
+	@for ticker in 000001 300750 601988; do \
+		curl -s -X POST "http://localhost:8000/api/v1/market/prices/$$ticker/ingest"; echo; \
+	done
 
 # ── Docker ───────────────────────────────────────────────────────────
 
