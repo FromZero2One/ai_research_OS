@@ -39,7 +39,7 @@ async def stock_profile(
     ticker: str,
     container: Container = Depends(get_container),
 ):
-    """Get stock name, sector, and kline status — for mcp-company integration."""
+    """Get stock name, sector, and kline status."""
     svc = container.profile_service
     profile = await svc.get_stock_profile(ticker)
     if profile is None:

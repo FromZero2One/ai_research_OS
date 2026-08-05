@@ -126,9 +126,10 @@ PYTHONPATH=. python scripts/seed_data.py
 
 Ollama 版本过旧（<0.3.0）时 `/api/embed` 不可用，Embedding 降级为 BM25 稀疏检索 + RRF 融合，功能不受影响。
 
-## MCP 工具（可选）
+## 外部 MCP 数据源
 
-公司创建/搜索等工具逻辑在 `backend/mcp_company/service.py`，直接调用后端服务函数；如需从外部 MCP 客户端调用，参考该模块接口自行包装。
+- **akshare**：`market/akshare_executor.py` 调用外部 `akshare_mcp` venv（`AKSHARE_MCP_DIR`），可配云端 MCP 兜底（`AKSHARE_CLOUD_MCP_URL`，留空禁用）
+- **newsnow**：`core/adapters/newsnow_mcp.py` 调用外部 newsnow MCP server（`NEWSNOW_MCP_SERVER_PATH` / `NEWSNOW_BASE_URL`）
 
 ## 后台任务
 

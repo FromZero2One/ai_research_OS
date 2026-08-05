@@ -768,7 +768,6 @@ ai_research_os/
 │   ├── docker-compose.yml   # 数据库基础设施
 │   ├── Dockerfile.backend
 │   └── init.sql             # 9个schema初始化
-├── backend/mcp_company/     # MCP 工具内部实现
 ├── USAGE.md                 # 本文档
 └── README.md
 ```

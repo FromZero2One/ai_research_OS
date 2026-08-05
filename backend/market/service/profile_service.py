@@ -1,4 +1,4 @@
-"""Company profile and stock info service — for mcp-company and company detail views."""
+"""Company profile and stock info service — powers company detail views."""
 
 from __future__ import annotations
 
@@ -95,7 +95,7 @@ class ProfileService:
         }
 
     async def get_stock_profile(self, ticker: str) -> dict | None:
-        """Get stock name, sector and kline status — used by mcp-company."""
+        """Get stock name, sector and kline status."""
         if not is_a_stock(ticker):
             return None
 
