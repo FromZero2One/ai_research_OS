@@ -29,17 +29,25 @@ metadata:
 
 总体：V1.1 目标基本达成，V2 未启动，单用户本地工具（无认证）。
 
-## 已知未完成 / 受限
-- 美股真实行情（yfinance 被代理限制）
-- 持仓/投资日志前端（后端就绪，随 V2 P&L 提供）
-- AI 工作流前端 UI
-- OCR（扫描版 PDF，V1 明确不做）
-- 机器绑定配置：akshare_mcp 目录、newsnow 路径、MySQL 凭据、HF 模型缓存
+## 未完成清单（代码驱动，2026-08-04 更新）
+> 每项均含代码证据；上方"完成度"表为估算，本清单为准。
 
-## 下一步优先级
-1. 美股数据打通（yfinance 直连/代理配置）
-2. 持仓/日志前端（后端现成）
-3. V2 方向：Auto Research 或 P&L 追踪
+**A. 前端缺口（后端就绪）**
+1. **持仓/日志前端半成品** — 后端 `portfolio/routes.py:25-86` 端点就绪；前端 hook `api.ts:347/349`(useHoldings/useAddHolding) 已定义但 **0 视图消费**，journal 无 hook；`Portfolio.vue` 只渲染自选
+2. **AI 工作流前端空白** — 后端 `ai/routes.py:93-109` 就绪；前端 grep `/ai/workflow` 全 src 0 命中；且后端仅顺序执行(V1)，LangGraph DAG 待 V2
+
+**B. 功能降级/受限**
+3. **美股行情** — `price_service.py:283` yfinance 仅为 fallback；`seed_market_data.py` 种子是合成数据；`ingest_real_data.py` 有真实抓取但仅手工跑
+4. **Embedding 失败→零向量** — `core/adapters/embedding.py:91-93` 失败返回零向量，稠密检索靠 BM25+RRF 兜底
+5. **OCR 不支持** — `document/service.py:325` "(OCR not supported in V1)"
+
+**C. 半成品代码（定义未用）**
+6. **5 个前端 hook 零消费** — `useHoldings`/`useAddHolding`/`useCompanyThesis`/`useReportDiff`/`useGet`（均定义于 `stores/api.ts`，无视图 import）
+
+## 下一步优先级（按代码缺口排序）
+1. **持仓/日志前端接通** — hook 已写好，只差视图接入（工作量最小）
+2. **AI 工作流前端** — 后端就绪，需补列表/执行 UI
+3. **美股行情** — 解决 yfinance 通道/代理；或确认合成数据是否够用
 
 ## 环境要点
 - 本机代理 `socks://127.0.0.1:7890`：后端启动时 `clean_proxy_env()` 清理，脚本需自行调用；HuggingFace 下载走 `HF_ENDPOINT=https://hf-mirror.com`
