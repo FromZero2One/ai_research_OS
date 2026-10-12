@@ -51,6 +51,11 @@ class ResearchSessionCreate(BaseModel):
     company_id: UUID | None = None
     tags: list[str] | None = None
     auto_plan: bool = Field(default=False, description="Auto-generate research plan on create")
+    plan_type: str | None = Field(
+        None,
+        pattern="^(initial|earnings|thesis_check|industry)$",
+        description="研究类型模板（命中即零 LLM 调用直接生成计划）",
+    )
 
 
 class ResearchSessionUpdate(BaseModel):
@@ -165,6 +170,9 @@ class EvidenceResponse(BaseModel):
     reliability: float | None = None
     data_freshness: int | None = None
     citation_quality: str | None = None
+    classification_source: str | None = None
+    classification_confidence: float | None = None
+    structured_facts: dict | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

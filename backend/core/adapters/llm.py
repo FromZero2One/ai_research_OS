@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import cast
+from typing import Literal, cast
 
 import httpx
 from openai.types.chat import ChatCompletionMessageParam
@@ -199,8 +199,20 @@ class OpenAILLM:
             )
 
 
-def create_llm() -> LLM:
-    """Factory — returns the configured LLM adapter."""
-    if settings.LLM_PROVIDER == "openai":
-        return OpenAILLM()
-    return OllamaLLM()
+def create_llm(tier: Literal["light", "heavy"] = "heavy") -> LLM:
+    """Factory — returns the configured LLM adapter for the given task tier.
+
+    light：分类/抽取等高频轻任务（默认本地小模型，零 API 成本）；
+    heavy：报告/晨报等重任务，未配置时跟随主 LLM_PROVIDER。
+    """
+    if tier == "light":
+        provider = settings.LLM_TIER_LIGHT_PROVIDER
+        model = settings.LLM_TIER_LIGHT_MODEL
+    else:
+        provider = settings.LLM_TIER_HEAVY_PROVIDER
+        model = settings.LLM_TIER_HEAVY_MODEL
+
+    effective_provider = provider or settings.LLM_PROVIDER
+    if effective_provider == "openai":
+        return OpenAILLM(model=model) if model else OpenAILLM()
+    return OllamaLLM(model=model) if model else OllamaLLM()

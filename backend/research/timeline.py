@@ -44,3 +44,16 @@ async def get_session_timeline(
     """Get timeline for a single research session."""
     svc = container.timeline_service
     return await svc.get_session_timeline(session_id)
+
+
+@router.get("/sessions/{session_id}/evolution")
+async def get_evolution_summary(
+    session_id: uuid.UUID,
+    container: Container = Depends(get_container),
+):
+    """LLM 总结该公司历次研究的论点演变（论点演变/已证伪判断/新增信息/结论漂移）。
+
+    LLM 失败时降级为机械的历史论点摘要，不阻塞页面。
+    """
+    svc = container.timeline_service
+    return await svc.get_evolution_summary(session_id)

@@ -140,7 +140,22 @@ class ReportService:
                 quality_tags.append(f"data_age={ev.data_freshness}h")
             quality_str = f" ({', '.join(quality_tags)})" if quality_tags else ""
 
-            item = f"- [{ev.source_type}]{quality_str} {ev.content[:500]}"
+            # 结构化事实区块：数字来自抽取结果（已核实的原文数字），
+            # 报告 LLM 只负责叙述，不自行推算
+            facts_str = ""
+            sf = ev.structured_facts or {}
+            fact_list = sf.get("facts") or []
+            if fact_list and not sf.get("not_mentioned"):
+                parts = [
+                    f"{f.get('metric_name')}={f.get('value')}{f.get('unit', '')}"
+                    f"({f.get('period', '')})"
+                    for f in fact_list[:8]
+                    if isinstance(f, dict) and f.get("metric_name") is not None
+                ]
+                if parts:
+                    facts_str = f" [已核实事实: {'; '.join(parts)}]"
+
+            item = f"- [{ev.source_type}]{quality_str}{facts_str} {ev.content[:500]}"
             if ev.evidence_type == "supporting":
                 supporting.append(item)
             elif ev.evidence_type == "opposing":

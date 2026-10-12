@@ -98,6 +98,7 @@ function toggleEvidence(id: string) { const s = new Set(expandedEvidence.value);
                 <el-tag size="small">{{ ev.source_type }}</el-tag>
                 <span v-if="ev.source_title" class="text-xs text-secondary truncate" style="max-width:200px">{{ ev.source_title }}</span>
                 <span v-if="ev.citation_quality" class="text-xs" style="color:var(--text-secondary)">🔗 {{ ev.citation_quality }}</span>
+                <el-tag v-if="ev.classification_source === 'llm'" size="small" effect="plain" :type="ev.classification_confidence != null && ev.classification_confidence < 0.6 ? 'warning' : 'info'">🤖 AI分类</el-tag>
                 <span v-if="ev.reliability != null" class="text-xs"><span :style="{ color: scoreColor(ev.reliability) }">可靠: {{ Math.round(ev.reliability * 100) }}%</span></span>
                 <span v-if="ev.data_freshness != null" class="text-xs" :style="{ color: ev.data_freshness > 2160 ? 'var(--warning)' : 'var(--text-secondary)' }">🕐 {{ ev.data_freshness >= 24 ? Math.round(ev.data_freshness / 24) + '天前' : ev.data_freshness + '小时前' }}</span>
                 <span v-if="ev.relevance_score != null" class="text-xs ml-auto"><span :style="{ color: scoreColor(ev.relevance_score) }">可信度: {{ Math.round(ev.relevance_score * 100) }}%</span></span>

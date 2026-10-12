@@ -49,6 +49,16 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4o"
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
 
+    # LLM 分级路由：light=分类/抽取等高频轻任务（默认本地小模型，零 API 成本）；
+    # heavy=报告/晨报等重任务（None=跟随主 LLM_PROVIDER 配置）。
+    LLM_TIER_LIGHT_PROVIDER: Literal["ollama", "openai"] | None = "ollama"
+    LLM_TIER_LIGHT_MODEL: str = "qwen2.5:7b"
+    LLM_TIER_HEAVY_PROVIDER: Literal["ollama", "openai"] | None = None
+    LLM_TIER_HEAVY_MODEL: str | None = None
+
+    # 证据分类器：llm=批量 LLM 分类（失败自动降级），keyword=纯关键词启发式
+    EVIDENCE_CLASSIFIER: Literal["llm", "keyword"] = "llm"
+
     # --- Redis ---
     REDIS_URL: str = "redis://127.0.0.1:6380/0"  # docker-compose exposes 6380→6379
     REDIS_TTL: int = 3600

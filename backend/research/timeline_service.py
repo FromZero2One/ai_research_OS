@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from core.exceptions import NotFoundError
+from core.logging import logger
 from research.models import ResearchReport, ResearchSession
 
 
@@ -308,4 +309,90 @@ class TimelineService:
             "thesis": session.thesis,
             "decision": session.decision,
             "events": events,
+        }
+
+    async def get_evolution_summary(self, session_id: uuid.UUID) -> dict[str, Any]:
+        """LLM 总结同公司历次研究的论点演变（复盘能力）。
+
+        输入：该公司全部完结/进行中 session 的 thesis + decision + confidence，
+        按时间排序。LLM 输出四段式：论点演变 / 已被证伪的判断 / 新增信息 /
+        结论是否漂移。LLM 失败时返回机械摘要，不阻塞调用方。
+        """
+        from core.adapters.llm import create_llm
+        from core.interfaces import LLMMessage
+
+        result = await self.session.execute(
+            select(ResearchSession)
+            .where(ResearchSession.id == session_id)
+            .options(selectinload(ResearchSession.reports))
+        )
+        current = result.scalar_one_or_none()
+        if not current:
+            raise NotFoundError("ResearchSession", str(session_id))
+        if current.company_id is None:
+            return {
+                "session_id": str(session_id),
+                "evolution": None,
+                "reason": "未关联公司，无法跨 session 对比",
+            }
+
+        history_result = await self.session.execute(
+            select(ResearchSession)
+            .where(
+                ResearchSession.company_id == current.company_id,
+                ResearchSession.thesis.isnot(None),
+            )
+            .order_by(ResearchSession.created_at.asc())
+        )
+        history = list(history_result.scalars().all())
+        if len(history) < 2:
+            return {
+                "session_id": str(session_id),
+                "evolution": None,
+                "reason": "历史论点不足 2 条，无法对比演变",
+            }
+
+        # 机械摘要（LLM 失败时的降级输出，也是 LLM 的输入素材）
+        lines = []
+        for s in history:
+            marker = "（本次）" if s.id == current.id else ""
+            lines.append(
+                f"- {s.created_at:%Y-%m-%d} {marker}[{s.decision or '?'} "
+                f"置信度 {s.confidence if s.confidence is not None else '?'}] "
+                f"{(s.thesis or '')[:200]}"
+            )
+        mechanical = "\n".join(lines)
+
+        prompt = (
+            "你是投资研究复盘分析师。以下是同一家公司历次研究的投资论点与结论，"
+            "按时间排序。请输出 Markdown 四段：\n"
+            "1. **论点演变** — 核心判断如何随新证据演进\n"
+            "2. **已被证伪/需修正的判断** — 哪些早期论点被后续数据推翻\n"
+            "3. **新增关键信息** — 促成演变的新证据\n"
+            "4. **结论漂移提示** — 决策方向变化是否与新证据匹配；"
+            "若无新证据支撑的转向须明示\n\n"
+            "要求：全程中文，引用具体日期与决策，不编造未提及的信息。\n\n"
+            f"公司研究历史：\n{mechanical}"
+        )
+        try:
+            llm = create_llm(tier="heavy")
+            resp = await llm.generate(
+                messages=[LLMMessage(role="user", content=prompt)],
+                temperature=0.3,
+                max_tokens=1024,
+            )
+            evolution = resp.content
+            engine = resp.model
+        except Exception as e:
+            logger.warning("Evolution summary LLM failed, using mechanical fallback: %s", e)
+            evolution = None
+            engine = None
+
+        return {
+            "session_id": str(session_id),
+            "company_id": str(current.company_id),
+            "history_count": len(history),
+            "mechanical_history": mechanical,
+            "evolution": evolution,
+            "engine": engine,
         }

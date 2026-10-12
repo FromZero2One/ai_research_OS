@@ -31,6 +31,7 @@ class SessionService:
         company_id: uuid.UUID | None = None,
         tags: list[str] | None = None,
         auto_plan: bool = True,
+        plan_type: str | None = None,
     ) -> ResearchSession:
         session = ResearchSession(
             title=title,
@@ -57,7 +58,9 @@ class SessionService:
                     except NotFoundError:
                         pass
 
-                plan = await self.planner.generate_plan(question, context, company_name)
+                plan = await self.planner.generate_plan(
+                    question, context, company_name, plan_type=plan_type
+                )
                 session.extra_metadata = session.extra_metadata or {}
                 session.extra_metadata[PLAN_KEY] = plan
                 await self.session.flush()

@@ -89,6 +89,21 @@ class ResearchEvidence(Base, UUIDMixin, TimestampMixin):
         nullable=True,
         comment="引用质量等级：peer_reviewed、institutional、analyst、internal",
     )
+
+    # ── 新增：LLM 分类与结构化事实 ────────────────────────────────
+    classification_source: Mapped[str | None] = mapped_column(
+        nullable=True,
+        comment="evidence_type 的判定来源：llm | keyword（审计用）",
+    )
+    classification_confidence: Mapped[float | None] = mapped_column(
+        nullable=True,
+        comment="0.0-1.0 分类置信度（LLM 自评，keyword 分类为 NULL）",
+    )
+    structured_facts: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="从证据文本抽取的结构化财务事实 JSON（{facts: [...], not_mentioned: bool}）",
+    )
     # ----------------------------------------------------------------
 
     session: Mapped[ResearchSession] = relationship(back_populates="evidences")

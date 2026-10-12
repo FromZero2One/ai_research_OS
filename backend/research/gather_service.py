@@ -49,6 +49,7 @@ class GatherService:
         knowledge = KnowledgeService(self.session)
         seen_sources: set[str] = set()
         count = 0
+        collected: list = []  # 收集 (evidence, doc_type)，收尾统一 LLM 批量分类+抽取
 
         # 1. Knowledge base search
         for query in search_queries:
@@ -60,7 +61,7 @@ class GatherService:
                 seen_sources.add(dedup_key)
 
                 evidence_type = EvidenceService.classify(result.content, query)
-                await self.evidence.add(
+                ev = await self.evidence.add(
                     session_id=session_id,
                     content=result.content[:2000],
                     source_type="document",
@@ -72,6 +73,7 @@ class GatherService:
                     citation_quality=_citation_quality_for_doc(result.doc_type),
                     reliability=_reliability_for_document(result.score, result.doc_type),
                 )
+                collected.append((ev, result.doc_type))
                 count += 1
 
         # 2. Market data if company is set
@@ -97,7 +99,7 @@ class GatherService:
                         f"Vol={latest.volume:.0f}\n"
                         f"30d Range: {range_str}"
                     )
-                    await self.evidence.add(
+                    ev = await self.evidence.add(
                         session_id=session_id,
                         content=price_summary,
                         source_type="market_data",
@@ -110,6 +112,7 @@ class GatherService:
                         citation_quality="institutional",
                         data_freshness=_hours_since(latest.date),
                     )
+                    collected.append((ev, None))
                     count += 1
 
                 # 2b. Financial metrics
@@ -123,7 +126,7 @@ class GatherService:
                                 f"{f.metric_name} = {f.metric_value}"
                             )
                         if fin_lines:
-                            await self.evidence.add(
+                            ev = await self.evidence.add(
                                 session_id=session_id,
                                 content=(
                                     "Financial metrics for "
@@ -137,6 +140,7 @@ class GatherService:
                                 relevance_score=0.8,
                                 evidence_type="neutral",
                             )
+                            collected.append((ev, None))
                             count += 1
                 except Exception:
                     logger.warning("Failed to fetch financials during auto-gather")
@@ -145,11 +149,120 @@ class GatherService:
                 logger.warning("Failed to fetch company/market data during auto-gather")
                 pass
 
+        # 3. 批量 LLM 分类（keyword 初值已在入库时写入，LLM 失败自动保留）
+        evidence_objs = [ev for ev, _dt in collected]
+        if evidence_objs:
+            await self.evidence.classify_batch(evidence_objs, question)
+
+        # 4. 财报类文档证据抽取结构化事实（P1，失败静默跳过）
+        report_type_evs = [
+            ev for ev, dt in collected if dt in _FACT_EXTRACT_DOC_TYPES
+        ]
+        await _extract_facts_for_reports(self.evidence, report_type_evs)
+
         return {
             "session_id": str(session_id),
             "evidences_added": count,
             "searched_queries": len(search_queries),
+            "llm_classified": settings_enabled_classifier(),
         }
+
+
+def settings_enabled_classifier() -> str:
+    """供调用方了解本次分类实际使用的引擎。"""
+    from core.config import settings
+
+    return settings.EVIDENCE_CLASSIFIER
+
+
+# 财报类文档类型 → 允许抽取（新闻数字噪声大，不抽）
+_FACT_EXTRACT_DOC_TYPES = {"report", "sec_10k", "sec_10q"}
+
+_FINANCIAL_FACTS_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "facts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "metric_name": {"type": "string"},
+                    "value": {"type": "number"},
+                    "unit": {"type": "string"},
+                    "period": {"type": "string"},
+                    "direction": {
+                        "type": "string",
+                        "enum": ["up", "down", "flat", "n/a"],
+                    },
+                },
+                "required": ["metric_name", "value", "unit", "period"],
+            },
+        },
+        "not_mentioned": {"type": "boolean"},
+    },
+    "required": ["facts", "not_mentioned"],
+}
+
+_FACT_SYSTEM_PROMPT = (
+    "你是财务数据抽取器。从给定的公司文档片段中抽取明确出现的财务数字。\n"
+    "铁律：\n"
+    "1. 只抽取原文明确写出的数字，禁止推算、换算、估算。\n"
+    "2. 原文中没有任何财务数字时，输出 {\"facts\": [], \"not_mentioned\": true}。\n"
+    "3. metric_name 用原文的指标名；unit 保留原文单位；period 标注报告期（如 2025年报）。\n"
+    "4. direction 标注同比/环比方向（up/down/flat），原文未说明则为 n/a。\n"
+    "5. 输出 JSON，格式为 {\"facts\": [{\"metric_name\": \"...\", \"value\": 0, "
+    "\"unit\": \"...\", \"period\": \"...\", \"direction\": \"...\"}], "
+    "\"not_mentioned\": false}。"
+)
+
+
+async def _extract_facts_for_reports(evidence_svc, evidences) -> int:
+    """对财报类文档证据抽取结构化财务事实，写入 structured_facts。
+
+    调用方已按 doc_type ∈ {report, sec_10k, sec_10q} 过滤；此处跳过
+    已抽取的证据，LLM 失败静默继续。返回成功抽取的条数。
+    """
+    targets = [ev for ev in evidences if ev.structured_facts is None]
+    if not targets:
+        return 0
+
+    from core.adapters.llm import create_llm
+    from core.interfaces import LLMMessage
+    from market.models import normalize_metric_name
+
+    llm = create_llm(tier="light")
+    extracted = 0
+    for ev in targets:
+        try:
+            result = await llm.generate_structured(
+                messages=[
+                    LLMMessage(role="system", content=_FACT_SYSTEM_PROMPT),
+                    LLMMessage(role="user", content=ev.content[:2000]),
+                ],
+                schema=_FINANCIAL_FACTS_SCHEMA,
+                temperature=0.1,
+            )
+        except Exception as e:
+            logger.warning("Fact extraction failed for evidence %s: %s", ev.id, e)
+            continue
+
+        facts = result.get("facts") or []
+        if result.get("not_mentioned") or not facts:
+            ev.structured_facts = {"facts": [], "not_mentioned": True}
+            continue
+
+        # 指标名归一化（接 FinancialMetricName 标准枚举）
+        for f in facts:
+            if isinstance(f, dict) and f.get("metric_name"):
+                f["metric_name"] = normalize_metric_name(f["metric_name"])
+        ev.structured_facts = {"facts": facts, "not_mentioned": False}
+        extracted += 1
+
+    if extracted:
+        logger.info(
+            "Structured facts extracted for %d/%d report evidences", extracted, len(targets)
+        )
+    return extracted
 
 
 def _sub_question_texts(items) -> list[str]:
