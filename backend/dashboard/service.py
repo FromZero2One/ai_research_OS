@@ -1,6 +1,7 @@
 """Dashboard service — aggregates data from all modules for the daily workspace.
 
 All methods use batch queries (not N+1) to avoid per-item round-trips.
+Shared watchlist/research/price queries live in core.shared_queries.
 """
 
 from __future__ import annotations
@@ -10,6 +11,28 @@ from typing import Any
 
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from core.shared_queries import (
+    latest_price_by_ticker,
+    latest_research_by_company,
+    load_watched_companies,
+)
+
+
+def _days_since(dt) -> int | None:
+    """距某时刻的天数（UTC）。"""
+    if dt is None:
+        return None
+    return (datetime.now(UTC) - dt).days
+
+
+def _research_status(days_since: int | None) -> str:
+    """按研究间隔给出关注状态。"""
+    if days_since is not None and days_since > 30:
+        return "need_research"
+    if days_since is not None and days_since > 14:
+        return "attention"
+    return "normal"
 
 
 class DashboardService:
@@ -43,76 +66,23 @@ class DashboardService:
         The watchlist merged into Company — watched == is_active. Response keeps
         the old shape (a single "自选" group) so the frontend is unchanged.
         """
-        from company.models import Company
-        from market.models import StockPrice
-        from research.models import ResearchSession
-
-        # 1. Load watched companies
-        result = await self.session.execute(
-            select(Company).where(Company.is_active.is_(True))
-        )
-        companies = list(result.scalars().all())
-
+        companies = await load_watched_companies(self.session)
         if not companies:
             return []
 
         all_tickers = [c.ticker for c in companies]
         company_ids = [c.id for c in companies]
 
-        # 2. Batch-load latest price per ticker (GROUP BY → max date)
-        subq = (
-            select(StockPrice.ticker, func.max(StockPrice.date).label("max_date"))
-            .where(StockPrice.ticker.in_(all_tickers))
-            .group_by(StockPrice.ticker)
-            .subquery()
-        )
-        latest_px = await self.session.execute(
-            select(StockPrice).join(
-                subq,
-                (StockPrice.ticker == subq.c.ticker) & (StockPrice.date == subq.c.max_date),
-            )
-        )
-        latest_price_by_ticker: dict[str, StockPrice] = {
-            p.ticker: p for p in latest_px.scalars().all()
-        }
+        # Batch: latest price per ticker + latest research per company
+        latest_price_map = await latest_price_by_ticker(self.session, all_tickers)
+        research_by_company = await latest_research_by_company(self.session, company_ids)
 
-        # 3. Batch-load latest research per company (GROUP BY → max created_at)
-        research_by_company: dict[str, ResearchSession] = {}
-        if company_ids:
-            subq_rs = (
-                select(
-                    ResearchSession.company_id,
-                    func.max(ResearchSession.created_at).label("max_created"),
-                )
-                .where(ResearchSession.company_id.in_(company_ids))
-                .group_by(ResearchSession.company_id)
-                .subquery()
-            )
-            rs_result = await self.session.execute(
-                select(ResearchSession).join(
-                    subq_rs,
-                    (ResearchSession.company_id == subq_rs.c.company_id)
-                    & (ResearchSession.created_at == subq_rs.c.max_created),
-                )
-            )
-            for rs in rs_result.scalars().all():
-                research_by_company[str(rs.company_id)] = rs
-
-        # 4. Assemble (no per-item queries)
+        # Assemble (no per-item queries)
         items_data = []
         for company in companies:
-            price = latest_price_by_ticker.get(company.ticker)
-            research = research_by_company.get(str(company.id))
-
-            days_since_research = None
-            status = "normal"
-            if research and research.created_at:
-                delta = datetime.now(UTC) - research.created_at
-                days_since_research = delta.days
-                if days_since_research and days_since_research > 30:
-                    status = "need_research"
-                elif days_since_research and days_since_research > 14:
-                    status = "attention"
+            price = latest_price_map.get(company.ticker)
+            research = research_by_company.get(company.id)
+            days_since_research = _days_since(research.created_at if research else None)
 
             items_data.append(
                 {
@@ -130,7 +100,7 @@ class DashboardService:
                         if (price and price.open is not None and price.close is not None)
                         else None
                     ),
-                    "status": status,
+                    "status": _research_status(days_since_research),
                     "thesis": research.thesis if research else None,
                     "last_research_at": (
                         research.created_at.isoformat()
@@ -160,48 +130,18 @@ class DashboardService:
         Before: O(1 + N*2) — one company + one research query per item.
         After:  O(1 + 2) — batch companies, then batch research.
         """
-        from company.models import Company
-        from research.models import ResearchSession
-
-        result = await self.session.execute(
-            select(Company).where(Company.is_active.is_(True))
-        )
-        items = list(result.scalars().all())
-        if not items:
+        companies = await load_watched_companies(self.session)
+        if not companies:
             return []
 
-        company_ids = [c.id for c in items]
+        research_by_company = await latest_research_by_company(
+            self.session, [c.id for c in companies]
+        )
 
-        # 3. Batch latest research per company
-        research_by_company: dict[str, ResearchSession] = {}
-        if company_ids:
-            subq = (
-                select(
-                    ResearchSession.company_id,
-                    func.max(ResearchSession.created_at).label("max_created"),
-                )
-                .where(ResearchSession.company_id.in_(company_ids))
-                .group_by(ResearchSession.company_id)
-                .subquery()
-            )
-            rs_result = await self.session.execute(
-                select(ResearchSession).join(
-                    subq,
-                    (ResearchSession.company_id == subq.c.company_id)
-                    & (ResearchSession.created_at == subq.c.max_created),
-                )
-            )
-            for rs in rs_result.scalars().all():
-                research_by_company[str(rs.company_id)] = rs
-
-        # 4. Assemble (no per-item queries)
         reminders: list[dict[str, Any]] = []
-        for company in items:
-            research = research_by_company.get(str(company.id))
-            days_since = None
-            if research and research.created_at:
-                delta = datetime.now(UTC) - research.created_at
-                days_since = delta.days
+        for company in companies:
+            research = research_by_company.get(company.id)
+            days_since = _days_since(research.created_at if research else None)
 
             reasons = []
             if days_since and days_since > 30:
@@ -229,18 +169,16 @@ class DashboardService:
         Single query: load last 90 days of prices for all tracked companies,
         then take the latest 2 per ticker in Python.
         """
-        from company.models import Company
-        from market.models import StockPrice
-
-        result = await self.session.execute(select(Company).where(Company.is_active.is_(True)))
-        companies = list(result.scalars().all())
+        companies = await load_watched_companies(self.session)
         if not companies:
             return []
 
         tickers = [c.ticker for c in companies]
 
         # Single batch query: all prices from last 90 days
-        price_result = await self.session.execute(
+        from market.models import StockPrice
+
+        price_rows = await self.session.execute(
             select(StockPrice)
             .where(
                 StockPrice.ticker.in_(tickers),
@@ -248,7 +186,7 @@ class DashboardService:
             )
             .order_by(StockPrice.ticker, StockPrice.date.desc())
         )
-        all_prices = list(price_result.scalars().all())
+        all_prices = list(price_rows.scalars().all())
 
         # Take latest 2 per ticker in Python
         latest_by_ticker: dict[str, StockPrice] = {}

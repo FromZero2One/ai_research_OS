@@ -6,7 +6,7 @@ import asyncio
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import desc, func, select, text
+from sqlalchemy import func, select, text
 
 from company.models import Company
 from core.adapters.llm import create_llm
@@ -14,6 +14,10 @@ from core.database import managed_session
 from core.interfaces import LLMMessage
 from core.logging import logger
 from core.morning_brief import MorningBrief
+from core.shared_queries import (
+    latest_research_by_company,
+    load_watched_companies,
+)
 from research.models import ResearchSession
 
 OVERVIEW_PROMPT = (
@@ -78,37 +82,14 @@ async def morning_brief() -> dict:
     """Two-layer morning brief: overview + per-stock deep dives for focus stocks."""
     async with managed_session() as session:
         # 1. Watched companies == is_active (watchlist merged into Company).
-        wl_result = await session.execute(
-            select(Company).where(Company.is_active.is_(True))
-        )
-        watchlist_tickers = [c.ticker for c in wl_result.scalars().all()]
+        watched = await load_watched_companies(session)
+        watchlist_tickers = [c.ticker for c in watched]
 
         # 2. Batch query: fetch ALL prices, companies, and research data at once
         active_tickers = watchlist_tickers[:20]
         if not active_tickers:
             brief_content = "关注列表为空，无法生成晨间简报。请先在投资组合中添加自选股。"
             return await _store_brief(session, brief_content, 0, 0)
-
-        # 2a. Prices: one query for all tickers (latest per ticker via DISTINCT ON)
-        price_result = await session.execute(
-            text("""
-                SELECT DISTINCT ON (sp.ticker) sp.id, sp.ticker, sp.date,
-                       sp.open, sp.high, sp.low, sp.close, sp.volume
-                FROM market.stock_prices sp
-                WHERE sp.ticker = ANY(:tickers)
-                ORDER BY sp.ticker, sp.date DESC
-            """),
-            {"tickers": active_tickers},
-        )
-        latest_prices: dict[str, dict] = {}
-        for row in price_result.all():
-            latest_prices[row.ticker] = {
-                "close": row.close,
-                "date": row.date,
-                "open": row.open,
-                "high": row.high,
-                "low": row.low,
-            }
 
         # Get 20-day windows per ticker (one batch query)
         all_price_rows = await session.execute(
@@ -139,18 +120,7 @@ async def morning_brief() -> dict:
 
         # 2c. Research sessions: latest + open counts per company
         company_ids = [c.id for c in companies_by_ticker.values() if c.id]
-        research_last: dict[uuid.UUID, ResearchSession] = {}
-        if company_ids:
-            rs_result = await session.execute(
-                select(ResearchSession)
-                .where(ResearchSession.company_id.in_(company_ids))
-                .order_by(ResearchSession.company_id, desc(ResearchSession.created_at))
-            )
-            for rs in rs_result.scalars().all():
-                if rs.company_id is None:
-                    continue
-                if rs.company_id not in research_last:
-                    research_last[rs.company_id] = rs
+        research_last = await latest_research_by_company(session, company_ids)
 
         open_count_map: dict[uuid.UUID, int] = {}
         if company_ids:

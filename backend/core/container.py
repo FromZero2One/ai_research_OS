@@ -14,7 +14,7 @@ Lifecycle:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -256,10 +256,6 @@ class Container:
 
             self._dashboard = DashboardService(self.session)
         return self._dashboard
-
-
-# Sentinel/helper type for anything the container can provide.
-ServiceLike = Protocol
 
 
 def create_container(session: AsyncSession) -> Container:

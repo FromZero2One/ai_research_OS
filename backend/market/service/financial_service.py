@@ -8,12 +8,12 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.adapters.akshare_mysql import AkshareMySQLAdapter
 from core.event_service import EventLogger
 from core.logging import logger
 from market.akshare_executor import is_a_stock
 from market.domain import FinancialMetricEntry
 from market.repositories import FinancialRepository
+from market.service.shared import get_shared_mysql, record_freshness
 
 # HK-stock metric key mapping (Chinese → English)
 HK_METRICS = [
@@ -55,12 +55,6 @@ class FinancialService:
         self.session = session
         self.events = EventLogger(session)
         self.repo = FinancialRepository(session)
-        self._mysql: AkshareMySQLAdapter | None = None
-
-    async def _get_mysql(self) -> AkshareMySQLAdapter:
-        if self._mysql is None:
-            self._mysql = AkshareMySQLAdapter()
-        return self._mysql
 
     async def get_financials(
         self,
@@ -97,7 +91,7 @@ class FinancialService:
     async def _get_financials_from_mysql(
         self, ticker: str, metric: str | None, fiscal_year: int | None
     ) -> list[FinancialMetricEntry]:
-        mysql = await self._get_mysql()
+        mysql = get_shared_mysql()
         rows = await mysql.get_financials(ticker, fiscal_year)
 
         results: list[FinancialMetricEntry] = []
@@ -137,10 +131,7 @@ class FinancialService:
             )
 
         # Record freshness
-        from market.service.freshness_service import FreshnessService
-
-        freshness = FreshnessService(self.session)
-        await freshness.record_fetch(ticker, "financials", record_count=count, status="ok")
+        await record_freshness(self.session, ticker, "financials", record_count=count, status="ok")
 
         return count
 

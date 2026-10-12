@@ -1,6 +1,7 @@
 """Observation Engine — scans watchlist items daily for signals.
 
-Outputs observations stored in EventLog that feed:
+Outputs observations stored in the Observation table (core.observation)
+that feed:
   - Research reminders (Dashboard)
   - Morning Brief content
   - Watchlist status updates

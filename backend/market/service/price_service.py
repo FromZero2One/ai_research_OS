@@ -13,7 +13,6 @@ from datetime import date
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.adapters.akshare_mysql import AkshareMySQLAdapter
 from core.config import settings
 from core.event_service import EventLogger
 from core.logging import logger
@@ -25,6 +24,7 @@ from market.akshare_executor import (
 )
 from market.domain import PriceEntry
 from market.repositories import PriceRepository
+from market.service.shared import get_shared_mysql, record_freshness
 
 _AKSHARE_PRICE_CODE_HK = (
     "import json, os, sys\nimport akshare as ak\ntry:\n"
@@ -73,12 +73,6 @@ class PriceService:
         self.session = session
         self.events = EventLogger(session)
         self.prices = PriceRepository(session)
-        self._mysql: AkshareMySQLAdapter | None = None
-
-    async def _get_mysql(self) -> AkshareMySQLAdapter:
-        if self._mysql is None:
-            self._mysql = AkshareMySQLAdapter()
-        return self._mysql
 
     # ── Query ──────────────────────────────────────────────────────
 
@@ -91,42 +85,36 @@ class PriceService:
     ) -> list[PriceEntry]:
         """Get prices — PG first, MySQL for A-stocks, akshare for HK/all."""
         ticker_upper = ticker.upper()
-        result: list[PriceEntry] | None = None
 
-        # Layer 1: PostgreSQL cache
+        # Layer 1: PostgreSQL cache — 不记录 freshness：读缓存不代表数据新鲜，
+        # 刷新 checked_at 会让停牌/退市股在质量看板上永远显示 ok（掩盖陈旧）。
         result = await self._get_prices_from_pg(ticker_upper, start_date, end_date, limit)
         if result:
-            return await self._record_and_return(ticker, result)
+            return result
 
-        # Layer 2: MySQL for A-stocks
+        # Layer 2: MySQL for A-stocks — 真实采集路径，记录 freshness
         if is_a_stock(ticker):
             try:
                 result = await self._get_prices_from_mysql(ticker, start_date, end_date, limit)
                 if result:
-                    return await self._record_and_return(ticker, result)
+                    await record_freshness(self.session, ticker, "prices", record_count=len(result))
+                    return result
             except Exception:
                 logger.warning("Failed to fetch prices from MySQL for %s", ticker)
 
-        # Layer 3: akshare subprocess (A-stock fallback + HK/all)
+        # Layer 3: akshare subprocess (A-stock fallback + HK/all) —
+        # upsert_prices 内部已记录 freshness，这里读回缓存不再重复记录
         try:
             fetched, _warns = await self.fetch_akshare(ticker)
             if fetched:
                 await self.upsert_prices(ticker, fetched)
                 result = await self._get_prices_from_pg(ticker_upper, start_date, end_date, limit)
                 if result:
-                    return await self._record_and_return(ticker, result)
+                    return result
         except Exception:
             logger.warning("Failed to fetch prices from akshare for %s", ticker)
 
         return []
-
-    async def _record_and_return(self, ticker: str, prices: list[PriceEntry]) -> list[PriceEntry]:
-        """Record freshness and return prices."""
-        from market.service.freshness_service import FreshnessService
-
-        freshness = FreshnessService(self.session)
-        await freshness.record_fetch(ticker, "prices", record_count=len(prices))
-        return prices
 
     async def _get_prices_from_pg(
         self,
@@ -144,7 +132,7 @@ class PriceService:
         end_date: date | None,
         limit: int,
     ) -> list[PriceEntry]:
-        mysql = await self._get_mysql()
+        mysql = get_shared_mysql()
         rows = await mysql.get_prices(ticker, start_date, end_date, limit)
         return [
             PriceEntry(
@@ -183,10 +171,7 @@ class PriceService:
             )
 
         # Record freshness
-        from market.service.freshness_service import FreshnessService
-
-        freshness = FreshnessService(self.session)
-        await freshness.record_fetch(ticker, "prices", record_count=count, status="ok")
+        await record_freshness(self.session, ticker, "prices", record_count=count, status="ok")
 
         return count
 
@@ -204,7 +189,7 @@ class PriceService:
         # staleness check a stale mirror would silently shadow the realtime
         # layers and the refresh button would return frozen prices.
         try:
-            mysql = await self._get_mysql()
+            mysql = get_shared_mysql()
             rows = await mysql.get_prices(ticker, limit=520)
             if rows and (date.today() - rows[0].date).days <= settings.PRICE_STALE_DAYS:
                 logger.info("  [akshare] Layer 1 MySQL: %d rows for %s", len(rows), ticker)
@@ -295,7 +280,6 @@ class PriceService:
     async def fetch_yfinance(self, ticker: str) -> list[dict]:
         """Fetch prices via yfinance (US stocks, needs proxy)."""
         import asyncio
-        import os
 
         import yfinance as yf
 
@@ -304,17 +288,10 @@ class PriceService:
             yf_ticker = f"{ticker}.SS" if ticker.startswith("6") else f"{ticker}.SZ"
 
         def _fetch():
-            for _var in (
-                "http_proxy",
-                "HTTP_PROXY",
-                "https_proxy",
-                "HTTPS_PROXY",
-                "ftp_proxy",
-                "FTP_PROXY",
-                "all_proxy",
-                "ALL_PROXY",
-            ):
-                os.environ.pop(_var, None)
+            from core.proxy_cleanup import clean_proxy_env
+
+            # yfinance 走网络，剥离干扰代理（与 app 启动同一套逻辑，含 no_proxy 设置）
+            clean_proxy_env()
             stock = yf.Ticker(yf_ticker)
             from datetime import date as _d
             from datetime import timedelta as _td

@@ -95,7 +95,6 @@ class EvidenceCreate(BaseModel):
     relevance_score: float | None = Field(None, ge=0.0, le=1.0)
     evidence_type: str = Field(default="supporting", pattern="^(supporting|opposing|neutral)$")
     summary: str | None = None
-    metadata: dict | None = None
 
     # ── 新增：证据质量评分字段 ────────────────────────────────────
     reliability: float | None = Field(

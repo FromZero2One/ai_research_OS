@@ -5,10 +5,10 @@ from __future__ import annotations
 from sqlalchemy import update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.adapters.akshare_mysql import AkshareMySQLAdapter
 from core.event_service import EventLogger
 from core.logging import logger
 from market.akshare_executor import is_a_stock
+from market.service.shared import get_shared_mysql
 
 _PROFILE_CODE = """\
 import json, os, sys
@@ -68,19 +68,13 @@ class ProfileService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.events = EventLogger(session)
-        self._mysql: AkshareMySQLAdapter | None = None
-
-    async def _get_mysql(self) -> AkshareMySQLAdapter:
-        if self._mysql is None:
-            self._mysql = AkshareMySQLAdapter()
-        return self._mysql
 
     async def get_stock_info(self, ticker: str) -> dict | None:
         """Get stock basic info + latest valuation (A-stocks only)."""
         if not is_a_stock(ticker):
             return None
 
-        mysql = await self._get_mysql()
+        mysql = get_shared_mysql()
         name = await mysql.get_name(ticker)
         valuation = await mysql.get_valuation(ticker)
         prices = await mysql.get_prices(ticker, limit=1)
@@ -99,7 +93,7 @@ class ProfileService:
         if not is_a_stock(ticker):
             return None
 
-        mysql = await self._get_mysql()
+        mysql = get_shared_mysql()
         name = await mysql.get_name(ticker)
         if not name:
             return None

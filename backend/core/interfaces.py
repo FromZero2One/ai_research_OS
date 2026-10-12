@@ -285,7 +285,6 @@ class TimelineService(Protocol):
 
 
 @runtime_checkable
-@runtime_checkable
 class HoldingService(Protocol):
     """Interface for holding (position) management."""
 
