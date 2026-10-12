@@ -110,9 +110,21 @@ export function useDeleteCompany() {
 }
 
 // ── Research ──
+export interface ResearchPlanItem {
+  id: string
+  text: string
+  priority?: 'high' | 'medium' | 'low'
+  status?: 'pending' | 'in_progress' | 'completed'
+  answer?: string | null
+  evidence_count?: number
+}
+
 export interface ResearchPlan {
-  research_goal: string; sub_questions: string[]; analysis_dimensions: string[]
+  research_goal: string
+  sub_questions: Array<ResearchPlanItem | string>
+  analysis_dimensions: string[]
   data_requirements: string[]; suggested_sources: string[]
+  version?: number
 }
 
 export interface ResearchSession {

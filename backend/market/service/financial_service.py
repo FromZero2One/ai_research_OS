@@ -117,7 +117,15 @@ class FinancialService:
 
     async def upsert_financials(self, ticker: str, metrics: list[FinancialMetricEntry]) -> int:
         """Bulk upsert financial metrics into PostgreSQL."""
-        count = await self.repo.upsert(ticker, metrics)
+        from dataclasses import replace
+
+        from market.models import normalize_metric_name
+
+        normalized = [
+            replace(entry, metric_name=normalize_metric_name(entry.metric_name))
+            for entry in metrics
+        ]
+        count = await self.repo.upsert(ticker, normalized)
 
         if count:
             await self.events.record(

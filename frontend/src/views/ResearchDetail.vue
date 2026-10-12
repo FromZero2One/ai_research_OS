@@ -82,7 +82,7 @@ function toggleEvidence(id: string) { const s = new Set(expandedEvidence.value);
     <div v-if="plan" class="plan-card">
       <h2 class="plan-title">📋 研究计划</h2>
       <div class="mb-3"><div class="text-sm text-secondary mb-1">目标</div><p class="text-sm" style="color:var(--text-primary)">{{ plan.research_goal }}</p></div>
-      <div v-if="plan.sub_questions?.length" class="mb-3"><div class="text-sm text-secondary mb-1">子问题</div><ul><li v-for="(q, i) in plan.sub_questions" :key="i" class="flex gap-2 text-sm mb-1" style="color:var(--text-primary)"><span style="color:var(--accent)">{{ i + 1 }}.</span><span>{{ q }}</span></li></ul></div>
+      <div v-if="plan.sub_questions?.length" class="mb-3"><div class="text-sm text-secondary mb-1">子问题</div><ul><li v-for="(q, i) in plan.sub_questions" :key="i" class="flex gap-2 text-sm mb-1 items-center" style="color:var(--text-primary)"><span style="color:var(--accent)">{{ i + 1 }}.</span><span>{{ typeof q === 'string' ? q : q.text }}</span><el-tag v-if="typeof q === 'object' && q.priority === 'high'" type="danger" size="small" effect="plain">高优先级</el-tag><el-tag v-if="typeof q === 'object' && q.status === 'completed'" type="success" size="small" effect="plain">✓ 已完成</el-tag></li></ul></div>
       <div class="flex flex-wrap gap-2"><el-tag v-for="d in plan.analysis_dimensions || []" :key="d" size="small">{{ d }}</el-tag></div>
     </div>
 
@@ -97,6 +97,9 @@ function toggleEvidence(id: string) { const s = new Set(expandedEvidence.value);
                 <span>{{ sourceIcon(ev.source_type) }}</span>
                 <el-tag size="small">{{ ev.source_type }}</el-tag>
                 <span v-if="ev.source_title" class="text-xs text-secondary truncate" style="max-width:200px">{{ ev.source_title }}</span>
+                <span v-if="ev.citation_quality" class="text-xs" style="color:var(--text-secondary)">🔗 {{ ev.citation_quality }}</span>
+                <span v-if="ev.reliability != null" class="text-xs"><span :style="{ color: scoreColor(ev.reliability) }">可靠: {{ Math.round(ev.reliability * 100) }}%</span></span>
+                <span v-if="ev.data_freshness != null" class="text-xs" :style="{ color: ev.data_freshness > 2160 ? 'var(--warning)' : 'var(--text-secondary)' }">🕐 {{ ev.data_freshness >= 24 ? Math.round(ev.data_freshness / 24) + '天前' : ev.data_freshness + '小时前' }}</span>
                 <span v-if="ev.relevance_score != null" class="text-xs ml-auto"><span :style="{ color: scoreColor(ev.relevance_score) }">可信度: {{ Math.round(ev.relevance_score * 100) }}%</span></span>
                 <el-button text size="small" @click="toggleEvidence(ev.id)">{{ expandedEvidence.has(ev.id) ? '收起' : '展开' }}</el-button>
               </div>

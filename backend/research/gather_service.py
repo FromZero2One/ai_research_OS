@@ -41,7 +41,10 @@ class GatherService:
 
         search_queries = [question]
         if use_plan and plan:
-            search_queries.extend(plan.get("sub_questions", [])[:5])
+            # sub_questions 为 ResearchPlanItem 对象（含 text/priority），提取文本
+            search_queries.extend(
+                _sub_question_texts(plan.get("sub_questions", []))[:5]
+            )
 
         knowledge = KnowledgeService(self.session)
         seen_sources: set[str] = set()
@@ -65,6 +68,9 @@ class GatherService:
                     source_title=result.title,
                     relevance_score=result.score,
                     evidence_type=evidence_type,
+                    # 证据质量评分：按文档类型映射引用等级
+                    citation_quality=_citation_quality_for_doc(result.doc_type),
+                    reliability=_reliability_for_document(result.score, result.doc_type),
                 )
                 count += 1
 
@@ -99,6 +105,10 @@ class GatherService:
                         source_title=f"{company.ticker} Price (30d)",
                         relevance_score=0.7,
                         evidence_type="neutral",
+                        # 行情数据可靠性高、新鲜度按最新数据日期计算
+                        reliability=0.9,
+                        citation_quality="institutional",
+                        data_freshness=_hours_since(latest.date),
                     )
                     count += 1
 
@@ -140,3 +150,49 @@ class GatherService:
             "evidences_added": count,
             "searched_queries": len(search_queries),
         }
+
+
+def _sub_question_texts(items) -> list[str]:
+    """从计划子问题（字符串或 ResearchPlanItem 字典）提取纯文本。"""
+    texts = []
+    for item in items or []:
+        if isinstance(item, str):
+            texts.append(item)
+        elif isinstance(item, dict) and item.get("text"):
+            texts.append(item["text"])
+    return texts
+
+
+def _citation_quality_for_doc(doc_type: str | None) -> str:
+    """按文档类型映射引用质量等级。"""
+    mapping = {
+        "sec_10k": "institutional",
+        "sec_10q": "institutional",
+        "report": "analyst",
+        "transcript": "analyst",
+        "news_article": "internal",
+    }
+    return mapping.get(doc_type or "", "internal")
+
+
+def _reliability_for_document(score: float, doc_type: str | None) -> float:
+    """文档证据可靠性 = 检索得分 × 文档类型权重，上限 0.95。"""
+    type_weight = {
+        "sec_10k": 1.0,
+        "sec_10q": 0.95,
+        "report": 0.85,
+        "transcript": 0.75,
+        "markdown": 0.7,
+        "pdf": 0.8,
+        "news_article": 0.6,
+    }.get(doc_type or "", 0.7)
+    return round(min(0.95, score * type_weight), 2)
+
+
+def _hours_since(d) -> int:
+    """计算距某日期的小时数（行情/财报数据新鲜度）。"""
+    from datetime import datetime
+    from datetime import time as dt_time
+
+    ref = datetime.combine(d, dt_time.min)
+    return max(0, int((datetime.now() - ref).total_seconds() // 3600))

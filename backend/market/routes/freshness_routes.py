@@ -55,6 +55,15 @@ async def get_stale_data(
     return {"count": len(stale), "records": stale}
 
 
+@router.get("/freshness/dashboard")
+async def get_quality_dashboard(
+    container: Container = Depends(get_container),
+):
+    """数据质量看板：新鲜度总览 + 各级预警 + 单一数据源依赖检测。"""
+    svc = container.freshness_service
+    return await svc.get_quality_dashboard()
+
+
 @router.get("/freshness/{ticker}")
 async def get_ticker_freshness(
     ticker: str,

@@ -4,21 +4,44 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, model_validator
+
+
+class ResearchPlanItem(BaseModel):
+    """Individual sub-question with priority tracking."""
+
+    id: str = Field(default_factory=lambda: str(uuid4())[:8], description="Unique sub-question ID")
+    text: str = Field(..., description="Sub-question text")
+    priority: str = Field(
+        default="medium", pattern="^(high|medium|low)$", description="Priority level"
+    )
+    status: str = Field(
+        default="pending",
+        pattern="^(pending|in_progress|completed)$",
+        description="Execution status",
+    )
+    answer: str | None = Field(default=None, description="Collected answer (filled during gather)")
+    evidence_count: int = Field(default=0, description="Number of supporting evidence items")
 
 
 class ResearchPlan(BaseModel):
     """AI-generated research plan stored in session.extra_metadata."""
 
     research_goal: str = Field(..., description="Restated research goal")
-    sub_questions: list[str] = Field(..., description="Sub-questions to answer", max_length=10)
+    sub_questions: list[ResearchPlanItem] = Field(
+        ..., description="Sub-questions to answer", max_length=10
+    )
     analysis_dimensions: list[str] = Field(
         ..., description="Analysis dimensions (financial, industry, etc.)"
     )
     data_requirements: list[str] = Field(default=[], description="Data to collect")
     suggested_sources: list[str] = Field(default=[], description="Types of sources to search")
+    version: int = Field(default=1, description="Plan version for tracking evolution")
+    created_at: datetime = Field(
+        default_factory=datetime.now, description="Plan creation timestamp"
+    )
 
 
 class ResearchSessionCreate(BaseModel):
@@ -74,6 +97,19 @@ class EvidenceCreate(BaseModel):
     summary: str | None = None
     metadata: dict | None = None
 
+    # ── 新增：证据质量评分字段 ────────────────────────────────────
+    reliability: float | None = Field(
+        None, ge=0.0, le=1.0, description="0.0-1.0 证据可靠性评分"
+    )
+    data_freshness: int | None = Field(
+        None, ge=0, description="数据新鲜度（小时数）"
+    )
+    citation_quality: str | None = Field(
+        None,
+        description="引用质量等级：peer_reviewed、institutional、analyst、internal",
+    )
+    # ----------------------------------------------------------------
+
 
 class ResearchSessionResponse(BaseModel):
     id: UUID
@@ -127,6 +163,9 @@ class EvidenceResponse(BaseModel):
     relevance_score: float | None
     evidence_type: str
     summary: str | None
+    reliability: float | None = None
+    data_freshness: int | None = None
+    citation_quality: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

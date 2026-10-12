@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
+from uuid import uuid4
 
 from core.adapters.llm import create_llm
 from core.interfaces import LLM, LLMMessage
@@ -14,7 +16,8 @@ RESEARCH_PLAN_SYSTEM_PROMPT = (
     "Your plan must include:\n"
     "1. **research_goal**: A clear restatement of what needs to be researched\n"
     "2. **sub_questions**: 3-6 specific questions that must be answered "
-    "to reach a conclusion\n"
+    "to reach a conclusion. Each sub-question should have a unique ID, "
+    "priority level (high/medium/low), and status (pending/in_progress/completed)\n"
     "3. **analysis_dimensions**: Key dimensions to analyze (e.g., financial "
     "health, competitive position, industry trends, management quality, "
     "valuation, risks)\n"
@@ -47,8 +50,8 @@ class ResearchPlanner:
 
         user_prompt += (
             "\nCreate a detailed research plan as JSON with keys: "
-            "research_goal, sub_questions (list), analysis_dimensions (list), "
-            "data_requirements (list), suggested_sources (list)."
+            "research_goal, sub_questions (list of objects with id/text/priority/status), "
+            "analysis_dimensions (list), data_requirements (list), suggested_sources (list)."
         )
 
         messages = [
@@ -70,21 +73,17 @@ class ResearchPlanner:
             if content.startswith("json"):
                 content = content[4:].strip()
             plan = json.loads(content)
-            required = {"research_goal", "sub_questions", "analysis_dimensions"}
-            if not required.issubset(plan.keys()):
-                plan["research_goal"] = plan.get("research_goal", question)
-                plan["sub_questions"] = plan.get("sub_questions", [question])
-                plan["analysis_dimensions"] = plan.get(
-                    "analysis_dimensions",
-                    ["Financial", "Industry", "Competitive"],
-                )
-            plan["data_requirements"] = plan.get("data_requirements", [])
-            plan["suggested_sources"] = plan.get("suggested_sources", [])
-            return plan
         except (json.JSONDecodeError, AttributeError):
             return {
                 "research_goal": question,
-                "sub_questions": [question],
+                "sub_questions": [
+                    {
+                        "id": str(uuid4())[:8],
+                        "text": question,
+                        "priority": "medium",
+                        "status": "pending",
+                    }
+                ],
                 "analysis_dimensions": [
                     "Financial Analysis",
                     "Industry Analysis",
@@ -93,7 +92,45 @@ class ResearchPlanner:
                 ],
                 "data_requirements": ["Revenue and earnings trends", "Market share data"],
                 "suggested_sources": ["Annual reports", "Industry reports", "News"],
+                "version": 1,
+                "created_at": datetime.now().isoformat(),
             }
+
+        # Transform sub_questions to ResearchPlanItem format
+        raw_sq = plan.get("sub_questions", [])
+        if raw_sq and isinstance(raw_sq, list) and isinstance(raw_sq[0], str):
+            # Old format: just strings
+            plan["sub_questions"] = [
+                {
+                    "id": str(uuid4())[:8],
+                    "text": q,
+                    "priority": "medium",
+                    "status": "pending",
+                }
+                for q in raw_sq
+            ]
+        elif raw_sq and isinstance(raw_sq, list) and isinstance(raw_sq[0], dict):
+            # New format or partially filled - ensure required fields
+            enriched: list[dict] = []
+            for sq in raw_sq:
+                enriched.append(
+                    {
+                        "id": sq.get("id", str(uuid4())[:8]),
+                        "text": sq.get("text", ""),
+                        "priority": sq.get("priority", "medium"),
+                        "status": sq.get("status", "pending"),
+                    }
+                )
+            plan["sub_questions"] = enriched
+
+        # Ensure required fields with defaults
+        plan.setdefault("research_goal", question)
+        plan.setdefault("data_requirements", plan.get("data_requirements", []))
+        plan.setdefault("suggested_sources", plan.get("suggested_sources", []))
+        plan.setdefault("version", plan.get("version", 1))
+        plan.setdefault("created_at", plan.get("created_at", datetime.now().isoformat()))
+
+        return plan
 
     async def generate_structured_thesis(
         self, thesis: str, decision: str, report_content: str

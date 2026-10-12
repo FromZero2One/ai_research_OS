@@ -76,6 +76,21 @@ class ResearchEvidence(Base, UUIDMixin, TimestampMixin):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     extra_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
+    # ── 新增：证据质量评分 ────────────────────────────────────────
+    reliability: Mapped[float | None] = mapped_column(
+        nullable=True,
+        comment="0.0-1.0 证据可靠性评分（来源可信度、数据质量综合评分）",
+    )
+    data_freshness: Mapped[int | None] = mapped_column(
+        nullable=True,
+        comment="数据新鲜度（小时数），None表示未知或不适用",
+    )
+    citation_quality: Mapped[str | None] = mapped_column(
+        nullable=True,
+        comment="引用质量等级：peer_reviewed、institutional、analyst、internal",
+    )
+    # ----------------------------------------------------------------
+
     session: Mapped[ResearchSession] = relationship(back_populates="evidences")
 
 

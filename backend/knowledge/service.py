@@ -494,6 +494,28 @@ class KnowledgeService:
             for row in rows
         ]
 
+    async def _get_ask_system_prompt(self) -> str:
+        """优先读取数据库 PromptTemplate(name='knowledge_ask')，回退内置常量。
+
+        支持在 AI 中心迭代提示词而无需改代码；模板不存在或查询失败时
+        静默回退，保证 ask 永远可用。
+        """
+        try:
+            from ai.models import PromptTemplate
+
+            result = await self.session.execute(
+                select(PromptTemplate).where(
+                    PromptTemplate.name == "knowledge_ask",
+                    PromptTemplate.is_active.is_(True),
+                )
+            )
+            tpl = result.scalar_one_or_none()
+            if tpl and tpl.system_prompt:
+                return tpl.system_prompt
+        except Exception:
+            pass
+        return ASK_SYSTEM_PROMPT
+
     async def ask(
         self,
         question: str,
@@ -527,7 +549,7 @@ class KnowledgeService:
             llm = create_llm()
         response = await llm.generate(
             messages=[
-                LLMMessage(role="system", content=ASK_SYSTEM_PROMPT),
+                LLMMessage(role="system", content=await self._get_ask_system_prompt()),
                 LLMMessage(role="user", content=f"问题: {question}\n\n文档片段:\n{fragments}"),
             ],
             temperature=0.2,

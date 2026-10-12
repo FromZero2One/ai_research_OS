@@ -24,10 +24,15 @@ REPORT_SYSTEM_PROMPT = (
     "what the evidence shows\n"
     "4. **Risk Factors** — Key risks identified\n"
     "5. **Evidence Balance** — Summary of supporting vs opposing evidence "
-    "strength\n"
-    "6. **Preliminary Conclusion** — What the evidence suggests\n\n"
+    "strength, with reliability-weighted assessment\n"
+    "6. **Preliminary Conclusion** — What the evidence suggests\n"
+    "7. **Risk Disclosure** — 标准风险揭示：注明本报告基于的证据范围、"
+    "数据新鲜度限制（如最后更新时间距今天数）、低可靠性证据占比较高时须明示，"
+    "并声明不构成投资建议\n\n"
     "Use markdown formatting. Be objective — clearly distinguish supported "
-    "conclusions from speculation."
+    "conclusions from speculation. 证据条目附有可靠性(reliability)与新鲜度"
+    "(数据距今年数)标注时，低可靠性(<0.5)或陈旧(>90天)的证据必须在正文中"
+    "明确说明其局限。"
 )
 
 
@@ -127,7 +132,15 @@ class ReportService:
         # Build evidence context
         supporting, opposing, neutral = [], [], []
         for ev in session.evidences or []:
-            item = f"- [{ev.source_type}] {ev.content[:500]}"
+            # 质量标注：可靠性 + 新鲜度，供 LLM 在报告中说明证据局限
+            quality_tags = []
+            if ev.reliability is not None:
+                quality_tags.append(f"reliability={ev.reliability:.2f}")
+            if ev.data_freshness is not None:
+                quality_tags.append(f"data_age={ev.data_freshness}h")
+            quality_str = f" ({', '.join(quality_tags)})" if quality_tags else ""
+
+            item = f"- [{ev.source_type}]{quality_str} {ev.content[:500]}"
             if ev.evidence_type == "supporting":
                 supporting.append(item)
             elif ev.evidence_type == "opposing":
@@ -143,9 +156,13 @@ class ReportService:
             context_parts.append("\n## Research Plan")
             context_parts.append(f"Goal: {plan.get('research_goal', '')}")
             if plan.get("sub_questions"):
-                context_parts.append(
-                    "Sub-questions:\n" + "\n".join(f"- {q}" for q in plan["sub_questions"])
-                )
+                from research.gather_service import _sub_question_texts
+
+                sq_texts = _sub_question_texts(plan["sub_questions"])
+                if sq_texts:
+                    context_parts.append(
+                        "Sub-questions:\n" + "\n".join(f"- {q}" for q in sq_texts)
+                    )
             if plan.get("analysis_dimensions"):
                 context_parts.append(
                     "Analysis Dimensions:\n"
