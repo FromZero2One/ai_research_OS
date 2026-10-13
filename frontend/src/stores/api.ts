@@ -277,6 +277,13 @@ export interface MarketPricesResponse { ticker: string; count: number; prices: P
 export interface FinancialMetricPoint { fiscal_year: number; fiscal_period: string; metric_name: string; metric_value: number }
 export interface StockSearchResult { symbol: string; name: string }
 
+export interface CoverageCell { health: 'ok' | 'warn' | 'stale' | 'missing'; age_hours?: number; checked_at?: string; record_count?: number }
+export interface CoverageRow { ticker: string; name: string; cells: Record<string, CoverageCell>; missing: string[]; worst_health: string }
+export interface CoverageMatrix { data_types: string[]; rows: CoverageRow[]; counts: { companies: number; fully_covered: number; with_gaps: number; stale: number } }
+export function useCoverageMatrix() {
+  return useGet<CoverageMatrix>(['market', 'freshness', 'coverage'], '/market/freshness/coverage', { refetchInterval: 60_000 })
+}
+
 export function useMarketPrices(ticker: MaybeRefOrGetter<string>, limit: number = 120) {
   return useGet<MarketPricesResponse>(
     computed(() => ['market', toValue(ticker)]),

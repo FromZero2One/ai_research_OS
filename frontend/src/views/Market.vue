@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { useFinancialMetrics, useIngestPrices, useMarketPrices, useStockSearch } from '@/stores/api'
+import { useCoverageMatrix, useFinancialMetrics, useIngestPrices, useMarketPrices, useStockSearch } from '@/stores/api'
 import FinancialBars from '@/components/FinancialBars.vue'
 import StockChart from '@/components/StockChart.vue'
 import StockSearch from '@/components/StockSearch.vue'
@@ -10,6 +10,7 @@ const period = ref<'daily' | 'weekly' | 'monthly'>('daily')
 const tickerNames = ref<Record<string, string>>({})
 const autoIngested = ref<Set<string>>(new Set())
 const ingestPrices = useIngestPrices()
+const { data: coverage } = useCoverageMatrix()
 const { data: nameData } = useStockSearch(computed(() => tickerRef.value))
 
 const { data: priceData, isPending } = useMarketPrices(tickerRef, 520)
@@ -70,11 +71,36 @@ function onStockSelect(item: { symbol: string; name: string }) {
   if (item.name) tickerNames.value = { ...tickerNames.value, [item.symbol]: item.name }
 }
 
+const HEALTH_META: Record<string, { label: string; color: string }> = {
+  ok: { label: 'OK', color: 'var(--success)' },
+  warn: { label: '预警', color: 'var(--warning)' },
+  stale: { label: '过期', color: 'var(--danger)' },
+  missing: { label: '缺失', color: 'var(--danger)' },
+}
+function healthMeta(h?: string) { return HEALTH_META[h || 'missing'] || HEALTH_META.missing }
+
 </script>
 
 <template>
   <div class="page">
     <div class="page-header"><h1 class="page-title">📊 行情中心</h1><p class="page-desc">股票行情 · 财务指标 · 宏观数据</p></div>
+
+    <el-card v-if="coverage && coverage.rows.length" shadow="never">
+      <template #header><div class="flex items-center justify-between"><span>🩺 数据覆盖矩阵</span><span class="text-xs text-secondary">{{ coverage.counts.companies }} 家关注 · 全覆盖 {{ coverage.counts.fully_covered }} · 缺口 {{ coverage.counts.with_gaps }} · 过期 {{ coverage.counts.stale }}</span></div></template>
+      <div class="coverage-grid">
+        <div class="coverage-row coverage-head">
+          <span class="c-ticker">公司</span>
+          <span v-for="dt in coverage.data_types" :key="dt" class="c-cell">{{ dt }}</span>
+        </div>
+        <div v-for="row in coverage.rows" :key="row.ticker" class="coverage-row" @click="tickerRef = row.ticker; tickerNames = { ...tickerNames, [row.ticker]: row.name }">
+          <span class="c-ticker" :style="{ color: row.worst_health === 'ok' ? 'var(--text-primary)' : 'var(--warning)' }">{{ row.ticker }} {{ row.name }}</span>
+          <span v-for="dt in coverage.data_types" :key="dt" class="c-cell">
+            <span class="health-dot" :style="{ background: healthMeta(row.cells[dt]?.health).color }" />
+            <span class="text-xs text-secondary">{{ row.cells[dt]?.health === 'missing' ? '—' : `${Math.round(row.cells[dt].age_hours || 0)}h` }}</span>
+          </span>
+        </div>
+      </div>
+    </el-card>
 
     <StockSearch @select="onStockSelect" />
 
@@ -129,6 +155,14 @@ function onStockSelect(item: { symbol: string; name: string }) {
 .page { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
 .chart-card { padding: 16px; border-radius: 12px; }
 .chart-empty { display: flex; align-items: center; justify-content: center; height: 256px; color: var(--text-secondary); }
+.coverage-grid { display: flex; flex-direction: column; gap: 6px; }
+.coverage-row { display: grid; grid-template-columns: 1fr repeat(4, 90px); align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
+.coverage-row:hover { background: var(--bg-tertiary); }
+.coverage-head { cursor: default; color: var(--text-secondary); font-size: 12px; }
+.coverage-head:hover { background: transparent; }
+.c-ticker { font-size: 13px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-cell { display: flex; align-items: center; gap: 6px; }
+.health-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .text-success { color: var(--success); }
 .text-danger { color: var(--danger); }
 </style>

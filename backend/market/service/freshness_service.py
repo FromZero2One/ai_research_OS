@@ -167,3 +167,81 @@ class FreshnessService:
             "warn_list": warn[:50],
             "source_coverage_ratio": concentration,
         }
+
+    async def get_coverage_matrix(self) -> dict[str, Any]:
+        """数据覆盖矩阵：关注公司 × 数据类型。
+
+        与 quality_dashboard 的区别：quality_dashboard 只统计已有记录，
+        本方法对"该有而没有"的缺口显式标 missing——关注公司从未抓过
+        财务数据这类问题只有矩阵视角能暴露。
+        """
+        from sqlalchemy import select as sa_select
+
+        from company.models import Company
+
+        result = await self.session.execute(
+            sa_select(Company).where(Company.is_active.is_(True)).order_by(Company.ticker)
+        )
+        companies = result.scalars().all()
+
+        records = await self.get_freshness(limit=5000)
+        by_ticker: dict[str, dict[str, dict[str, Any]]] = {}
+        for r in records:
+            by_ticker.setdefault(r["ticker"], {})[r["data_type"]] = r
+
+        tracked_types = list(STALE_THRESHOLD_HOURS.keys())
+        rows: list[dict[str, Any]] = []
+        for c in companies:
+            types = by_ticker.get(c.ticker.upper(), {})
+            cells: dict[str, Any] = {}
+            missing: list[str] = []
+            for dt in tracked_types:
+                rec = types.get(dt)
+                if rec is None:
+                    cells[dt] = {"health": "missing"}
+                    missing.append(dt)
+                else:
+                    cells[dt] = {
+                        "health": rec["health"],
+                        "age_hours": rec["age_hours"],
+                        "checked_at": rec["checked_at"],
+                        "record_count": rec["record_count"],
+                    }
+            worst = "ok"
+            for cell in cells.values():
+                h = cell["health"]
+                if h == "stale" or (h == "missing" and dt_priority(h) > dt_priority(worst)):
+                    worst = h
+                elif h == "warn" and worst == "ok":
+                    worst = "warn"
+                elif h == "missing" and worst not in ("stale", "missing"):
+                    worst = "missing" if worst == "missing" else worst
+            rows.append(
+                {
+                    "ticker": c.ticker,
+                    "name": c.name,
+                    "cells": cells,
+                    "missing": missing,
+                    "worst_health": worst,
+                }
+            )
+
+        stale_count = sum(1 for r in rows if r["worst_health"] == "stale")
+        missing_count = sum(1 for r in rows if r["missing"])
+        return {
+            "data_types": tracked_types,
+            "rows": rows,
+            "counts": {
+                "companies": len(rows),
+                "fully_covered": sum(
+                    1 for r in rows if not r["missing"] and r["worst_health"] == "ok"
+                ),
+                "with_gaps": missing_count,
+                "stale": stale_count,
+            },
+        }
+
+
+def dt_priority(health: str) -> int:
+    """健康度严重程度排序（missing 视为最严重——数据缺口）。"""
+    return {"missing": 3, "stale": 2, "warn": 1, "ok": 0}.get(health, 0)

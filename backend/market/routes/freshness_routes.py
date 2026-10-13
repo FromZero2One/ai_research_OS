@@ -64,6 +64,15 @@ async def get_quality_dashboard(
     return await svc.get_quality_dashboard()
 
 
+@router.get("/freshness/coverage")
+async def get_coverage_matrix(
+    container: Container = Depends(get_container),
+):
+    """数据覆盖矩阵：关注公司 × 数据类型，缺口显式标 missing。"""
+    svc = container.freshness_service
+    return await svc.get_coverage_matrix()
+
+
 @router.get("/freshness/{ticker}")
 async def get_ticker_freshness(
     ticker: str,
