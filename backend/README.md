@@ -7,8 +7,8 @@ Python/FastAPI 后端。完整使用手册见根目录 [`USAGE.md`](../USAGE.md)
 - **框架**: FastAPI + async SQLAlchemy + Pydantic v2
 - **存储**: PostgreSQL（多 schema + pgvector）+ Qdrant（向量）+ Redis（缓存）
 - **AI**: DeepSeek（OpenAI 兼容，本机默认）/ Ollama（本地 LLM + Embedding）
-- **数据源**: akshare（A股，MySQL 镜像 + 子进程），yfinance（美股）
-- **质量**: pytest 125 用例 + ruff + mypy + pre-commit
+- **数据源**: akshare 子进程直连（A股/港股，Tencent/Sina/Eastmoney），yfinance（美股备选）
+- **质量**: pytest 132 用例 + ruff + mypy + pre-commit
 
 ## 架构
 
@@ -56,11 +56,11 @@ PostgreSQL 用 schema 做模块隔离，初始化 SQL 见 `docker/init.sql`：
 | `document` | documents, document_chunks |
 | `research` | research_sessions, research_evidences, research_reports |
 | `portfolio` | holdings, investment_journal |
-| `ai` | prompt_templates, ai_workflows |
+| `ai` | prompt_templates |
 | `core` | event_log, task_records, morning_briefs, observations |
 
 - `knowledge` / `dashboard` 无独立 schema：knowledge 复用 document 表 + Qdrant 向量，dashboard 跨 schema 聚合查询
-- akshare 数据在外部 MySQL 镜像（非 PG），不进本库
+- 行情/财务数据统一入库 PG（`market` schema），采集走 akshare 子进程直连（无外部 MySQL 依赖）
 
 ### Event Log（审计追踪）
 
@@ -101,8 +101,9 @@ PYTHONPATH=. python scripts/seed_data.py
 | | `OLLAMA_EMBEDDING_MODEL` | nomic-embed-text | **bge-m3** |
 | | `EMBEDDING_DIMENSION` | 1024 | — |
 | LLM | `LLM_PROVIDER` | **ollama** | **openai** |
-| | `OPENAI_BASE_URL` | https://api.openai.com/v1 | https://api.deepseek.com |
-| | `OPENAI_MODEL` | gpt-4o | deepseek-v4-flash |
+| | `OPENAI_BASE_URL` | https://api.openai.com/v1 | https://api.deepseek.com/v1 |
+| | `OPENAI_MODEL` | gpt-4o | deepseek-chat |
+| | `LLM_TIER_LIGHT_PROVIDER` / `LLM_TIER_LIGHT_MODEL` | ollama / qwen2.5:7b | openai / deepseek-chat |
 | | `OLLAMA_MODEL` | llama3.1:70b | qwen3.5-98k:latest（注释） |
 | Redis | `REDIS_URL` | redis://127.0.0.1:6380/0 | — |
 | 文档 | `UPLOAD_DIR` / `MAX_UPLOAD_SIZE_MB` | data/uploads / 50 | — |
@@ -112,7 +113,7 @@ PYTHONPATH=. python scripts/seed_data.py
 | 调度器 | `SCHEDULER_ENABLED` | **true** | — |
 | 安全 | `SECRET_KEY` | 每次启动随机生成 | — |
 
-> **默认是 Ollama，本机跑 DeepSeek**：代码里 `LLM_PROVIDER` 默认 `ollama`，本机 `.env` 设为 `openai` + DeepSeek（`deepseek-v4-flash`）。`deepseek-chat` / `deepseek-reasoner` 已于 2026-07-24 停用。
+> **默认是 Ollama，本机跑 DeepSeek**：代码里 `LLM_PROVIDER` 默认 `ollama`，本机 `.env` 设为 `openai` + DeepSeek（`deepseek-chat`，OpenAI 兼容端点 `https://api.deepseek.com/v1`）；light tier（证据分类/事实抽取）同样走云端。
 > 完整变量清单见 `core/config.py`。
 
 ## AI 能力
@@ -128,7 +129,7 @@ Ollama 版本过旧（<0.3.0）时 `/api/embed` 不可用，Embedding 降级为 
 
 ## 外部 MCP 数据源
 
-- **akshare**：`market/akshare_executor.py` 调用外部 `akshare_mcp` venv（`AKSHARE_MCP_DIR`），可配云端 MCP 兜底（`AKSHARE_CLOUD_MCP_URL`，留空禁用）
+- **akshare**：`market/akshare_executor.py` 调用外部 `akshare_mcp` venv（`AKSHARE_MCP_DIR`），子进程直连 Tencent/Sina/Eastmoney 数据源；价格/财务/估值三条采集链均无外部数据库依赖，可配云端 MCP 兜底（`AKSHARE_CLOUD_MCP_URL`，留空禁用）
 - **newsnow**：`core/adapters/newsnow_mcp.py` 调用外部 newsnow MCP server（`NEWSNOW_MCP_SERVER_PATH` / `NEWSNOW_BASE_URL`）
 
 ## 后台任务
@@ -140,4 +141,4 @@ Ollama 版本过旧（<0.3.0）时 `/api/embed` 不可用，Embedding 降级为 
 ```bash
 make test        # pytest，专用 airesearch_test 库 + 隔离 Qdrant 集合
 ```
-当前 **125 passed**。
+当前 **132 passed**（另有 5 项依赖本机 Ollama embeddings，无 Ollama 环境时不计）。

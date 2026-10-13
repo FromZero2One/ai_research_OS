@@ -44,7 +44,7 @@ A personal AI-powered investment research assistant. Company → Knowledge → A
    └────────────────────────────────┘
 ```
 
-> **关于 MySQL**: 本项目数据库为 PostgreSQL（docker-compose 内）。代码中引用的 MySQL 属于外部 akshare 数据源自管的数据库，非本项目 docker-compose 的一部分。A 股行情需要额外配置该外部 MySQL 连接。
+> **数据源架构**：A 股/港股统一走 akshare 子进程直连（Tencent/Sina/Eastmoney），数据落 PG（`market` schema）；美股走 yfinance（需代理）。无外部 MySQL 依赖。
 
 ## 7 Business Centers
 
@@ -100,7 +100,7 @@ uv pip install --python .venv/bin/python \
   "python-jose[cryptography]>=3.3" "passlib[bcrypt]>=1.7" \
   "structlog>=24.0" "opentelemetry-api>=1.25" "opentelemetry-sdk>=1.25" \
   "pytest>=8.0" "pytest-asyncio>=0.24" "pytest-cov>=5.0" "ruff>=0.6" "mypy>=1.11"
-uv pip install --python .venv/bin/python jieba pymysql
+uv pip install --python .venv/bin/python jieba
 # Optional: sentence-transformers (CUDA ~3GB, fallback when Ollama unavailable)
 # uv pip install --python .venv/bin/python "sentence-transformers>=3.0"
 
@@ -137,7 +137,7 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 | 投资组合 | ~40% | 自选已并入公司；持仓/日志后端就绪，前端随 V2 |
 | 系统/调度 | ~85% | 调度/观察/持久任务/事件/新鲜度可用 |
 
-总体：V1.1 目标基本达成，后端 126 项测试通过（另有 11 项依赖 Ollama/MySQL 环境，本机无此环境时不计）；ruff/mypy/vue-tsc/build 全绿。
+总体：V1.1 目标基本达成，后端 132 项测试通过（另有 5 项依赖 Ollama embeddings，无 Ollama 环境时不计）；ruff/mypy/vue-tsc/build 全绿。
 已知缺口：美股真实行情、持仓/日志前端、AI 工作流 UI。详见 [memory/ai-research-os-session.md](memory/ai-research-os-session.md)。
 
 ## API (when backend is running)

@@ -14,18 +14,22 @@
 └──────────────────────────────────────────────┘
               ↓
 ┌──────────────────────────────────────────────┐
-│  PostgreSQL (pgvector)  ← 公司/研究/文档数据 │
+│  PostgreSQL (pgvector)  ← 公司/研究/行情/财务│
 │  Qdrant (向量数据库)    ← 知识库索引         │
-│  Redis                 ← 缓存               │
-│  akshare MySQL (外置)  ← A股实时数据         │
+│  Redis                  ← 缓存               │
+└──────────────────────────────────────────────┘
+              ↓ 数据采集（子进程直连）
+┌──────────────────────────────────────────────┐
+│  akshare (A股/港股: Tencent/Sina/Eastmoney)  │
+│  yfinance (美股，需代理)                     │
 └──────────────────────────────────────────────┘
               ↓ AI能力
 ┌──────────────────────────────────────────────┐
-│  DeepSeek V4 Flash (云端)  或  Ollama (本地) │
+│  DeepSeek (云端 OpenAI 兼容)  或 Ollama (本地)│
 └──────────────────────────────────────────────┘
 ```
 
-> **关于 MySQL**: 架构图中 `akshare MySQL (外置)` 是指外部 akshare MCP 服务自管的 MySQL 数据库，**不在本项目的 docker-compose 中**。docker-compose 仅包含 PostgreSQL、Qdrant、Redis。
+> **数据源说明**: A 股/港股数据经 akshare 子进程直连采集（无外部数据库依赖），统一落 PostgreSQL（`market` schema）；docker-compose 仅包含 PostgreSQL、Qdrant、Redis。
 
 ### 核心技术栈
 
@@ -156,16 +160,19 @@ npm run dev
 
 #### Step 5 — (可选) 配置 AI 服务
 
-项目默认使用 **DeepSeek V4 Flash**（云端 API），无需本地模型。只需配置 `.env` 中的 API Key：
+项目默认使用 **DeepSeek**（云端 API，OpenAI 兼容端点），无需本地模型。只需配置 `.env` 中的 API Key：
 
 ```env
 LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-your-deepseek-api-key
-OPENAI_BASE_URL=https://api.deepseek.com
-OPENAI_MODEL=deepseek-v4-flash
+OPENAI_BASE_URL=https://api.deepseek.com/v1
+OPENAI_MODEL=deepseek-chat
+# light tier（证据分类/事实抽取）也走云端（本机无 Ollama 时）
+LLM_TIER_LIGHT_PROVIDER=openai
+LLM_TIER_LIGHT_MODEL=deepseek-chat
 ```
 
-> **注意**: `deepseek-chat` 和 `deepseek-reasoner` 已于 2026年7月24日停用，请使用 `deepseek-v4-flash` 或 `deepseek-v4-pro`。
+> **注意**: 2026-10 实测 `deepseek-chat` 可用且分类评测 15/15 全对；模型以 DeepSeek 官方文档为准。
 
 **备选方案: 使用 Ollama 本地模型**
 
@@ -317,16 +324,16 @@ GET  /api/v1/market/prices/AAPL                            # 查询采集的数�
 
 **A股数据** (6位数字代码, 如 `600519` 茅台):
 
-需要连接外部 akshare MySQL（其 MySQL 不在本项目 docker-compose 中，连接信息见 `AKSHARE_MYSQL_*` 配置）。API 端点已就绪:
+无需任何外部数据库——akshare 子进程直连采集，首次查询自动拉取并落 PG 缓存:
 ```
-GET /api/v1/market/prices/600519       # 日K线数据
-GET /api/v1/market/search?query=茅台    # 搜索A股
-GET /api/v1/market/financials/600519   # 财务指标(EPS/营收/ROE等)
-GET /api/v1/market/info/600519         # 估值(PE/PB/PS等) + 最新价
-GET /api/v1/market/symbols             # 列出所有可查询的A股代码
+GET /api/v1/market/prices/600519       # 日K线数据（PG 缓存 → akshare 直连）
+GET /api/v1/market/search?query=茅台    # 搜索公司（PG Companies 表）
+GET /api/v1/market/financials/600519   # 财务指标(EPS/营收/ROE等, 财务摘要直连)
+GET /api/v1/market/info/600519         # 估值(PE/PB/总市值) + 最新价
+GET /api/v1/market/freshness/coverage  # 数据覆盖矩阵（关注公司 × 数据类型）
 ```
 
-> 种子数据包含 8 家美股公司 × 2 年合成日度行情数据。
+> 行情/财务采集链：PG 缓存优先，未命中走 akshare 子进程（Tencent/Sina/Eastmoney），可配云端 MCP 兜底（`AKSHARE_CLOUD_MCP_URL`）。
 
 ---
 
@@ -384,8 +391,9 @@ GET /api/v1/knowledge/search/document/{document_id}?query=...  # 只搜索指定
 - **提示词模板**: 预定义的System+User Prompt模板,可变量替换,支持temperature/max_tokens配置
 - **文本摘要**: 对任意文本生成指定长度摘要
 - **结构化提取**: 从文本中按JSON Schema提取结构化数据
-- **AI工作流**: 串联多个LLM步骤(V2支持LangGraph DAG)
 - **Token 用量统计**: `GET /api/v1/ai/usage` 按模型汇总调用次数与输入/输出 tokens（进程级统计，服务重启清零）；系统页（/system）有实时展示卡片
+
+> AI 工作流（多步 LLM 编排）已于 2026-10 移除——单用户场景用不上，模板 + 快速研究已覆盖。
 
 **依赖**: 必须配置 DeepSeek (或 Ollama/OpenAI 兼容 API)
 
@@ -430,13 +438,8 @@ Body: {"text": "很长的文档内容...", "max_length": 200, "format": "paragra
 POST /api/v1/ai/extract
 Body: {"text": "Apple Q2 revenue $90.1B, up 4%", "schema": {"revenue": "number", "quarter": "string"}}
 
-# 创建AI工作流
-POST /api/v1/ai/workflows
-Body: {"name": "research_pipeline", "steps": [{"type": "llm", "name": "分析", "system": "...", "prompt": "..."}]}
-
-# 执行工作流
-POST /api/v1/ai/workflows/{workflow_id}/execute
-Body: {"input_data": {"company": "AAPL"}}
+# Token 用量汇总（进程级统计，系统页有展示卡片）
+GET /api/v1/ai/usage
 ```
 
 ---
@@ -592,7 +595,10 @@ docker compose -f docker/docker-compose.yml ps
 ```
 
 ### Q: A股数据无法获取
-确认本机 akshare MySQL 可用（`AKSHARE_MYSQL_HOST/PORT/USER/PASSWORD` 配置正确），且 akshare 子进程 venv（`AKSHARE_MCP_DIR`）存在。行情页也可点公司详情「↻ 刷新」从 MySQL 拉取。
+A 股采集走 akshare 子进程直连（无外部数据库依赖）。排查两点：
+1. akshare 子进程 venv 存在且 `AKSHARE_MCP_DIR` 配置正确
+2. 网络可访问 Tencent/Sina/Eastmoney 数据源
+行情页可点公司详情「↻ 刷新」重新拉取；失败时看后端日志中 `[akshare]` 前缀的 warning（含各层失败原因）。
 ```bash
 POST /api/v1/market/prices/AAPL/ingest?provider=yfinance
 ```
@@ -600,8 +606,8 @@ POST /api/v1/market/prices/AAPL/ingest?provider=yfinance
 ### Q: DeepSeek 返回空内容
 - 确认 `.env` 中 `OPENAI_API_KEY` 已正确填写
 - 确认 `OPENAI_BASE_URL` 和 `OPENAI_MODEL` 正确
-- `deepseek-chat`/`deepseek-reasoner` 已停用，请用 `deepseek-v4-flash`
-- 测试连接: `curl https://api.deepseek.com/chat/completions -H "Content-Type: application/json" -H "Authorization: Bearer sk-xxx" -d '{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"hi"}]}'`
+- 本机默认配置为 `deepseek-chat`（OpenAI 兼容端点 `https://api.deepseek.com/v1`）
+- 测试连接: `curl https://api.deepseek.com/chat/completions -H "Content-Type: application/json" -H "Authorization: Bearer sk-xxx" -d '{"model":"deepseek-chat","messages":[{"role":"user","content":"hi"}]}'`
 
 ### Q: AI功能报Ollama连接错误
 ```bash
@@ -663,10 +669,8 @@ docker pull pgvector/pgvector:pg16
 2. Reranker 模型默认禁用（搜索走 RRF 融合排序,效果足够）
 3. Embedding 模型使用 Ollama 本地 BGE-M3
 
-### Q: DeepSeek 旧模型 deepseek-chat 是否还能用
-`deepseek-chat` 和 `deepseek-reasoner` 已于 **2026年7月24日停用**，请使用:
-- `deepseek-v4-flash` — 快速版，性价比高（推荐）
-- `deepseek-v4-pro` — 旗舰版，更强推理能力
+### Q: DeepSeek 用哪个模型
+本机当前配置 `deepseek-chat`（2026-10-13 实测可用，证据分类评测 15/15 全对）。模型上下架以 DeepSeek 官方为准；若需更强推理可换 `deepseek-reasoner`。
 
 ### Q: 如何切换到其他国产大模型
 项目支持所有 OpenAI 兼容 API，修改 `.env` 中的以下三项即可:
@@ -751,8 +755,8 @@ ai_research_os/
 │   │       ├── llm.py       # Ollama/OpenAI适配器
 │   │       ├── embedding.py # BGE-M3嵌入(Ollama API)
 │   │       ├── vector_store.py # Qdrant向量存储
-│   │       ├── cache.py     # Redis缓存
-│   │       └── akshare_mysql.py # A股MySQL
+│   │   ├── cache.py     # Redis缓存
+│   │   └── llm_usage.py # LLM token 用量累计器
 │   ├── company/              # 公司中心
 │   ├── market/               # 市场中心
 │   ├── document/             # 文档中心
