@@ -1,10 +1,9 @@
 """Price service — query and ingest stock price data.
 
-Data sources (3-layer fallback):
-  1. PostgreSQL (already ingested data)
-  2. Akshare MySQL (A-stocks, Layer 1)
-  3. Local akshare subprocess (Layer 2, Tencent/Sina)
-  4. Cloud MCP (Layer 3, configurable via AKSHARE_CLOUD_MCP_URL)
+Data sources (2-layer fallback):
+  1. PostgreSQL cache (already ingested data)
+  2. Local akshare subprocess (Tencent/Sina)
+  3. Cloud MCP (configurable via AKSHARE_CLOUD_MCP_URL)
 """
 
 from __future__ import annotations
@@ -13,7 +12,6 @@ from datetime import date
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.config import settings
 from core.event_service import EventLogger
 from core.logging import logger
 from market.akshare_executor import (
@@ -24,7 +22,7 @@ from market.akshare_executor import (
 )
 from market.domain import PriceEntry
 from market.repositories import PriceRepository
-from market.service.shared import get_shared_mysql, record_freshness
+from market.service.shared import record_freshness
 
 _AKSHARE_PRICE_CODE_HK = (
     "import json, os, sys\nimport akshare as ak\ntry:\n"
@@ -83,7 +81,7 @@ class PriceService:
         end_date: date | None = None,
         limit: int = 100,
     ) -> list[PriceEntry]:
-        """Get prices — PG first, MySQL for A-stocks, akshare for HK/all."""
+        """Get prices — PG cache first, akshare subprocess for misses."""
         ticker_upper = ticker.upper()
 
         # Layer 1: PostgreSQL cache — 不记录 freshness：读缓存不代表数据新鲜，
@@ -92,17 +90,7 @@ class PriceService:
         if result:
             return result
 
-        # Layer 2: MySQL for A-stocks — 真实采集路径，记录 freshness
-        if is_a_stock(ticker):
-            try:
-                result = await self._get_prices_from_mysql(ticker, start_date, end_date, limit)
-                if result:
-                    await record_freshness(self.session, ticker, "prices", record_count=len(result))
-                    return result
-            except Exception:
-                logger.warning("Failed to fetch prices from MySQL for %s", ticker)
-
-        # Layer 3: akshare subprocess (A-stock fallback + HK/all) —
+        # Layer 2: akshare subprocess (A-stock + HK/all) —
         # upsert_prices 内部已记录 freshness，这里读回缓存不再重复记录
         try:
             fetched, _warns = await self.fetch_akshare(ticker)
@@ -124,22 +112,6 @@ class PriceService:
         limit: int,
     ) -> list[PriceEntry]:
         return await self.prices.get_for_ticker(ticker, start_date, end_date, limit)
-
-    async def _get_prices_from_mysql(
-        self,
-        ticker: str,
-        start_date: date | None,
-        end_date: date | None,
-        limit: int,
-    ) -> list[PriceEntry]:
-        mysql = get_shared_mysql()
-        rows = await mysql.get_prices(ticker, start_date, end_date, limit)
-        return [
-            PriceEntry(
-                date=r.date, open=r.open, high=r.high, low=r.low, close=r.close, volume=r.volume
-            )
-            for r in rows
-        ]
 
     # ── Ingestion ──────────────────────────────────────────────────
 
@@ -175,82 +147,52 @@ class PriceService:
 
         return count
 
-    # ── 3-layer akshare fallback ────────────────────────────────────
+    # ── 2-layer akshare fallback ────────────────────────────────────
 
     async def fetch_akshare(self, ticker: str) -> tuple[list[dict], list[str]]:
-        """Fetch A-stock data — 3-layer fallback chain.
+        """Fetch A-stock/HK data — 2-layer fallback chain.
 
         Returns (prices, warnings) where warnings lists why each layer failed.
         """
         warnings: list[str] = []
 
-        # Layer 1: akshare MySQL mirror. Serve it only while fresh — the mirror
-        # is updated out-of-band (akshare_mcp data pipeline), so without a
-        # staleness check a stale mirror would silently shadow the realtime
-        # layers and the refresh button would return frozen prices.
-        try:
-            mysql = get_shared_mysql()
-            rows = await mysql.get_prices(ticker, limit=520)
-            if rows and (date.today() - rows[0].date).days <= settings.PRICE_STALE_DAYS:
-                logger.info("  [akshare] Layer 1 MySQL: %d rows for %s", len(rows), ticker)
-                return [
-                    {
-                        "date": r.date,
-                        "open": r.open,
-                        "high": r.high,
-                        "low": r.low,
-                        "close": r.close,
-                        "volume": r.volume or 0,
-                    }
-                    for r in rows
-                ], []
-            if rows:
-                warnings.append(
-                    f"Layer 1 (MySQL): stale (latest {rows[0].date}, "
-                    f"threshold {settings.PRICE_STALE_DAYS}d)"
-                )
-            else:
-                warnings.append("Layer 1 (MySQL): no data")
-        except Exception as e:
-            warnings.append(f"Layer 1 (MySQL): {e}")
-
-        # Layer 2: local akshare (subprocess)
+        # Layer 1: local akshare (subprocess, Tencent/Sina)
         try:
             rows_local = await self._fetch_akshare_local(ticker)
             if rows_local:
                 logger.info(
-                    "  [akshare] Layer 2 local: %d rows for %s",
+                    "  [akshare] Layer 1 local: %d rows for %s",
                     len(rows_local),
                     ticker,
                 )
                 return rows_local, []
-            warnings.append("Layer 2 (Tencent/Sina): returned no data")
+            warnings.append("Layer 1 (Tencent/Sina): returned no data")
         except Exception as e:
-            msg = f"Layer 2 (Tencent/Sina): {e}"
+            msg = f"Layer 1 (Tencent/Sina): {e}"
             warnings.append(msg)
             logger.warning("  [akshare] %s", msg)
 
-        # Layer 3: cloud MCP
+        # Layer 2: cloud MCP
         try:
             rows_cloud = await fetch_prices_via_mcp_cloud(ticker)
             if rows_cloud:
                 logger.info(
-                    "  [akshare] Layer 3 cloud: %d rows for %s",
+                    "  [akshare] Layer 2 cloud: %d rows for %s",
                     len(rows_cloud),
                     ticker,
                 )
                 return rows_cloud, []
-            warnings.append("Layer 3 (cloud MCP): no data")
+            warnings.append("Layer 2 (cloud MCP): no data")
         except Exception as e:
-            msg = f"Layer 3 (cloud MCP): {e}"
+            msg = f"Layer 2 (cloud MCP): {e}"
             warnings.append(msg)
             logger.warning("  [akshare] %s", msg)
 
-        logger.warning("  [akshare] All 3 layers failed for %s", ticker)
+        logger.warning("  [akshare] All layers failed for %s", ticker)
         return [], warnings
 
     async def _fetch_akshare_local(self, ticker: str) -> list[dict]:
-        """Layer 2: run akshare locally via Tencent (A) or Sina (HK) data source."""
+        """Layer 1: run akshare locally via Tencent (A) or Sina (HK) data source."""
         import asyncio as _asyncio
         import json as _json
 

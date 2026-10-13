@@ -84,22 +84,12 @@ class Settings(BaseSettings):
     # --- Market ---
     AKSHARE_ENABLED: bool = True
     YFINANCE_ENABLED: bool = True
-    # Max age (calendar days) before the akshare MySQL mirror counts as stale.
-    # fetch_akshare Layer 1 serves the mirror only while it's fresher than this;
-    # otherwise it falls through to the realtime subprocess layer (Layer 2).
-    PRICE_STALE_DAYS: int = 5
 
     # --- External data sources (machine-specific, override in .env) ---
     # Directory of the akshare_mcp venv used for the subprocess data layer.
     AKSHARE_MCP_DIR: str = "/home/wsm/codes/akshare_mcp"
-    # Optional cloud MCP endpoint (Layer 3 fallback). Empty disables the layer.
+    # Optional cloud MCP endpoint (fallback layer). Empty disables the layer.
     AKSHARE_CLOUD_MCP_URL: str = ""
-    # Read-only MySQL mirror maintained by akshare_mcp (A-stock data).
-    AKSHARE_MYSQL_HOST: str = "127.0.0.1"
-    AKSHARE_MYSQL_PORT: int = 3306
-    AKSHARE_MYSQL_USER: str = "root"
-    AKSHARE_MYSQL_PASSWORD: str = "root"
-    AKSHARE_MYSQL_DATABASE: str = "akshare"
     # NewsNow MCP server script (tsx) + upstream base URL.
     NEWSNOW_MCP_SERVER_PATH: str = "/home/wsm/codes/newsnow/tools/mcp-server.ts"
     NEWSNOW_BASE_URL: str = "https://newsnow.busiyi.world"

@@ -38,9 +38,6 @@ dependencies = [
     # Chinese text segmentation (required for BM25 tokenization)
     "jieba>=0.42",
 
-    # MySQL adapter (akshare data source)
-    "pymysql>=1.0",
-
     # Utilities
     "redis[hiredis]>=5.0",
     "httpx>=0.27",

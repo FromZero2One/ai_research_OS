@@ -1,26 +1,23 @@
-"""Stock search and symbol listing service."""
+"""Stock search service — PG Companies 表检索（用户的研究宇宙）。"""
 
 from __future__ import annotations
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.logging import logger
-from market.service.shared import get_shared_mysql
-
 
 class SearchService:
-    """Search stocks by code/name across PG (all) and MySQL (A-stocks)."""
+    """Search stocks by code/name in the PostgreSQL Companies table.
+
+    搜索范围即用户已录入的公司（A/HK/US）。全市场股票列表检索随
+    akshare MySQL 镜像层一并移除——个人研究工具的搜索对象是自建公司库。
+    """
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def search_stocks(self, query: str, limit: int = 20) -> list[dict]:
-        """Search stocks by code or name — MySQL (A-stocks) + PostgreSQL (all)."""
-        results: list[dict] = []
-        seen = set()
-
-        # PostgreSQL: search Companies table (A, HK, US stocks)
+        """Search companies by code or name."""
         from company.models import Company
 
         stmt = (
@@ -29,33 +26,4 @@ class SearchService:
             .limit(limit)
         )
         rows = await self.session.execute(stmt)
-        for c in rows.scalars().all():
-            key = c.ticker.upper()
-            if key not in seen:
-                seen.add(key)
-                results.append({"symbol": c.ticker, "name": c.name})
-
-        # MySQL: search akshare stock_name_entity
-        try:
-            mysql = get_shared_mysql()
-            mysql_results = await mysql.search_stocks(query, limit)
-            for r in mysql_results:
-                key = r.get("symbol", "").upper()
-                if key not in seen:
-                    seen.add(key)
-                    results.append(r)
-        except Exception:
-            logger.warning("Failed to search stocks in MySQL")
-            pass
-
-        return results[:limit]
-
-    async def list_available_symbols(self, limit: int = 100) -> list[dict]:
-        """List all A-stocks with K-line data available."""
-        mysql = get_shared_mysql()
-        symbols = await mysql.list_symbols(limit)
-        result = []
-        for sym in symbols:
-            name = await mysql.get_name(sym)
-            result.append({"symbol": sym, "name": name})
-        return result
+        return [{"symbol": c.ticker, "name": c.name} for c in rows.scalars().all()]

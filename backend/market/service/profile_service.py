@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+from sqlalchemy import select
 from sqlalchemy import update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.event_service import EventLogger
 from core.logging import logger
 from market.akshare_executor import is_a_stock
-from market.service.shared import get_shared_mysql
 
 _PROFILE_CODE = """\
 import json, os, sys
@@ -63,55 +63,106 @@ except Exception as e:
 
 
 class ProfileService:
-    """Company profile, stock info, and valuation — sourced from akshare MySQL + API."""
+    """Company profile, stock info, and valuation — PG + akshare subprocess."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.events = EventLogger(session)
 
     async def get_stock_info(self, ticker: str) -> dict | None:
-        """Get stock basic info + latest valuation (A-stocks only)."""
+        """Get stock basic info + latest valuation (A-stocks only).
+
+        名称/最新价取自 PG（公司表 + 价格缓存），估值（PE/PB/总市值）
+        经 akshare 直连取乐咕乐股每日指标，不落库只透出。
+        """
         if not is_a_stock(ticker):
             return None
 
-        mysql = get_shared_mysql()
-        name = await mysql.get_name(ticker)
-        valuation = await mysql.get_valuation(ticker)
-        prices = await mysql.get_prices(ticker, limit=1)
-        latest_price = prices[0].close if prices else None
+        from company.models import Company
+        from market.repositories import PriceRepository
+
+        company = (
+            await self.session.execute(select(Company).where(Company.ticker == ticker))
+        ).scalar_one_or_none()
+        name = company.name if company else None
+        latest = await PriceRepository(self.session).get_for_ticker(ticker, limit=1)
+        latest_price = latest[0].close if latest else None
 
         return {
             "ticker": ticker,
             "name": name,
             "latest_price": latest_price,
-            "valuation": valuation,
-            "source": "akshare_mysql",
+            "valuation": await self._fetch_valuation(ticker),
+            "source": "pg+akshare",
         }
 
+    async def _fetch_valuation(self, ticker: str) -> dict | None:
+        """A 股估值指标（PE/PB/总市值）—— akshare stock_a_indicator_lg 直连。"""
+        import asyncio as _asyncio
+        import json as _json
+
+        from market.akshare_executor import build_akshare_env, run_akshare
+
+        code = (
+            "import json, os, sys\nimport akshare as ak\n"
+            "def _g(row, k):\n"
+            "    v = row.get(k)\n"
+            "    return float(v) if v is not None and v == v else None\n"
+            "try:\n"
+            '    ticker = os.environ["AKSHARE_TICKER"]\n'
+            "    df = ak.stock_a_indicator_lg(symbol=ticker)\n"
+            '    if df is None or df.empty:\n        print("__R__:{}")\n'
+            "    else:\n"
+            "        row = df.iloc[-1]\n"
+            "        print(\"__R__:\" + json.dumps({\n"
+            '            "pe": _g(row, "pe"), "pe_ttm": _g(row, "pe_ttm"),\n'
+            '            "pb": _g(row, "pb"), "total_mv": _g(row, "total_mv"),\n'
+            '            "dv_ttm": _g(row, "dv_ttm"),\n'
+            "        }))\n"
+            "except Exception as e:\n"
+            '    print("__E__:" + str(e), file=sys.stderr)\n'
+        )
+        try:
+            stdout = await _asyncio.to_thread(run_akshare, code, build_akshare_env(ticker))
+        except Exception as e:
+            logger.warning("  [valuation] fetch failed for %s: %s", ticker, e)
+            return None
+        for line in stdout.splitlines():
+            if line.startswith("__R__:"):
+                try:
+                    data = _json.loads(line[6:])
+                except _json.JSONDecodeError:
+                    return None
+                return data or None
+        return None
+
     async def get_stock_profile(self, ticker: str) -> dict | None:
-        """Get stock name, sector and kline status."""
-        if not is_a_stock(ticker):
+        """Get stock name/sector/kline status from PG (company row + price cache)."""
+        from company.models import Company
+        from market.repositories import PriceRepository
+
+        result = await self.session.execute(
+            select(Company).where(Company.ticker == ticker)
+        )
+        company = result.scalar_one_or_none()
+        if not company:
             return None
 
-        mysql = get_shared_mysql()
-        name = await mysql.get_name(ticker)
-        if not name:
-            return None
-
-        sector = await mysql.get_sector(ticker)
-        has_kline = await mysql.has_kline(ticker)
+        has_kline = bool(
+            await PriceRepository(self.session).get_for_ticker(ticker, limit=1)
+        )
 
         tags = []
-        if sector:
-            clean = sector.replace("Ⅱ", "").replace("Ⅰ", "")
+        if company.industry:
+            clean = company.industry.replace("Ⅱ", "").replace("Ⅰ", "")
             tags.append(clean[:10])
         if has_kline:
             tags.append("kline")
 
         return {
             "symbol": ticker,
-            "name": name,
-            "sector": sector,
+            "name": company.name,
+            "sector": company.industry,
             "has_kline": has_kline,
             "tags": tags,
         }

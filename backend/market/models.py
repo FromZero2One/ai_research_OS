@@ -68,6 +68,10 @@ class FinancialMetricUnit(StrEnum):
 _METRIC_NAME_CN_MAP: dict[str, str] = {
     "营业收入": "revenue",
     "营收": "revenue",
+    # 财报摘要接口（stock_financial_abstract）的指标名变体
+    "营业总收入": "revenue",
+    "归属于母公司所有者的净利润": "net_income",
+    "基本每股收益": "eps",
     "净利润": "net_income",
     "毛利润": "gross_profit",
     "营业利润": "operating_income",

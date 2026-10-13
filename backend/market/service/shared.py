@@ -1,25 +1,12 @@
 """Market services shared helpers — 避免跨 service 复制粘贴。
 
-从 price/financial/profile/search 四个 service 中抽取的公共代码：
-- AkshareMySQLAdapter 模块级单例（原为每 service 各持一份逐字重复的懒加载）
-- DataFreshness 记录（原为 price/financial 两份逐字重复的延迟导入块）
+DataFreshness 记录（原为 price/financial 两份逐字重复的延迟导入块）。
+MySQL 镜像层已移除：A 股数据统一走 akshare subprocess 直连 + PG 缓存。
 """
 
 from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from core.adapters.akshare_mysql import AkshareMySQLAdapter
-
-_shared_mysql: AkshareMySQLAdapter | None = None
-
-
-def get_shared_mysql() -> AkshareMySQLAdapter:
-    """共享 AkshareMySQLAdapter（无状态配置封装，单例即可）。"""
-    global _shared_mysql
-    if _shared_mysql is None:
-        _shared_mysql = AkshareMySQLAdapter()
-    return _shared_mysql
 
 
 async def record_freshness(
