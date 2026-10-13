@@ -118,17 +118,21 @@ def compare_facts_periods(facts: list[dict]) -> list[str]:
     for (metric, unit), points in series.items():
         sorted_pts = sorted(points.items(), key=lambda kv: _period_sort_key(kv[0]))
         for pos, ((y1, t1, _q1), v1) in enumerate(sorted_pts):
-            # QoQ：仅季度类型且排序位置相邻（跨年如 2025Q1 vs 2024Q4 也成立）
-            if pos > 0 and t1.startswith("q") and sorted_pts[pos - 1][0][1].startswith("q"):
-                (y0, t0, _q0), v0 = sorted_pts[pos - 1]
-                pair = ("qoq", metric, y0, t0, y1, t1)
+            # QoQ：仅严格相邻季度（同年 q→q+1 或跨年 Q4→Q1，缺期不算）
+            (py, pt_, _pq), pv0 = sorted_pts[pos - 1]
+            if (
+                t1.startswith("q")
+                and pt_.startswith("q")
+                and _is_consecutive_quarter((py, int(pt_[1])), (y1, int(t1[1])))
+            ):
+                pair = ("qoq", metric, py, pt_, y1, t1)
                 if pair not in seen_pairs:
                     seen_pairs.add(pair)
                     lines.append(
-                        f"- {metric}（{unit}）QoQ：{_label(y0, t0)} → {_label(y1, t1)}："
-                        f"{_fmt_value({'value': v0, 'unit': unit})}"
+                        f"- {metric}（{unit}）QoQ：{_label(py, pt_)} → {_label(y1, t1)}："
+                        f"{_fmt_value({'value': pv0, 'unit': unit})}"
                         f" → {_fmt_value({'value': v1, 'unit': unit})}，"
-                        f"变化 {_pct_change(v1, v0)}"
+                        f"变化 {_pct_change(v1, pv0)}"
                     )
             # YoY：上一年同类型
             prev_key = (y1 - 1, t1, _q1)
@@ -147,6 +151,13 @@ def compare_facts_periods(facts: list[dict]) -> list[str]:
 
 
 _CN_Q = {1: "Q1", 2: "Q2", 3: "Q3", 4: "Q4"}
+
+
+def _is_consecutive_quarter(prev: tuple[int, int], cur: tuple[int, int]) -> bool:
+    """严格相邻季度：同年 q→q+1，或跨年 Q4→Q1（中间缺期不算）。"""
+    y0, q0 = prev
+    y1, q1 = cur
+    return (y0 == y1 and q1 == q0 + 1) or (y0 == y1 - 1 and q0 == 4 and q1 == 1)
 
 
 def _label(year: int, typ: str) -> str:

@@ -49,16 +49,30 @@ class TestCompareFactsPeriods:
         assert len(lines) == 1
         assert "YoY" in lines[0] and "+10.0%" in lines[0]
 
-    def test_quarter_adjacent_and_yoy(self):
-        # 相邻两期既是 QoQ 又是 YoY，应输出两行
+    def test_quarter_yoy_only(self):
+        # 2024Q1 → 2025Q1：跨年同季是 YoY，但非严格相邻（缺 Q2-Q4），无 QoQ
         facts = [
             {"metric_name": "revenue", "value": 30.0, "unit": "亿元", "period": "2025Q1"},
             {"metric_name": "revenue", "value": 20.0, "unit": "亿元", "period": "2024Q1"},
         ]
         lines = compare_facts_periods(facts)
-        assert len(lines) == 2
-        assert any("QoQ" in s and "+50.0%" in s for s in lines)
-        assert any("YoY" in s and "+50.0%" in s for s in lines)
+        assert len(lines) == 1 and "YoY" in lines[0] and "+50.0%" in lines[0]
+
+    def test_qoq_same_year(self):
+        facts = [
+            {"metric_name": "revenue", "value": 32.0, "unit": "亿元", "period": "2024Q4"},
+            {"metric_name": "revenue", "value": 25.0, "unit": "亿元", "period": "2024Q3"},
+        ]
+        lines = compare_facts_periods(facts)
+        assert len(lines) == 1 and "QoQ" in lines[0] and "+28.0%" in lines[0]
+
+    def test_non_adjacent_quarters_skipped(self):
+        # 2024Q3 → 2025Q1 缺 2024Q4，既非相邻也非同比，不输出
+        facts = [
+            {"metric_name": "revenue", "value": 30.0, "unit": "亿元", "period": "2025Q1"},
+            {"metric_name": "revenue", "value": 24.0, "unit": "亿元", "period": "2024Q3"},
+        ]
+        assert compare_facts_periods(facts) == []
 
     def test_unit_mismatch_skipped(self):
         facts = [
@@ -66,14 +80,6 @@ class TestCompareFactsPeriods:
             {"metric_name": "revenue", "value": 100000.0, "unit": "万元", "period": "2023年报"},
         ]
         assert compare_facts_periods(facts) == []
-
-    def test_quarter_yoy_only(self):
-        facts = [
-            {"metric_name": "revenue", "value": 30.0, "unit": "亿元", "period": "2025Q1"},
-            {"metric_name": "revenue", "value": 24.0, "unit": "亿元", "period": "2024Q3"},
-        ]
-        lines = compare_facts_periods(facts)
-        assert len(lines) == 1 and "YoY" in lines[0]
 
     def test_zero_base(self):
         facts = [
@@ -104,7 +110,8 @@ class TestPeerLines:
         peers = {"revenue": {"A": [80.0], "B": [100.0], "C": [140.0]}}
         lines = build_peer_comparison_lines("SUB", subject, peers)
         assert len(lines) == 1
-        assert "110" in lines[0]  # median of 80/100/140
+        assert "100" in lines[0]  # median of 80/100/140
+        assert "20.0%" in lines[0]  # (120-100)/100
         assert "高于" in lines[0]
 
     def test_insufficient_peers(self):
