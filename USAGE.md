@@ -43,6 +43,12 @@
 
 ## 二、服务启动与停止
 
+### Windows 一键启动（推荐）
+
+双击项目根目录的 **`start-dev.cmd`**：自动启动依赖栈（docker compose）、后端 uvicorn（:8000）和前端 vite（:5173），各在独立命令行窗口运行（关窗口即停该服务，依赖栈保持后台）。
+
+> 首次使用前仍需完成下方 Step 2（安装依赖）、Step 4（迁移）一次性初始化。
+
 ### 启动顺序
 
 #### Step 1 — 启动数据库基础设施
@@ -379,6 +385,7 @@ GET /api/v1/knowledge/search/document/{document_id}?query=...  # 只搜索指定
 - **文本摘要**: 对任意文本生成指定长度摘要
 - **结构化提取**: 从文本中按JSON Schema提取结构化数据
 - **AI工作流**: 串联多个LLM步骤(V2支持LangGraph DAG)
+- **Token 用量统计**: `GET /api/v1/ai/usage` 按模型汇总调用次数与输入/输出 tokens（进程级统计，服务重启清零）；系统页（/system）有实时展示卡片
 
 **依赖**: 必须配置 DeepSeek (或 Ollama/OpenAI 兼容 API)
 
@@ -388,6 +395,7 @@ GET /api/v1/knowledge/search/document/{document_id}?query=...  # 只搜索指定
 |------|------|
 | StockSearch.vue | 可复用股票搜索下拉 (v-model, 300ms防抖, 键盘导航, 5个视图共用) |
 | StockChart.vue | ECharts K 线图 (MA5/MA20/成交量/dataZoom) |
+| ReportCharts.vue | 报告可视化：证据方向分布饼图 + 财务指标多周期趋势线（数据来自 structured_facts） |
 | CommandPalette.vue | ⌘K 全局命令面板 |
 | Sidebar.vue | 侧边栏导航 |
 
@@ -458,7 +466,9 @@ Body: {"company_id": "...", "question": "NVDA在AI芯片市场的竞争优势能
 - **系统自动搜集** — `POST /api/v1/research/sessions/{id}/auto-gather` 自动从知识库搜索相关文档片段作为证据
 - **手动添加** — `POST /api/v1/research/sessions/{id}/evidences` 手动输入网络研究、财报数据等
 
-每条证据标记类型: `supporting` (支持) / `opposing` (反对) / `neutral` (中性)
+每条证据标记类型: `supporting` (支持) / `opposing` (反对) / `neutral` (中性)。类型由两级分类判定：先关键词初值，收集完成后再由 LLM 批量复核覆盖（证据卡上显示 🤖 AI分类 徽标；`EVIDENCE_CLASSIFIER` 开关控制）。
+
+财报类文档证据会自动抽取**结构化事实**（structured_facts，只取原文数字，禁推算），报告生成时据此计算 **多周期比对（YoY/QoQ）** 并从财务指标库生成 **同业中位对比**（均显式标注为计算值）。研究详情页的"数据可视化"卡片用 ECharts 展示证据方向分布与指标趋势。
 
 证据列表: `GET /api/v1/research/sessions/{id}/evidences`
 删除证据: `DELETE /api/v1/research/evidences/{evidence_id}`
@@ -469,6 +479,8 @@ POST /api/v1/research/sessions/{id}/plan
 Body: {"focus_areas": ["竞争格局", "财务数据", "估值"]}
 ```
 获取计划: `GET /api/v1/research/sessions/{id}/plan`
+
+> 创建会话（含一键研究）时可指定 `plan_type`: `initial`（首次覆盖）/ `earnings`（财报点评）/ `thesis_check`（论点检验）/ `industry`（行业对比）——命中预置模板则零 LLM 调用直接生成计划；留空则由 AI 根据问题自动生成。
 
 **Step 4 — 形成观点 (Thesis)**
 

@@ -81,6 +81,8 @@ Portfolio
 
 ## Quick Start
 
+**Windows 一键启动（推荐）**：双击项目根目录的 `start-dev.cmd` —— 自动起依赖栈（docker）+ 后端 :8000 + 前端 :5173，各在独立窗口运行。首次使用前需完成下方的依赖安装与 `alembic upgrade head`。
+
 ```bash
 # 1. Start infrastructure
 make dev-db
@@ -131,11 +133,11 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 | 文档中心 | ~90% | 后台异步索引、PDF 表格结构化、关联公司；OCR 待 V2 |
 | 知识中心 | ~90% | 混合 RAG + Reranker + 文档问答（模型切换）+ 检索评估集 |
 | AI 中心 | ~80% | 模板/摘要全可用；工作流前端 UI 待补 |
-| 研究中心 | ~90% | 会话/证据/报告/决策/时间线/一键研究全链路 |
+| 研究中心 | ~90% | 会话/证据/报告/决策/时间线/一键研究全链路；LLM 证据分类、多周期比对（YoY/QoQ/同业）、报告可视化卡片 |
 | 投资组合 | ~40% | 自选已并入公司；持仓/日志后端就绪，前端随 V2 |
 | 系统/调度 | ~85% | 调度/观察/持久任务/事件/新鲜度可用 |
 
-总体：V1.1 目标基本达成，后端 125 项测试通过（ruff/mypy/vue-tsc/build 全绿）。
+总体：V1.1 目标基本达成，后端 126 项测试通过（另有 11 项依赖 Ollama/MySQL 环境，本机无此环境时不计）；ruff/mypy/vue-tsc/build 全绿。
 已知缺口：美股真实行情、持仓/日志前端、AI 工作流 UI。详见 [memory/ai-research-os-session.md](memory/ai-research-os-session.md)。
 
 ## API (when backend is running)
