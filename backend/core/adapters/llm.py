@@ -11,6 +11,7 @@ from openai.types.chat import ChatCompletionMessageParam
 
 from core.config import settings
 from core.interfaces import LLM, LLMMessage, LLMResponse
+from core.llm_usage import record_usage
 
 
 def _sdk_messages(messages: list[LLMMessage]) -> list[ChatCompletionMessageParam]:
@@ -89,10 +90,23 @@ class OllamaLLM:
         resp.raise_for_status()
         data = resp.json()
 
+        # Ollama 原生 /api/chat 的用量在顶层 prompt_eval_count/eval_count，
+        # 归一化为 OpenAI 风格的 usage 字典
+        usage = data.get("usage")
+        if usage is None and (data.get("prompt_eval_count") or data.get("eval_count")):
+            prompt_n = data.get("prompt_eval_count") or 0
+            completion_n = data.get("eval_count") or 0
+            usage = {
+                "prompt_tokens": prompt_n,
+                "completion_tokens": completion_n,
+                "total_tokens": prompt_n + completion_n,
+            }
+        record_usage(self._model, usage)
+
         return LLMResponse(
             content=data["message"]["content"],
             model=self._model,
-            usage=data.get("usage"),
+            usage=usage,
         )
 
     async def generate_structured(
@@ -159,10 +173,12 @@ class OpenAILLM:
             temperature=temperature,
             max_tokens=max_tokens,
         )
+        usage = resp.usage.model_dump() if resp.usage else None
+        record_usage(self._model, usage)
         return LLMResponse(
             content=resp.choices[0].message.content or "",
             model=self._model,
-            usage=resp.usage.model_dump() if resp.usage else None,
+            usage=usage,
         )
 
     async def generate_structured(
@@ -190,6 +206,8 @@ class OpenAILLM:
             response_format={"type": "json_object"},
         )
         raw = resp.choices[0].message.content or "{}"
+        usage = resp.usage.model_dump() if resp.usage else None
+        record_usage(self._model, usage)
         try:
             return json.loads(raw)
         except json.JSONDecodeError as e:

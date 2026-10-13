@@ -191,6 +191,17 @@ class ReportService:
         context_parts.append(f"\n## Neutral Evidence ({len(neutral)})")
         context_parts.extend(neutral if neutral else ["(None collected yet)"])
 
+        # 阶段5：多周期比对（YoY/QoQ，由已核实事实计算）+ 同业对比（指标库直查）
+        from research.period_compare import (
+            build_peer_comparison_block,
+            build_period_comparison_block,
+        )
+
+        if period_block := build_period_comparison_block(session.evidences):
+            context_parts.append(f"\n{period_block}")
+        if peer_block := await build_peer_comparison_block(self.session, session.company_id):
+            context_parts.append(f"\n{peer_block}")
+
         messages = [
             LLMMessage(role="system", content=REPORT_SYSTEM_PROMPT),
             LLMMessage(role="user", content="\n".join(context_parts)),

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useQuickResearch, subscribeResearchStream, type ResearchProgress } from '@/stores/api'
+import { useQuickResearch, subscribeResearchStream, PLAN_TYPE_OPTIONS, type ResearchProgress } from '@/stores/api'
 import StockSearch from '@/components/StockSearch.vue'
 
 const route = useRoute()
@@ -10,6 +10,7 @@ const initialTicker = (route.query.ticker as string) || ''
 
 const tickerModel = ref(initialTicker)
 const question = ref('')
+const planType = ref<string | null>(null)
 const sessionId = ref<string | null>(null)
 const progress = ref<ResearchProgress | null>(null)
 const error = ref<string | null>(null)
@@ -38,7 +39,7 @@ async function handleStart() {
   if (!tickerModel.value.trim() || !question.value.trim()) return
   error.value = null; progress.value = null
   try {
-    const result = await quickResearch.mutateAsync({ ticker: tickerModel.value.toUpperCase(), question: question.value.trim() })
+    const result = await quickResearch.mutateAsync({ ticker: tickerModel.value.toUpperCase(), question: question.value.trim(), plan_type: planType.value || undefined })
     sessionId.value = result.session_id
     const cleanup = subscribeResearchStream(result.session_id, (p) => progress.value = p, (p) => progress.value = p, (err) => error.value = err)
     abortRef.value = cleanup
@@ -54,6 +55,11 @@ async function handleStart() {
       <div class="form-card">
         <label class="form-label">公司代码</label>
         <StockSearch v-model="tickerModel" />
+
+        <label class="form-label">研究类型<span class="text-xs text-secondary ml-2">(可选，命中模板更快更稳)</span></label>
+        <el-select v-model="planType" placeholder="自动（AI 根据问题生成计划）" clearable style="width:100%">
+          <el-option v-for="opt in PLAN_TYPE_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
+        </el-select>
 
         <label class="form-label">研究问题<span class="text-xs text-secondary ml-2">({{ question.length }}/1000，至少 10 字)</span></label>
         <el-input v-model="question" type="textarea" :rows="4" placeholder="例如：未来两年的增长逻辑是什么？" :maxlength="1000" />

@@ -21,6 +21,17 @@ from core.database import get_container
 router = APIRouter(prefix="/ai", tags=["AI Center"])
 
 
+# ── Token Usage ─────────────────────────────────────────────────────
+
+
+@router.get("/usage")
+async def get_llm_usage():
+    """LLM token 用量汇总（进程级统计，重启清零）。"""
+    from core.llm_usage import get_usage_summary
+
+    return get_usage_summary()
+
+
 # ── Prompt Templates ────────────────────────────────────────────────
 
 

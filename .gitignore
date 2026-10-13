@@ -25,3 +25,10 @@ frontend/out/
 # OS
 .DS_Store
 Thumbs.db
+
+# 工具产物（编辑器备份 / gstack / 图表导出）
+*~
+*.un~
+.gstack/
+.gstack-*.log
+diagrams/

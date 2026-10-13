@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { DECISION_LABELS, RESEARCH_STATUS_LABELS, useResearchSessions, useCreateResearch, useCompanies } from '@/stores/api'
+import { DECISION_LABELS, RESEARCH_STATUS_LABELS, useResearchSessions, useCreateResearch, useCompanies, PLAN_TYPE_OPTIONS } from '@/stores/api'
 
 const status = ref('all')
 const { data: sessions, isLoading } = useResearchSessions(status.value === 'all' ? undefined : status.value)
@@ -13,6 +13,7 @@ const showNew = ref(false)
 const newTitle = ref('')
 const newQuestion = ref('')
 const newCompanyId = ref('')
+const newPlanType = ref<string | null>(null)
 
 const statusOptions = [
   { value: 'all', label: '全部' },
@@ -32,11 +33,13 @@ async function handleCreate() {
   if (!newTitle.value.trim() || !newQuestion.value.trim()) return
   const body: Record<string, any> = { title: newTitle.value, question: newQuestion.value }
   if (newCompanyId.value) body.company_id = newCompanyId.value
+  if (newPlanType.value) body.plan_type = newPlanType.value
   const result = await createResearch.mutateAsync(body as any)
   showNew.value = false
   newTitle.value = ''
   newQuestion.value = ''
   newCompanyId.value = ''
+  newPlanType.value = null
 }
 
 function getStatusType(s: string) {
@@ -59,6 +62,9 @@ function getStatusType(s: string) {
       <el-input v-model="newQuestion" placeholder="你要研究什么问题？..." type="textarea" :rows="3" />
       <el-select v-model="newCompanyId" placeholder="不关联公司（可选）" clearable filterable style="width:100%">
         <el-option v-for="c in companiesData?.items || []" :key="c.id" :label="`${c.ticker} — ${c.name}`" :value="c.id" />
+      </el-select>
+      <el-select v-model="newPlanType" placeholder="研究类型（可选，自动=AI 生成计划）" clearable style="width:100%">
+        <el-option v-for="opt in PLAN_TYPE_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
       </el-select>
       <div class="flex gap-2">
         <el-button @click="handleCreate" :disabled="!newTitle.trim() || !newQuestion.trim() || createResearch.isPending.value" type="primary">{{ createResearch.isPending.value ? '创建中...' : '开始研究' }}</el-button>

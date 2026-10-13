@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useDashboard, useHealth, useObservations, useSchedulerStatus } from '@/stores/api'
+import { useDashboard, useHealth, useLLMUsage, useObservations, useSchedulerStatus } from '@/stores/api'
 
 const { data: scheduler } = useSchedulerStatus()
 const { data: obsData } = useObservations()
 const { data: dashboard } = useDashboard()
+const { data: llmUsage } = useLLMUsage()
 
 const hDash = useHealth('/dashboard')
 const hResearch = useHealth('/research/sessions?limit=1')
@@ -48,6 +49,18 @@ const healthList = computed(() => [
         </div>
       </div>
       <el-empty v-else description="暂无调度任务" />
+    </el-card>
+
+    <el-card shadow="never">
+      <template #header><div class="flex items-center justify-between"><span>🎯 LLM Token 用量</span><span class="text-xs text-secondary">{{ llmUsage?.note }}</span></div></template>
+      <div v-if="llmUsage?.models && Object.keys(llmUsage.models).length" class="space-y-2">
+        <div v-for="(s, model) in llmUsage.models" :key="model" class="item-block">
+          <div><div class="font-medium text-sm">{{ model }}</div><div class="text-xs text-secondary mt-0.5">调用 {{ s.calls }} 次 · 最近 {{ s.last_used ? new Date(s.last_used).toLocaleString('zh-CN') : '' }}</div></div>
+          <div class="text-xs text-secondary text-right">输入 {{ s.prompt_tokens.toLocaleString() }}<br />输出 {{ s.completion_tokens.toLocaleString() }} · 共 {{ s.total_tokens.toLocaleString() }}</div>
+        </div>
+        <div class="usage-total">合计：{{ llmUsage.totals.calls }} 次调用 · {{ llmUsage.totals.total_tokens.toLocaleString() }} tokens（输入 {{ llmUsage.totals.prompt_tokens.toLocaleString() }} / 输出 {{ llmUsage.totals.completion_tokens.toLocaleString() }}）</div>
+      </div>
+      <el-empty v-else description="暂无 LLM 调用记录" />
     </el-card>
 
     <el-card shadow="never">
@@ -98,6 +111,7 @@ const healthList = computed(() => [
 .stat-value { font-size: 18px; font-weight: 600; color: var(--text-primary); }
 .item-block { padding: 12px; border-radius: 8px; background: var(--bg-tertiary); display: flex; justify-content: space-between; align-items: flex-start; }
 .item-block.flex-col { flex-direction: column; }
+.usage-total { padding: 10px 12px; border-radius: 8px; background: var(--bg-secondary); font-size: 13px; color: var(--text-primary); }
 .brief-content { font-size: 14px; line-height: 1.7; white-space: pre-wrap; color: var(--text-primary); }
 .brief-time { font-size: 12px; color: #6b7280; margin-top: 8px; }
 .shortcut-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }

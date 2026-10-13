@@ -11,6 +11,7 @@ import {
   useFinalizeResearch,
   useSessionTimeline,
 } from '@/stores/api'
+import ReportCharts from '@/components/ReportCharts.vue'
 
 const route = useRoute(); const router = useRouter()
 const id = route.params.id as string
@@ -111,6 +112,11 @@ function toggleEvidence(id: string) { const s = new Set(expandedEvidence.value);
         </template>
       </div>
     </div>
+
+    <el-card v-if="session.evidences?.length" shadow="never">
+      <template #header>📊 数据可视化</template>
+      <ReportCharts :evidences="session.evidences" />
+    </el-card>
 
     <div v-if="session.reports?.length">
       <h2 class="section-title">研究报告 <span class="text-sm font-normal text-secondary">({{ session.reports.length }} 个版本)</span></h2>

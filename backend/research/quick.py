@@ -29,6 +29,9 @@ class QuickResearchRequest(BaseModel):
     ticker: str = Field(..., max_length=16)
     question: str = Field(..., min_length=10, max_length=1000)
     title: str | None = None
+    plan_type: str | None = Field(
+        None, description="预置研究类型：initial/earnings/thesis_check/industry，命中模板零 LLM"
+    )
 
 
 class QuickResearchResponse(BaseModel):
@@ -138,6 +141,7 @@ async def quick_research(
         question=data.question,
         company_id=company_id,
         auto_plan=False,
+        plan_type=data.plan_type,
     )
     await container.session.commit()
 

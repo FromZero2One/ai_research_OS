@@ -424,6 +424,15 @@ export function useHealth(path: string) {
 }
 
 // ── AI Center ──
+export interface LLMUsageSummary {
+  models: Record<string, { calls: number; prompt_tokens: number; completion_tokens: number; total_tokens: number; first_used: string; last_used: string }>
+  totals: { calls: number; prompt_tokens: number; completion_tokens: number; total_tokens: number }
+  note: string
+}
+export function useLLMUsage() {
+  return useGet<LLMUsageSummary>(['llm-usage'], '/ai/usage', { refetchInterval: 30_000 })
+}
+
 export interface PromptTemplate {
   id: string; name: string; description: string | null
   system_prompt: string | null; user_prompt_template: string | null
@@ -471,9 +480,17 @@ export function useSummarize() {
 }
 
 // ── Quick Research ──
-export interface QuickResearchRequest { ticker: string; question: string; title?: string }
+export interface QuickResearchRequest { ticker: string; question: string; title?: string; plan_type?: string | null }
 export interface QuickResearchResponse { session_id: string; status: string }
 export interface ResearchProgress { step: string; message: string; status: string; session_id: string; report_id?: string; error?: string }
+
+// 预置研究类型（与后端 research/planner.py PLAN_TEMPLATES 对应）
+export const PLAN_TYPE_OPTIONS = [
+  { value: 'initial', label: '首次覆盖 — 基本面 / 行业 / 估值' },
+  { value: 'earnings', label: '财报点评 — 最新一期业绩' },
+  { value: 'thesis_check', label: '论点检验 — 验证既有投资逻辑' },
+  { value: 'industry', label: '行业对比 — 同业优劣势与估值差' },
+] as const
 
 export function useQuickResearch() {
   const qc = useQueryClient()

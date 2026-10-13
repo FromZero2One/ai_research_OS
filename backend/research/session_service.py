@@ -45,6 +45,11 @@ class SessionService:
         await self.session.flush()
         await self.session.refresh(session)
 
+        # 持久化 plan_type：后台 quick_research 链的 generate_plan 需要读它
+        if plan_type:
+            session.extra_metadata = session.extra_metadata or {}
+            session.extra_metadata["plan_type"] = plan_type
+
         if auto_plan:
             try:
                 company_name = None
@@ -95,7 +100,11 @@ class SessionService:
             except NotFoundError:
                 pass
 
-        plan = await self.planner.generate_plan(session.question, session.context, company_name)
+        # 优先用创建时选定的 plan_type（模板命中则零 LLM 调用）
+        plan_type = (session.extra_metadata or {}).get("plan_type")
+        plan = await self.planner.generate_plan(
+            session.question, session.context, company_name, plan_type=plan_type
+        )
         session.extra_metadata = session.extra_metadata or {}
         session.extra_metadata[PLAN_KEY] = plan
         await self.session.flush()
