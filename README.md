@@ -138,7 +138,7 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 | 系统/调度 | ~85% | 调度/观察/持久任务/事件/新鲜度可用 |
 
 总体：V1.1 目标基本达成，后端 132 项测试通过（另有 5 项依赖 Ollama embeddings，无 Ollama 环境时不计）；ruff/mypy/vue-tsc/build 全绿。
-已知缺口：美股真实行情、持仓/日志前端、AI 工作流 UI。详见 [memory/ai-research-os-session.md](memory/ai-research-os-session.md)。
+已知缺口：美股真实行情、持仓/日志前端。下一步（比率层/引用回溯/证据继承/差异日报）详见 [memory/ai-research-os-session.md](memory/ai-research-os-session.md)。
 
 ## API (when backend is running)
 
