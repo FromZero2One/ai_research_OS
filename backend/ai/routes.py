@@ -5,8 +5,6 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from ai.schemas import (
-    AIWorkflowCreate,
-    AIWorkflowResponse,
     ExtractRequest,
     GenerateRequest,
     GenerateResponse,
@@ -96,25 +94,3 @@ async def summarize(data: SummarizeRequest, container: Container = Depends(get_c
 async def extract(data: ExtractRequest, container: Container = Depends(get_container)):
     svc = container.ai_service
     return await svc.extract(text=data.text, schema=data.schema_)
-
-
-# ── Workflows ───────────────────────────────────────────────────────
-
-
-@router.post("/workflows", response_model=AIWorkflowResponse, status_code=201)
-async def create_workflow(
-    data: AIWorkflowCreate,
-    container: Container = Depends(get_container),
-):
-    svc = container.ai_service
-    return await svc.create_workflow(**data.model_dump())
-
-
-@router.post("/workflows/{workflow_id}/execute")
-async def execute_workflow(
-    workflow_id: str,
-    input_data: dict,
-    container: Container = Depends(get_container),
-):
-    svc = container.ai_service
-    return await svc.execute_workflow(workflow_id, input_data)

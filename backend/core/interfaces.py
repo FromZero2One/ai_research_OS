@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from ai.models import AIWorkflow, PromptTemplate
+    from ai.models import PromptTemplate
     from market.domain import FinancialMetricEntry
     from research.models import ResearchReport, ResearchSession
 
@@ -426,10 +426,6 @@ class AIService(Protocol):
     ) -> dict: ...
 
     async def extract(self, text: str, schema: dict) -> dict: ...
-
-    async def create_workflow(self, **kwargs) -> AIWorkflow: ...
-
-    async def execute_workflow(self, workflow_id: str, input_data: dict) -> Any: ...
 
 
 @runtime_checkable

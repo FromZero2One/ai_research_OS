@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import time
-from typing import cast
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ai.models import AIWorkflow, PromptTemplate
+from ai.models import PromptTemplate
 from core.adapters.llm import create_llm
 from core.event_service import EventLogger
 from core.exceptions import NotFoundError
@@ -188,57 +187,4 @@ class AIService:
             "data": result,
             "model": self.llm.model_name,
             "processing_time_ms": round(elapsed, 2),
-        }
-
-    # ── Workflow Management ──────────────────────────────────────
-
-    async def create_workflow(self, **kwargs) -> AIWorkflow:
-        workflow = AIWorkflow(**kwargs)
-        self.session.add(workflow)
-        await self.session.flush()
-        await self.session.refresh(workflow)
-        return workflow
-
-    async def execute_workflow(self, workflow_id: str, input_data: dict) -> dict:
-        """Execute a multi-step AI workflow.
-
-        V1: Simple sequential step execution.
-        V2+: LangGraph-based DAG orchestration.
-        """
-        result = await self.session.execute(select(AIWorkflow).where(AIWorkflow.id == workflow_id))
-        workflow = result.scalar_one_or_none()
-        if not workflow:
-            raise NotFoundError("AIWorkflow", workflow_id)
-
-        steps = cast(list[dict], workflow.steps or [])
-        if not steps:
-            return {"status": "empty", "output": None}
-
-        context = input_data.copy()
-        results = []
-
-        for step in steps:
-            step_type = step.get("type", "llm")
-            if step_type == "llm":
-                messages = [
-                    LLMMessage(
-                        role="system",
-                        content=step.get("system", ""),
-                    ),
-                    LLMMessage(
-                        role="user",
-                        content=step.get("prompt", "").format(**context),
-                    ),
-                ]
-                resp = await self.llm.generate(messages=messages)
-                context[step.get("output_key", "result")] = resp.content
-                results.append({"step": step.get("name"), "output": resp.content})
-            elif step_type == "transform":
-                context[step.get("output_key", "result")] = step.get("transform", "")
-
-        return {
-            "status": "completed",
-            "workflow": workflow.name,
-            "steps": results,
-            "final_context": context,
         }

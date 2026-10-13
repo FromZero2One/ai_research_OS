@@ -41,21 +41,6 @@ class PromptTemplateResponse(PromptTemplateCreate):
     model_config = {"from_attributes": True}
 
 
-class AIWorkflowCreate(NameDescription):
-    workflow_type: str
-    config: dict | None = None
-    steps: dict | None = None
-
-
-class AIWorkflowResponse(AIWorkflowCreate):
-    id: UUID
-    is_active: bool
-    created_at: datetime
-    updated_at: datetime | None
-
-    model_config = {"from_attributes": True}
-
-
 class GenerateRequest(BaseModel):
     prompt_name: str = Field(..., description="Name of prompt template to use")
     variables: dict = Field(default_factory=dict, description="Template variables")

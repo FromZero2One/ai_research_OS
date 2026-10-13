@@ -181,7 +181,6 @@ ALL_TABLES = [
     "document.documents",
     "document.document_chunks",
     "ai.prompt_templates",
-    "ai.ai_workflows",
     "research.research_sessions",
     "research.research_evidences",
     "research.research_reports",
