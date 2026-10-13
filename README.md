@@ -165,16 +165,16 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 - CORS 默认仅允许 `http://localhost:5173`（开发前端），按需在 `.env` 中扩展
 - 若未来需要部署到服务器/公网，第一优先级是接入认证（复用 `core/security.py`）并收紧基础设施访问
 
-## V1 → V1.1 → V2 → V3
+## Roadmap
 
-| | V1 | V1.1 ✅ | V2 | V3 |
-|---|---|---|---|---|
-| Knowledge | Hybrid RAG | + RRF Fusion | + Knowledge Graph | + Causal Reasoning |
-| AI | Single LLM (Ollama) | + DeepSeek V4 Flash | + LangGraph DAGs | + Multi-agent |
-| Portfolio | Watchlist + Journal | + Thesis Panel | + P&L Tracking | + Execution |
-| Research | Manual + Assist | + One Click + Timeline | + Auto Research | + Trading Agents |
-| Workspace | Module pages | Dashboard + Observations | — | — |
-| **Infra** | asyncio.create_task | **Persistent Tasks** + Worker | — | — |
-| **Infra** | Raw SQL in routes | **Service Layer** + Unified Routers | — | — |
-| **Infra** | EventLog write-only | **Read API** + Frontend Type Gen | — | — |
-| **Infra** | — | **Data Freshness** Tracking | — | — |
+已明确放弃：multi-agent、trading agents、LangGraph DAG 工作流（单用户工具过度设计，已于 2026-10 移除 AI 工作流）。
+
+当前方向（分析师优先级排序）：
+
+| 方向 | 内容 |
+|---|---|
+| **数据质量看板** | 按 ticker × 指标类型的覆盖矩阵：最后更新/来源/缺口（升级现有 freshness dashboard） |
+| **比率层 + 历史分位** | 基于标准枚举指标计算毛利率/ROE/负债率等派生比率；PE/PB 历史分位（akshare 历史估值序列） |
+| **报告引用回溯** | 报告论断内联 evidence id，点击可回溯到证据原文 |
+| **证据继承** | 同一公司跨研究 session 复用历史证据并标注"历史已核实" |
+| **差异日报** | 晨报改为只报变化：新公告、财报日历临近、价格异动、证据与旧结论冲突 |

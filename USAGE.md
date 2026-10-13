@@ -765,8 +765,7 @@ ai_research_os/
 │   ├── dashboard/            # 仪表盘聚合
 │   ├── alembic/versions/     # 数据库迁移脚本
 │   └── scripts/             # 工具脚本
-│       ├── seed_data.py     # 种子数据
-│       └── seed_market_data.py # 市场数据
+│       └── seed_data.py     # 种子数据
 ├── frontend/
 │   └── src/
 │       ├── main.ts           # 应用入口
