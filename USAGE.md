@@ -378,8 +378,11 @@ Body: {"question": "中国银行2025年净利润是多少", "top_k": 8, "provide
 **API**:
 ```
 GET /api/v1/knowledge/search?query=苹果的AI战略&limit=5
+GET /api/v1/knowledge/search?query=...&content_type=mda   # 按切片内容类型过滤
 GET /api/v1/knowledge/search/document/{document_id}?query=...  # 只搜索指定文档
 ```
+
+> **content_type 内容类型过滤**（2026-10-14 起）：文档索引时按章节关键词给切片打标 `mda`（经营讨论）/ `risk`（风险因素）/ `notes`（附注）/ `announcement`（公告）/ `other`，定性研究可定向检索（如管理层展望只搜 `mda`）。历史索引的切片保持 `other`，重新索引后自动打标。
 
 ---
 
@@ -471,7 +474,11 @@ Body: {"company_id": "...", "question": "NVDA在AI芯片市场的竞争优势能
 
 每条证据标记类型: `supporting` (支持) / `opposing` (反对) / `neutral` (中性)。类型由两级分类判定：先关键词初值，收集完成后再由 LLM 批量复核覆盖（证据卡上显示 🤖 AI分类 徽标；`EVIDENCE_CLASSIFIER` 开关控制）。
 
+每条证据还带**论断性质** `content_nature`（证据卡徽标：🔢 定量 / 💬 定性）：数字论断引用 Market 接口数据或已核实事实，定性论断供报告内联引用回跳。
+
 财报类文档证据会自动抽取**结构化事实**（structured_facts，只取原文数字，禁推算），报告生成时据此计算 **多周期比对（YoY/QoQ）** 并从财务指标库生成 **同业中位对比**（均显式标注为计算值）。研究详情页的"数据可视化"卡片用 ECharts 展示证据方向分布与指标趋势。
+
+> **交叉验证（质检器）**：抽取出的结构化事实会与 Market 接口聚合值自动比对，偏差 ≥10% 时生成"口径差异"观察事件（System 页可见），提示复核合并/归母口径——结构化事实只做质检，不替代 Market 数据。
 
 证据列表: `GET /api/v1/research/sessions/{id}/evidences`
 删除证据: `DELETE /api/v1/research/evidences/{evidence_id}`
@@ -505,6 +512,8 @@ POST /api/v1/research/sessions/{id}/finalize
 
 获取报告: `GET /api/v1/research/sessions/{id}/reports`
 对比报告差异: `GET /api/v1/research/reports/{report_id}/diff`
+
+> **报告双轨 + 引用回溯**（2026-10-14 起）：报告中的**定性论断**末尾带 `[ev:xxx]` 引用编号，前端渲染为「📎证据」可点击锚点——点击自动滚动到对应证据卡并高亮闪烁；**数字论断**只使用「已核实事实」或 Market 数据区块给出的数字并标注口径，报告 AI 不改写不推算。
 
 **相关页面**:
 - `/research` — 所有研究会话列表

@@ -8,7 +8,7 @@ Python/FastAPI 后端。完整使用手册见根目录 [`USAGE.md`](../USAGE.md)
 - **存储**: PostgreSQL（多 schema + pgvector）+ Qdrant（向量）+ Redis（缓存）
 - **AI**: DeepSeek（OpenAI 兼容，本机默认）/ Ollama（本地 LLM + Embedding）
 - **数据源**: akshare 子进程直连（A股/港股，Tencent/Sina/Eastmoney），yfinance（美股备选）
-- **质量**: pytest 132 用例 + ruff + mypy + pre-commit
+- **质量**: pytest 150 用例 + ruff + mypy + pre-commit
 
 ## 架构
 
@@ -28,6 +28,15 @@ Company → Market + Document → Knowledge(RAG) → AI → Research → Portfol
 | 薄模块（仅 routes + service，无自有 models/schemas） | knowledge（读写 document 表 + Qdrant）、dashboard（跨模块聚合） |
 
 服务通过 `core/container.py` DI 容器懒加载，路由经 `Depends(get_container)` 获取。
+
+### 数据分工原则（2026-10-14 定稿）
+
+**接口管"数"，PDF 管"事"**：
+
+- **定量层**：Market 中心是数字唯一事实源（akshare 直连入库 `market` schema）。报告/图表/比率引用财务数字只能走 Market 数据
+- **定性层**：Document/Knowledge 管定性正文（MD&A/风险/附注/公告）。`document_chunks.content_type` 在解析时打标（`document/content_classifier.py` 纯函数），`/knowledge/search` 支持 `content_type=` 过滤
+- **报告双轨**：Evidence 带 `content_nature`（quantitative/qualitative，LLM 批量分类）。数字论断走「已核实事实」/Market 区块禁止改写；定性论断内联 `[ev:id]`，前端可点击回跳证据卡
+- **交叉验证**：`research/fact_validator.py` 把 structured_facts（财报抽取）与 Market 接口值比对，偏差 ≥10% → `Observation(attention)` 口径差异事件
 
 ## 启动
 
@@ -53,8 +62,8 @@ PostgreSQL 用 schema 做模块隔离，初始化 SQL 见 `docker/init.sql`：
 |--------|-----|
 | `company` | companies, company_tags |
 | `market` | stock_prices, financial_metrics, macro_indicators, data_freshness |
-| `document` | documents, document_chunks |
-| `research` | research_sessions, research_evidences, research_reports |
+| `document` | documents, document_chunks（含 content_type：mda/risk/notes/announcement/other） |
+| `research` | research_sessions, research_evidences（含 content_nature：quantitative/qualitative）, research_reports |
 | `portfolio` | holdings, investment_journal |
 | `ai` | prompt_templates |
 | `core` | event_log, task_records, morning_briefs, observations |
@@ -141,4 +150,4 @@ Ollama 版本过旧（<0.3.0）时 `/api/embed` 不可用，Embedding 降级为 
 ```bash
 make test        # pytest，专用 airesearch_test 库 + 隔离 Qdrant 集合
 ```
-当前 **132 passed**（另有 5 项依赖本机 Ollama embeddings，无 Ollama 环境时不计）。
+当前 **150 passed**（另有 4 项依赖本机 Ollama embeddings，无 Ollama 环境时不计）。
