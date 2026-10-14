@@ -166,6 +166,7 @@ class EvidenceResponse(BaseModel):
     source_title: str | None
     relevance_score: float | None
     evidence_type: str
+    content_nature: str | None = None
     summary: str | None
     reliability: float | None = None
     data_freshness: int | None = None

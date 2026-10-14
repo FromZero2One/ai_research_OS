@@ -38,6 +38,7 @@ class DocumentChunkResponse(BaseModel):
     id: UUID
     chunk_index: int
     content: str
+    content_type: str = "other"
     token_count: int | None
     embedding_id: str | None
 

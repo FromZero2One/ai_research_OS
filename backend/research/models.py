@@ -73,6 +73,13 @@ class ResearchEvidence(Base, UUIDMixin, TimestampMixin):
     evidence_type: Mapped[str] = mapped_column(String(32), nullable=False, default="supporting")
     """supporting, opposing, neutral"""
 
+    content_nature: Mapped[str | None] = mapped_column(
+        String(16),
+        nullable=True,
+        comment="论断性质：quantitative（数字）/ qualitative（定性），NULL=未知",
+    )
+    """报告双轨：数字论断引用 Market 区块，定性论断内联 [ev:id] 回跳原文"""
+
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     extra_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 

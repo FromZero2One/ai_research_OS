@@ -31,6 +31,36 @@ const diffVersion = ref<number | null>(null)
 const showTimeline = ref(false)
 const expandedEvidence = ref<Set<string>>(new Set())
 
+// ── 报告引用回溯：解析 [ev:<uuid>] 内联标注 → 可点击锚点 ──
+const EV_REF_RE = /\[ev:([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\]/g
+
+interface ReportSegment { type: 'text' | 'ev'; text?: string; id?: string }
+
+function parseEvRefs(content: string): ReportSegment[] {
+  const parts: ReportSegment[] = []
+  let last = 0
+  for (const m of content.matchAll(EV_REF_RE)) {
+    const idx = m.index ?? 0
+    if (idx > last) parts.push({ type: 'text', text: content.slice(last, idx) })
+    parts.push({ type: 'ev', id: m[1] })
+    last = idx + m[0].length
+  }
+  if (last < content.length) parts.push({ type: 'text', text: content.slice(last) })
+  return parts
+}
+
+function evExists(eid: string) {
+  return (session.value?.evidences || []).some((e: any) => e.id === eid)
+}
+
+function jumpToEvidence(eid: string) {
+  const el = document.getElementById('ev-' + eid)
+  if (!el) return
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  el.classList.add('ev-flash')
+  setTimeout(() => el.classList.remove('ev-flash'), 1600)
+}
+
 const plan = computed(() => session.value?.plan || null)
 const isCompleted = computed(() => session.value?.status === 'completed')
 const hasPlan = computed(() => !!plan.value)
@@ -93,10 +123,12 @@ function toggleEvidence(id: string) { const s = new Set(expandedEvidence.value);
         <template v-for="(group, grpType) in { opposing, supporting, neutral }" :key="grpType">
           <div v-if="group.length">
             <div class="text-sm font-medium mb-2" :style="{ color: grpType === 'opposing' ? 'var(--danger)' : grpType === 'supporting' ? 'var(--success)' : 'var(--text-secondary)' }">{{ evidenceTypeStyle(grpType).icon }} {{ evidenceTypeStyle(grpType).label }}证据</div>
-            <div v-for="ev in group" :key="ev.id" class="evidence-card" :style="{ background: evidenceTypeStyle(ev.evidence_type).bg, borderColor: evidenceTypeStyle(ev.evidence_type).border }">
+            <div v-for="ev in group" :key="ev.id" :id="'ev-' + ev.id" class="evidence-card" :style="{ background: evidenceTypeStyle(ev.evidence_type).bg, borderColor: evidenceTypeStyle(ev.evidence_type).border }">
               <div class="flex items-center gap-2 mb-2 flex-wrap">
                 <span>{{ sourceIcon(ev.source_type) }}</span>
                 <el-tag size="small">{{ ev.source_type }}</el-tag>
+                <el-tag v-if="ev.content_nature === 'quantitative'" size="small" effect="plain" type="warning">🔢 定量</el-tag>
+                <el-tag v-else-if="ev.content_nature === 'qualitative'" size="small" effect="plain">💬 定性</el-tag>
                 <span v-if="ev.source_title" class="text-xs text-secondary truncate" style="max-width:200px">{{ ev.source_title }}</span>
                 <span v-if="ev.citation_quality" class="text-xs" style="color:var(--text-secondary)">🔗 {{ ev.citation_quality }}</span>
                 <el-tag v-if="ev.classification_source === 'llm'" size="small" effect="plain" :type="ev.classification_confidence != null && ev.classification_confidence < 0.6 ? 'warning' : 'info'">🤖 AI分类</el-tag>
@@ -129,7 +161,7 @@ function toggleEvidence(id: string) { const s = new Set(expandedEvidence.value);
           <div v-if="r.version > 1" class="flex gap-2 mb-2">
             <el-button @click.stop="diffVersion = diffVersion === r.version ? null : r.version - 1" size="small">{{ diffVersion === r.version ? '隐藏对比' : `📊 对比 v${r.version - 1}` }}</el-button>
           </div>
-          <pre class="report-content">{{ r.content }}</pre>
+          <pre class="report-content"><template v-for="(seg, i) in parseEvRefs(r.content)" :key="i"><template v-if="seg.type === 'text'">{{ seg.text }}</template><a v-else-if="evExists(seg.id!)" class="ev-ref" title="回跳证据原文" @click.prevent="jumpToEvidence(seg.id!)">📎证据</a><span v-else class="ev-ref-missing">[ev:{{ seg.id!.slice(0, 8) }}]</span></template></pre>
         </div>
       </div>
     </div>
@@ -165,6 +197,11 @@ function toggleEvidence(id: string) { const s = new Set(expandedEvidence.value);
 .report-header:hover { background: var(--bg-tertiary); }
 .report-body { padding: 0 16px 16px; }
 .report-content { padding: 16px; border-radius: 8px; background: #0d1117; font-size: 14px; line-height: 1.6; white-space: pre-wrap; font-family: monospace; max-height: 600px; overflow-y: auto; color: var(--text-primary); }
+.ev-ref { color: var(--accent); cursor: pointer; text-decoration: none; border-bottom: 1px dashed var(--accent); font-size: 12px; }
+.ev-ref:hover { opacity: 0.8; }
+.ev-ref-missing { color: var(--text-secondary); font-size: 12px; }
+.evidence-card.ev-flash { animation: ev-flash 1.6s ease; }
+@keyframes ev-flash { 0%, 60% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: none; } }
 .thesis-card { padding: 20px; border-radius: 12px; background: var(--bg-secondary); border-left: 4px solid var(--accent); }
 .finalize-card { padding: 20px; border-radius: 12px; background: var(--bg-secondary); border: 1px solid var(--border); }
 </style>

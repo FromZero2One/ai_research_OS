@@ -69,6 +69,8 @@ class GatherService:
                     source_title=result.title,
                     relevance_score=result.score,
                     evidence_type=evidence_type,
+                    # 论断性质初值（LLM 批量分类时覆盖）：报告双轨用
+                    content_nature=EvidenceService.classify_nature(result.content),
                     # 证据质量评分：按文档类型映射引用等级
                     citation_quality=_citation_quality_for_doc(result.doc_type),
                     reliability=_reliability_for_document(result.score, result.doc_type),
@@ -107,6 +109,8 @@ class GatherService:
                         source_title=f"{company.ticker} Price (30d)",
                         relevance_score=0.7,
                         evidence_type="neutral",
+                        # 行情数据 = 数字论断（接口管"数"）
+                        content_nature="quantitative",
                         # 行情数据可靠性高、新鲜度按最新数据日期计算
                         reliability=0.9,
                         citation_quality="institutional",
@@ -139,6 +143,8 @@ class GatherService:
                                 source_title=f"{company.ticker} Financials",
                                 relevance_score=0.8,
                                 evidence_type="neutral",
+                                # 指标数据 = 数字论断（接口管"数"）
+                                content_nature="quantitative",
                             )
                             collected.append((ev, None))
                             count += 1
@@ -160,11 +166,29 @@ class GatherService:
         ]
         await _extract_facts_for_reports(self.evidence, report_type_evs)
 
+        # 5. 交叉验证：structured_facts vs Market 接口值（④ 质检器，
+        #    差异生成观察事件；不进报告数字链路）
+        discrepancies = 0
+        if session.company_id and report_type_evs:
+            try:
+                from company.service import CompanyService
+
+                company = await CompanyService(self.session).get(session.company_id)
+                discrepancies = await _cross_validate_facts(
+                    self.session,
+                    report_type_evs,
+                    company.ticker,
+                    company.name,
+                )
+            except Exception as e:
+                logger.warning("Fact cross-validation skipped: %s", e)
+
         return {
             "session_id": str(session_id),
             "evidences_added": count,
             "searched_queries": len(search_queries),
             "llm_classified": settings_enabled_classifier(),
+            "fact_discrepancies": discrepancies,
         }
 
 
@@ -263,6 +287,63 @@ async def _extract_facts_for_reports(evidence_svc, evidences) -> int:
             "Structured facts extracted for %d/%d report evidences", extracted, len(targets)
         )
     return extracted
+
+
+async def _cross_validate_facts(
+    session_db,
+    evidences: list,
+    ticker: str,
+    company_name: str | None = None,
+) -> int:
+    """structured_facts 与 Market 接口值交叉验证（④ 质检器）。
+
+    偏差 ≥10% 视为疑似口径差异（合并 vs 归母/追溯调整），
+    写入 Observation（attention）+ 事件日志。返回差异条数。
+    """
+    all_facts = [
+        f
+        for ev in evidences
+        if ev.structured_facts and not ev.structured_facts.get("not_mentioned")
+        for f in (ev.structured_facts.get("facts") or [])
+    ]
+    if not all_facts:
+        return 0
+
+    try:
+        from market.service.financial_service import FinancialService
+
+        metrics = await FinancialService(session_db).get_financials(ticker)
+    except Exception as e:
+        logger.warning("Fact cross-validation skipped (market fetch failed): %s", e)
+        return 0
+
+    from research.fact_validator import compare_facts_with_market
+
+    discrepancies = compare_facts_with_market(all_facts, metrics)
+    if not discrepancies:
+        return 0
+
+    from core.event_service import EventLogger
+    from core.observation import Observation
+
+    session_db.add(
+        Observation(
+            ticker=ticker,
+            company_name=company_name or ticker,
+            reasons="\n".join(f"[口径差异] {d}" for d in discrepancies[:10]),
+            status="attention",
+        )
+    )
+    await EventLogger(session_db).record(
+        source="research",
+        event_type="facts.cross_validated",
+        entity_type="research_evidence_batch",
+        payload={"ticker": ticker, "discrepancies": len(discrepancies)},
+    )
+    logger.info(
+        "Fact cross-validation: %d discrepancies for %s", len(discrepancies), ticker
+    )
+    return len(discrepancies)
 
 
 def _sub_question_texts(items) -> list[str]:

@@ -13,7 +13,7 @@ from core.interfaces import LLMMessage
 from core.logging import logger
 from research.models import ResearchEvidence
 
-# LLM 批量分类的输出 schema（evidence_type + 一句话理由 + 自评置信度）
+# LLM 批量分类的输出 schema（evidence_type + 论断性质 + 一句话理由 + 自评置信度）
 _CLASSIFY_SCHEMA: dict = {
     "type": "object",
     "properties": {
@@ -27,6 +27,10 @@ _CLASSIFY_SCHEMA: dict = {
                         "type": "string",
                         "enum": ["supporting", "opposing", "neutral"],
                     },
+                    "content_nature": {
+                        "type": "string",
+                        "enum": ["quantitative", "qualitative"],
+                    },
                     "reason": {"type": "string"},
                     "confidence": {"type": "number"},
                 },
@@ -38,14 +42,20 @@ _CLASSIFY_SCHEMA: dict = {
 }
 
 _CLASSIFY_SYSTEM_PROMPT = (
-    "你是一名严谨的投资研究助理。根据研究问题，判断每条证据对结论的方向：\n"
+    "你是一名严谨的投资研究助理。根据研究问题，对每条证据做两个判断：\n"
+    "一、方向 evidence_type：\n"
     "- supporting：支持看多/看好的结论（增长、盈利改善、竞争优势、政策利好等）\n"
     "- opposing：反对或预警信号（业绩暴雷、商誉减值、大股东质押、诉讼、"
     "行业下行、应收暴增、现金流恶化等金融语境的反向信号）\n"
     "- neutral：中性事实（单纯行情数据、与方向无关的陈述）\n"
+    "二、论断性质 content_nature：\n"
+    "- quantitative：包含具体财务/经营数字（营收、利润、比率、价格等），"
+    "或纯行情与指标数据\n"
+    "- qualitative：定性陈述（管理层表述、行业趋势判断、竞争优势描述、风险叙述等）\n"
     "要求：逐条判断，不遗漏；confidence 为 0-1 的自评置信度；"
     "输出 JSON，格式为 {\"classifications\": [{\"idx\": 0, "
-    "\"evidence_type\": \"...\", \"reason\": \"...\", \"confidence\": 0.9}]}，"
+    "\"evidence_type\": \"...\", \"content_nature\": \"...\", "
+    "\"reason\": \"...\", \"confidence\": 0.9}]}，"
     "idx 对应输入的证据编号。"
 )
 
@@ -148,6 +158,26 @@ class EvidenceService:
             return "opposing"
         return "neutral"
 
+    @staticmethod
+    def classify_nature(content: str) -> str:
+        """论断性质初值（关键词启发式，LLM 批量分类时覆盖）。
+
+        quantitative：带单位的财务数字，或指标词与期间数字同现；
+        其余默认 qualitative（报告双轨：数字论断走 Market，定性走 [ev:id]）。
+        """
+        import re
+
+        text = content or ""
+        if re.search(r"\d[\d,.]*\s*(%|亿元|万元|百万元|亿美元|美元|亿|万)", text):
+            return "quantitative"
+        metric_hints = (
+            "营业收入", "净利润", "营收", "毛利率", "净利率", "ROE", "净资产收益率",
+            "资产负债率", "经营现金流", "市盈率", "市净率", "同比", "环比", "不良率",
+        )
+        if re.search(r"\d{4}", text) and any(h in text for h in metric_hints):
+            return "quantitative"
+        return "qualitative"
+
     async def classify_batch(
         self,
         evidences: list[ResearchEvidence],
@@ -199,6 +229,9 @@ class EvidenceService:
             ev = evidences[idx]
             ev.evidence_type = etype
             ev.classification_source = "llm"
+            nature = c.get("content_nature")
+            if nature in {"quantitative", "qualitative"}:
+                ev.content_nature = nature
             conf = c.get("confidence")
             ev.classification_confidence = (
                 round(float(conf), 2) if isinstance(conf, (int, float)) else None

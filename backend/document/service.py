@@ -215,12 +215,15 @@ class DocumentService:
         self._set_progress(doc, "chunking", "正在分块...")
         await self.session.flush()
         chunks = self._chunk_text(raw_text)
+        from document.content_classifier import classify_chunk
+
         for i, chunk_text in enumerate(chunks):
             self.session.add(
                 DocumentChunk(
                     document_id=doc.id,
                     chunk_index=i,
                     content=chunk_text,
+                    content_type=classify_chunk(chunk_text),
                     token_count=len(chunk_text.split()),
                 )
             )
@@ -458,6 +461,7 @@ class DocumentService:
                         "chunk_index": chunk.chunk_index,
                         "title": doc.title,
                         "doc_type": doc.doc_type,
+                        "content_type": chunk.content_type,
                         "content": chunk.content[:500],  # preview
                     },
                 )

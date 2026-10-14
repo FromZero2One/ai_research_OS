@@ -47,6 +47,9 @@ async def search(
     query: str = Query(..., min_length=1, description="Search query"),
     top_k: int = Query(10, ge=1, le=50),
     doc_type: str | None = Query(None, description="Filter by document type"),
+    content_type: str | None = Query(
+        None, description="按切片内容类型过滤: mda/risk/notes/announcement/other"
+    ),
     min_score: float = Query(0.0, ge=0.0),
     container: Container = Depends(get_container),
 ):
@@ -56,6 +59,7 @@ async def search(
         query=query,
         top_k=top_k,
         doc_type=doc_type,
+        content_type=content_type,
         min_score=min_score,
     )
     return {
@@ -71,6 +75,7 @@ async def search(
                 "chunk_index": r.chunk_index,
                 "title": r.title,
                 "doc_type": r.doc_type,
+                "content_type": r.content_type,
             }
             for r in results
         ],

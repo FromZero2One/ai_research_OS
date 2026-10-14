@@ -148,6 +148,7 @@ class SearchResult:
     chunk_index: int
     title: str
     doc_type: str
+    content_type: str = "other"
     snippet: str = ""
     highlights: list[str] = field(default_factory=list)
 
@@ -217,14 +218,23 @@ class KnowledgeService:
         query: str,
         top_k: int = 10,
         doc_type: str | None = None,
+        content_type: str | None = None,
         min_score: float = 0.0,
     ) -> list[SearchResult]:
-        """Hybrid search: Qdrant (dense) + BM25 (sparse) → RRF fusion."""
+        """Hybrid search: Qdrant (dense) + BM25 (sparse) → RRF fusion.
+
+        ``content_type`` 按切片内容类型过滤（mda/risk/notes/announcement/other），
+        供定性研究定向检索（如 MD&A 相关子问题只搜 mda）。
+        """
         if not query.strip():
             return []
 
-        # Build filter for doc_type
-        vector_filter = {"doc_type": doc_type} if doc_type else None
+        # Build filter for doc_type / content_type
+        vector_filter: dict = {}
+        if doc_type:
+            vector_filter["doc_type"] = doc_type
+        if content_type:
+            vector_filter["content_type"] = content_type
 
         # 1. Dense search
         query_vector = await self.embedder.embed_query(query)
@@ -232,11 +242,11 @@ class KnowledgeService:
             collection=settings.QDRANT_COLLECTION,
             vector=query_vector,
             top_k=top_k * 2,
-            filter_=vector_filter,
+            filter_=vector_filter or None,
         )
 
         # 2. Sparse search (BM25)
-        sparse_results = await self._sparse_search(query, top_k * 2, doc_type)
+        sparse_results = await self._sparse_search(query, top_k * 2, doc_type, content_type)
 
         # 3. Reciprocal Rank Fusion
         fused = self._rrf_fusion(dense_results, sparse_results, top_k)
@@ -256,6 +266,7 @@ class KnowledgeService:
                             "chunk_index": r.chunk_index,
                             "title": r.title,
                             "doc_type": r.doc_type,
+                            "content_type": r.content_type,
                         },
                     )
                     for r in enriched[: top_k * 3]  # re-rank top 3x
@@ -269,6 +280,7 @@ class KnowledgeService:
                         chunk_index=meta["chunk_index"],
                         title=meta["title"],
                         doc_type=meta["doc_type"],
+                        content_type=meta.get("content_type", "other"),
                     )
                     for score, content, meta in reranked
                 ]
@@ -321,7 +333,11 @@ class KnowledgeService:
         return results[:top_k]
 
     async def _sparse_search(
-        self, query: str, top_k: int, doc_type: str | None = None
+        self,
+        query: str,
+        top_k: int,
+        doc_type: str | None = None,
+        content_type: str | None = None,
     ) -> list[dict]:
         """BM25 sparse search over all indexed chunks."""
         # Load BM25 index (lazy, cached per session)
@@ -335,14 +351,20 @@ class KnowledgeService:
 
         results = []
         for idx in top_indices:
-            if scores[idx] > 0:
-                results.append(
-                    {
-                        "id": bm25.ids[idx],
-                        "score": float(scores[idx]) / 100.0,  # normalize
-                        "payload": bm25.metadata[idx],
-                    }
-                )
+            if scores[idx] <= 0:
+                continue
+            meta = bm25.metadata[idx]
+            if doc_type and meta.get("doc_type") != doc_type:
+                continue
+            if content_type and meta.get("content_type") != content_type:
+                continue
+            results.append(
+                {
+                    "id": bm25.ids[idx],
+                    "score": float(scores[idx]) / 100.0,  # normalize
+                    "payload": meta,
+                }
+            )
         return results
 
     async def _get_bm25(self, collection: str):
@@ -396,6 +418,7 @@ class KnowledgeService:
             {
                 "document_id": str(c.document_id),
                 "chunk_index": c.chunk_index,
+                "content_type": c.content_type or "other",
             }
             for c in chunks
         ]
@@ -456,6 +479,7 @@ class KnowledgeService:
                         chunk_index=chunk.chunk_index,
                         title=doc.title,
                         doc_type=doc.doc_type,
+                        content_type=chunk.content_type or "other",
                     )
                 )
         return enriched

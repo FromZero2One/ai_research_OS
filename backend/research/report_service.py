@@ -32,7 +32,17 @@ REPORT_SYSTEM_PROMPT = (
     "Use markdown formatting. Be objective — clearly distinguish supported "
     "conclusions from speculation. 证据条目附有可靠性(reliability)与新鲜度"
     "(数据距今年数)标注时，低可靠性(<0.5)或陈旧(>90天)的证据必须在正文中"
-    "明确说明其局限。"
+    "明确说明其局限。\n\n"
+    "## 论断双轨规则（必须遵守）\n"
+    "每条证据开头有唯一编号 [ev:<id>]。写作时：\n"
+    "1. **定性论断**（管理层表述、行业趋势、竞争优势、风险叙述等）必须在句末"
+    "内联标注来源证据编号，格式如：……（见 [ev:abc123]）。每条定性论断都要有引用，"
+    "同一句引用多个证据时写 [ev:id1][ev:id2]。\n"
+    "2. **数字论断**（营收、利润、比率、价格等）只能使用证据条目中"
+    "「已核实事实」区块或 Market 数据区块给出的数字，禁止自行推算、换算或"
+    "从定性文本中提取数字；数字后标注口径（如 归母/合并、同比）。\n"
+    "3. 证据文本中的数字若与「已核实事实」冲突，以「已核实事实」为准，"
+    "并在正文中说明差异。"
 )
 
 
@@ -155,7 +165,12 @@ class ReportService:
                 if parts:
                     facts_str = f" [已核实事实: {'; '.join(parts)}]"
 
-            item = f"- [{ev.source_type}]{quality_str}{facts_str} {ev.content[:500]}"
+            # 双轨标注：[ev:id] 供报告内联回溯；nature 提示 LLM 论断性质
+            nature_str = f" nature={ev.content_nature}" if ev.content_nature else ""
+            item = (
+                f"- [ev:{ev.id}][{ev.source_type}]{nature_str}"
+                f"{quality_str}{facts_str} {ev.content[:500]}"
+            )
             if ev.evidence_type == "supporting":
                 supporting.append(item)
             elif ev.evidence_type == "opposing":

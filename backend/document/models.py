@@ -55,6 +55,10 @@ class DocumentChunk(Base, UUIDMixin, TimestampMixin):
     )
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    content_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="other", index=True
+    )
+    """切片内容类型：mda / risk / notes / announcement / other（定性检索过滤用）"""
     token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     embedding_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     """ID in Qdrant for this chunk's vector."""
