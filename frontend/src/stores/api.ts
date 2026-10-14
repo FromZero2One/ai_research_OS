@@ -380,7 +380,6 @@ export function useAddHolding() {
 }
 
 // ── Dashboard ──
-export interface DashboardBrief { content: string; generated_at: string | null }
 export interface DashboardWatchlistItem {
   id: string; ticker: string; company_name: string; sector: string | null
   priority: number; target_price: number | null; reason: string | null
@@ -395,19 +394,11 @@ export interface DashboardMarketItem {
   ticker: string; company_name: string; sector: string | null; latest_price: number | null; change_pct: number | null
 }
 export interface DashboardData {
-  morning_brief: DashboardBrief | null; watchlist: DashboardWatchlist[]
+  watchlist: DashboardWatchlist[]
   research_reminders: DashboardReminder[]; recent_research: DashboardRecentResearch[]
   market_overview?: DashboardMarketItem[]
 }
 export function useDashboard() { return useGet<DashboardData>(['dashboard'], '/dashboard') }
-
-export function useGenerateBrief() {
-  const qc = useQueryClient()
-  return useMutation<unknown, Error, void>({
-    mutationFn: () => fetchApi('/dashboard/generate-brief', { method: 'POST' }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['dashboard'] }) },
-  })
-}
 
 // ── System ──
 export function useSchedulerStatus() {
@@ -477,12 +468,6 @@ export function useDeleteTemplate() {
 export function useExecuteTemplate() {
   return useMutation<{ content: string; model: string; error?: string }, Error, { prompt_name: string; variables: Record<string, string> }>({
     mutationFn: (body) => fetchApi('/ai/generate', { method: 'POST', body: JSON.stringify(body) }),
-  })
-}
-
-export function useSummarize() {
-  return useMutation<{ content: string; error?: string }, Error, { text: string; max_length: number; format_: string }>({
-    mutationFn: (body) => fetchApi('/ai/summarize', { method: 'POST', body: JSON.stringify(body) }),
   })
 }
 

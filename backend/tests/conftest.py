@@ -177,7 +177,7 @@ ALL_TABLES = [
     "company.company_tags",
     "market.stock_prices",
     "market.financial_metrics",
-    "market.macro_indicators",
+    "market.data_freshness",
     "document.documents",
     "document.document_chunks",
     "ai.prompt_templates",

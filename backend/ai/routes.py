@@ -5,13 +5,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from ai.schemas import (
-    ExtractRequest,
     GenerateRequest,
     GenerateResponse,
     PromptTemplateCreate,
     PromptTemplateResponse,
     PromptTemplateUpdate,
-    SummarizeRequest,
 )
 from core.container import Container
 from core.database import get_container
@@ -82,15 +80,3 @@ async def generate(data: GenerateRequest, container: Container = Depends(get_con
         model=data.model,
         temperature=data.temperature,
     )
-
-
-@router.post("/summarize", response_model=GenerateResponse)
-async def summarize(data: SummarizeRequest, container: Container = Depends(get_container)):
-    svc = container.ai_service
-    return await svc.summarize(text=data.text, max_length=data.max_length, format_=data.format)
-
-
-@router.post("/extract")
-async def extract(data: ExtractRequest, container: Container = Depends(get_container)):
-    svc = container.ai_service
-    return await svc.extract(text=data.text, schema=data.schema_)

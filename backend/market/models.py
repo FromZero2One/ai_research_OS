@@ -1,4 +1,4 @@
-﻿"""Market Center ORM models — prices, financials, macros."""
+﻿"""Market Center ORM models — prices, financials, freshness."""
 
 from __future__ import annotations
 
@@ -114,17 +114,6 @@ class FinancialMetric(Base, UUIDMixin, TimestampMixin):
     """标准单位（FinancialMetricUnit 值），历史数据为 NULL"""
 
     reported_at: Mapped[datetime | None] = mapped_column(nullable=True)
-
-
-class MacroIndicator(Base, UUIDMixin, TimestampMixin):
-    __tablename__ = "macro_indicators"
-    __table_args__ = {"schema": "market"}
-
-    indicator: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    date: Mapped[date] = mapped_column(Date, nullable=False)
-    value: Mapped[float] = mapped_column(Float, nullable=False)
-    unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    source: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class DataFreshness(Base, UUIDMixin, TimestampMixin):

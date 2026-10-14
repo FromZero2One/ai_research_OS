@@ -41,23 +41,6 @@ class DashboardService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    # ── Morning Brief ─────────────────────────────────────────────
-
-    async def get_latest_brief(self) -> dict[str, Any] | None:
-        """Fetch the most recent morning brief from MorningBrief table."""
-        from core.morning_brief import MorningBrief
-
-        result = await self.session.execute(
-            select(MorningBrief).order_by(desc(MorningBrief.generated_at)).limit(1)
-        )
-        brief = result.scalar_one_or_none()
-        if not brief:
-            return None
-        return {
-            "content": brief.content,
-            "generated_at": brief.generated_at.isoformat() if brief.generated_at else None,
-        }
-
     # ── Watchlist Summary (batch-queried) ─────────────────────────
 
     async def get_watchlist_summary(self) -> list[dict[str, Any]]:
@@ -230,7 +213,6 @@ class DashboardService:
         """Aggregate everything for the daily workspace homepage — all batch."""
         from research.models import ResearchSession
 
-        brief = await self.get_latest_brief()
         watchlist = await self.get_watchlist_summary()
         reminders = await self.get_research_reminders()
 
@@ -240,7 +222,6 @@ class DashboardService:
         recent = result.scalars().all()
 
         return {
-            "morning_brief": brief,
             "watchlist": watchlist,
             "research_reminders": reminders,
             "recent_research": [

@@ -6,13 +6,8 @@ import {
   useDeleteTemplate,
   useExecuteTemplate,
   useListTemplates,
-  useSummarize,
   useUpdateTemplate,
 } from '@/stores/api'
-
-const text = ref('')
-const summary = ref('')
-const loading = ref(false)
 
 const { data: templates } = useListTemplates()
 const showNew = ref(false)
@@ -25,20 +20,10 @@ const execVars = ref('')
 const execResult = ref('')
 const execLoading = ref(false)
 
-const summarize = useSummarize()
 const createTemplate = useCreateTemplate()
 const updateTemplate = useUpdateTemplate(computed(() => editId.value || ''))
 const deleteTemplate = useDeleteTemplate()
 const executeTemplate = useExecuteTemplate()
-
-async function handleSummarize() {
-  if (!text.value.trim()) return
-  loading.value = true
-  try {
-    const data = await summarize.mutateAsync({ text: text.value, max_length: 300, format_: 'paragraph' })
-    summary.value = data.content || data.error || 'No response'
-  } catch (e: any) { summary.value = 'Error: ' + e.message } finally { loading.value = false }
-}
 
 async function handleCreateTemplate() {
   if (!newTmpl.value.name.trim()) return
@@ -79,13 +64,7 @@ async function handleExecute(id: string) {
 
 <template>
   <div class="page">
-    <div class="page-header"><h1 class="page-title">⚡ AI 中心</h1><p class="page-desc">Prompt 管理 · LLM 编排 · 文本摘要 · 结构化提取</p></div>
-
-    <el-row :gutter="16">
-      <el-col v-for="c in [{ icon:'📝', title:'Prompt 模板', desc:'管理可复用的 System + User Prompt，支持变量注入' }, { icon:'🔄', title:'工作流', desc:'多步骤 LLM 管道（顺序执行，后续支持 LangGraph 有向图）' }, { icon:'🔧', title:'结构提取', desc:'基于 JSON Schema 验证的结构化数据提取' }]" :key="c.title" :span="8">
-        <el-card shadow="never"><div class="text-2xl mb-2">{{ c.icon }}</div><div class="font-medium mb-1">{{ c.title }}</div><div class="text-sm text-secondary">{{ c.desc }}</div></el-card>
-      </el-col>
-    </el-row>
+    <div class="page-header"><h1 class="page-title">⚡ AI 中心</h1><p class="page-desc">Prompt 模板管理 · 模板执行 · Token 用量（AI 能力已内嵌研究与知识流程）</p></div>
 
     <el-card shadow="never">
       <template #header><div class="flex items-center justify-between"><span>📝 Prompt 模板</span><el-button @click="showNew = !showNew" text>{{ showNew ? '取消' : '+ 新建' }}</el-button></div></template>
@@ -127,13 +106,6 @@ async function handleExecute(id: string) {
         </div>
       </el-dialog>
     </el-card>
-
-    <el-card shadow="never">
-      <template #header>摘要功能演示</template>
-      <el-input v-model="text" placeholder="粘贴要摘要的文本..." type="textarea" :rows="4" />
-      <el-button @click="handleSummarize" :disabled="loading || !text.trim()" type="primary" class="mt-3">{{ loading ? '摘要中...' : '生成摘要' }}</el-button>
-      <div v-if="summary" class="summary-result"><div class="text-xs text-secondary mb-2">摘要结果</div><p class="text-sm leading-relaxed whitespace-pre-wrap">{{ summary }}</p></div>
-    </el-card>
   </div>
 </template>
 
@@ -145,5 +117,4 @@ async function handleExecute(id: string) {
 .template-desc { font-size: 12px; color: var(--text-secondary); }
 .template-actions { display: flex; gap: 8px; align-items: center; }
 .exec-result { padding: 12px; border-radius: 8px; background: var(--bg-tertiary); border: 1px solid var(--border); max-height: 240px; overflow: auto; }
-.summary-result { margin-top: 16px; padding: 16px; border-radius: 8px; background: var(--bg-tertiary); border: 1px solid var(--border); }
 </style>

@@ -1,13 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import DOMPurify from 'dompurify'
-import { marked } from 'marked'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useDashboard, useGenerateBrief } from '@/stores/api'
+import { useDashboard } from '@/stores/api'
 
 const { data, isLoading } = useDashboard()
 const router = useRouter()
-const generateBrief = useGenerateBrief()
 
 const statusLabel: Record<string, { label: string; type: string }> = {
   normal: { label: '正常', type: 'success' },
@@ -15,17 +12,7 @@ const statusLabel: Record<string, { label: string; type: string }> = {
   need_research: { label: '需研究', type: 'danger' },
 }
 
-async function handleGenerateBrief() {
-  await generateBrief.mutateAsync()
-}
-
 const today = new Date().toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-
-const briefHtml = computed(() => {
-  const content = data.value?.morning_brief?.content
-  if (!content) return ''
-  return DOMPurify.sanitize(marked.parse(content, { async: false }) as string)
-})
 </script>
 
 <template>
@@ -48,38 +35,19 @@ const briefHtml = computed(() => {
         </el-col>
       </el-row>
 
-      <el-row :gutter="24">
-        <el-col :span="16">
-          <el-card shadow="never" class="section-card">
-            <template #header>
-              <div class="flex items-center justify-between">
-                <span>📋 晨间简报</span>
-                <div class="flex items-center gap-2">
-                  <span v-if="data?.morning_brief?.generated_at" class="text-xs text-secondary">{{ new Date(data.morning_brief.generated_at).toLocaleString('zh-CN') }}</span>
-                  <el-button @click="handleGenerateBrief" :disabled="generateBrief.isPending.value" size="small">{{ generateBrief.isPending.value ? '生成中...' : '🔄 生成' }}</el-button>
-                </div>
-              </div>
-            </template>
-            <div v-if="data?.morning_brief?.content" class="brief-content" v-html="briefHtml" />
-            <el-empty v-else description="暂无简报。点击「生成」或系统将在工作日 6am 自动生成。" />
-          </el-card>
-        </el-col>
-        <el-col :span="8">
-          <el-card shadow="never" class="section-card">
-            <template #header>⏰ 研究提醒</template>
-            <div v-if="data?.research_reminders?.length" class="reminder-list">
-              <div v-for="r in data.research_reminders.slice(0, 5)" :key="r.ticker" class="reminder-item">
-                <div class="flex items-center justify-between">
-                  <span class="reminder-name">{{ r.company_name }}</span>
-                  <span class="reminder-days">{{ r.days_since_research }} 天</span>
-                </div>
-                <el-button text size="small" @click="router.push(`/research/quick?ticker=${r.ticker}`)">开始研究 →</el-button>
-              </div>
+      <el-card shadow="never" class="section-card">
+        <template #header>⏰ 研究提醒</template>
+        <div v-if="data?.research_reminders?.length" class="reminder-list">
+          <div v-for="r in data.research_reminders.slice(0, 5)" :key="r.ticker" class="reminder-item">
+            <div class="flex items-center justify-between">
+              <span class="reminder-name">{{ r.company_name }}</span>
+              <span class="reminder-days">{{ r.days_since_research }} 天</span>
             </div>
-            <el-empty v-else description="没有待处理的研究提醒。" />
-          </el-card>
-        </el-col>
-      </el-row>
+            <el-button text size="small" @click="router.push(`/research/quick?ticker=${r.ticker}`)">开始研究 →</el-button>
+          </div>
+        </div>
+        <el-empty v-else description="没有待处理的研究提醒。" />
+      </el-card>
 
       <el-card v-if="data?.watchlist?.length" shadow="never" class="section-card">
         <template #header>
@@ -173,13 +141,6 @@ const briefHtml = computed(() => {
 .action-icon { font-size: 24px; margin-bottom: 4px; }
 .action-label { font-size: 14px; font-weight: 500; color: var(--text-primary); }
 .action-desc { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
-.brief-content { max-height: 384px; overflow-y: auto; }
-.brief-content h1, .brief-content h2 { font-size: 18px; font-weight: 600; color: var(--text-primary); margin-top: 16px; margin-bottom: 8px; }
-.brief-content h3, .brief-content h4 { font-size: 16px; font-weight: 600; color: var(--text-primary); margin-top: 12px; margin-bottom: 4px; }
-.brief-content p { font-size: 14px; color: var(--text-primary); line-height: 1.6; margin-bottom: 4px; }
-.brief-content ul, .brief-content ol { font-size: 14px; color: var(--text-primary); padding-left: 20px; margin-bottom: 4px; }
-.brief-content li { margin-bottom: 2px; }
-.brief-content strong { color: var(--text-primary); font-weight: 600; }
 .reminder-item { padding: 8px; border-radius: 8px; background: var(--bg-tertiary); margin-bottom: 8px; }
 .reminder-name { font-size: 14px; font-weight: 500; color: var(--text-primary); }
 .reminder-days { font-size: 12px; color: var(--danger); }

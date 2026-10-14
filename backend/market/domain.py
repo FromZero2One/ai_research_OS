@@ -166,24 +166,3 @@ class FreshnessEntry:
             "status": self.status,
             "error_message": self.error_message,
         }
-
-
-@dataclass(slots=True)
-class MacroIndicatorEntry:
-    """One macro indicator value."""
-
-    indicator: str
-    date: date
-    value: float
-    unit: str | None = None
-    source: str | None = None
-
-    @classmethod
-    def from_model(cls, model: Any) -> MacroIndicatorEntry:
-        return cls(
-            indicator=model.indicator,
-            date=model.date,
-            value=model.value,
-            unit=model.unit,
-            source=model.source,
-        )

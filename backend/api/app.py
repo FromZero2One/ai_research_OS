@@ -48,7 +48,6 @@ from core.exceptions import (
     ValidationError,
 )
 from core.logging import configure_logging, logger
-from core.morning_brief import *  # noqa: F401, F403
 from core.observation import *  # noqa: F401, F403
 from core.scheduler_routes import router as scheduler_router
 from core.task_manager import *  # noqa: F401, F403
@@ -113,14 +112,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # Start scheduler
     if settings.SCHEDULER_ENABLED:
-        from core.brief_generator import morning_brief
         from core.event_cleanup import event_log_cleanup
         from core.market_sync import market_data_update
         from core.observation_engine import run_observation_cycle
         from core.scheduler import register_job, start_scheduler
 
         register_job("market_data_update", market_data_update)
-        register_job("morning_brief", morning_brief)
         register_job("observation_cycle", run_observation_cycle)
         register_job("event_log_cleanup", event_log_cleanup)
         start_scheduler()

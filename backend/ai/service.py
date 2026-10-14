@@ -1,4 +1,4 @@
-"""AI Center service — LLM orchestration, prompt management, summarization."""
+"""AI Center service — prompt management + template execution."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ def apply_variables(text: str, variables: dict) -> str:
 
 
 class AIService:
-    """AI capability management — prompts, generation, summarization, extraction."""
+    """AI capability management — prompt templates + template execution."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -130,61 +130,5 @@ class AIService:
             "content": result.content,
             "model": result.model,
             "usage": result.usage,
-            "processing_time_ms": round(elapsed, 2),
-        }
-
-    async def summarize(
-        self,
-        text: str,
-        max_length: int = 500,
-        format_: str = "paragraph",
-    ) -> dict:
-        """Summarize a text using the summarization prompt."""
-        system = "You are a research analyst. Summarize the following text concisely."
-        user = (
-            f"Summarize the following text in {format_} format (max {max_length} words):\n\n{text}"
-        )
-
-        messages = [
-            LLMMessage(role="system", content=system),
-            LLMMessage(role="user", content=user),
-        ]
-
-        start = time.time()
-        result = await self.llm.generate(messages=messages, temperature=0.3)
-        elapsed = (time.time() - start) * 1000
-
-        return {
-            "content": result.content,
-            "model": result.model,
-            "usage": result.usage,
-            "processing_time_ms": round(elapsed, 2),
-        }
-
-    async def extract(
-        self,
-        text: str,
-        schema: dict,
-    ) -> dict:
-        """Extract structured data from text using JSON schema."""
-        system = "You extract structured information from text. Respond with valid JSON."
-        user = (
-            f"Extract the following information from the text.\nSchema:\n{schema}\n\nText:\n{text}"
-        )
-
-        messages = [
-            LLMMessage(role="system", content=system),
-            LLMMessage(role="user", content=user),
-        ]
-
-        start = time.time()
-        result = await self.llm.generate_structured(
-            messages=messages, schema=schema, temperature=0.1
-        )
-        elapsed = (time.time() - start) * 1000
-
-        return {
-            "data": result,
-            "model": self.llm.model_name,
             "processing_time_ms": round(elapsed, 2),
         }

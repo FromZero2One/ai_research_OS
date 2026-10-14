@@ -22,7 +22,11 @@ class Metric:
 
 def _metric(name: str, value: float, unit: str, year: int = 2025, period: str = "Annual"):
     return Metric(
-        metric_name=name, metric_value=value, metric_unit=unit, fiscal_year=year, fiscal_period=period
+        metric_name=name,
+        metric_value=value,
+        metric_unit=unit,
+        fiscal_year=year,
+        fiscal_period=period,
     )
 
 
@@ -55,7 +59,9 @@ class TestUnitConversion:
 
 class TestCompareFacts:
     def test_consistent_no_discrepancy(self):
-        facts = [{"metric_name": "营业收入", "value": 2579.36, "unit": "亿元", "period": "2025年报"}]
+        facts = [
+            {"metric_name": "营业收入", "value": 2579.36, "unit": "亿元", "period": "2025年报"}
+        ]
         metrics = [_metric("revenue", 25793600, "万元", 2025)]
         assert compare_facts_with_market(facts, metrics) == []
 

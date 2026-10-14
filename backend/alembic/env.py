@@ -17,7 +17,6 @@ from company.models import *  # noqa: F401, F403
 from core.base import Base
 from core.config import settings
 from core.event_log import *  # noqa: F401, F403
-from core.morning_brief import *  # noqa: F401, F403
 from core.observation import *  # noqa: F401, F403
 from core.task_manager import *  # noqa: F401, F403
 from document.models import *  # noqa: F401, F403

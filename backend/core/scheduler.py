@@ -1,4 +1,4 @@
-"""APScheduler-based task scheduler — daily market data, morning brief, etc.
+"""APScheduler-based task scheduler — daily market data, observation cycle, etc.
 
 Wired into api/app.py lifespan: starts on boot, shuts down gracefully.
 Jobs are registered from settings; each logs its execution via EventLogger.
@@ -65,14 +65,7 @@ def start_scheduler() -> AsyncIOScheduler:
             settings.MARKET_DATA_SCHEDULE,
         )
 
-    # Register morning brief job (Weekdays 6am)
-    if hasattr(settings, "REPORT_SCHEDULE") and settings.REPORT_SCHEDULE:
-        _add_cron_job(
-            "morning_brief",
-            settings.REPORT_SCHEDULE,
-        )
-
-    # Register observation cycle job (before morning brief)
+    # Register observation cycle job (daily)
     if hasattr(settings, "OBSERVATION_SCHEDULE") and settings.OBSERVATION_SCHEDULE:
         _add_cron_job(
             "observation_cycle",

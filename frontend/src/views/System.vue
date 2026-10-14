@@ -76,13 +76,6 @@ const healthList = computed(() => [
     </el-card>
 
     <el-card shadow="never">
-      <template #header>☀️ 最新 Morning Brief</template>
-      <div v-if="dashboard?.morning_brief?.content" class="brief-content">{{ dashboard.morning_brief.content }}</div>
-      <el-empty v-else description="暂无 Brief" />
-      <div v-if="dashboard?.morning_brief?.generated_at" class="brief-time">生成时间: {{ new Date(dashboard.morning_brief.generated_at).toLocaleString('zh-CN') }}</div>
-    </el-card>
-
-    <el-card shadow="never">
       <template #header>🔌 API 健康检查</template>
       <div class="space-y-2">
         <div v-for="h in healthList" :key="h.name" class="item-block">
@@ -112,8 +105,6 @@ const healthList = computed(() => [
 .item-block { padding: 12px; border-radius: 8px; background: var(--bg-tertiary); display: flex; justify-content: space-between; align-items: flex-start; }
 .item-block.flex-col { flex-direction: column; }
 .usage-total { padding: 10px 12px; border-radius: 8px; background: var(--bg-secondary); font-size: 13px; color: var(--text-primary); }
-.brief-content { font-size: 14px; line-height: 1.7; white-space: pre-wrap; color: var(--text-primary); }
-.brief-time { font-size: 12px; color: #6b7280; margin-top: 8px; }
 .shortcut-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
 .shortcut-key { padding: 2px 8px; border-radius: 4px; background: var(--bg-tertiary); border: 1px solid var(--border); font-size: 12px; font-family: monospace; color: var(--text-primary); }
 .shortcut-desc { font-size: 14px; color: var(--text-secondary); }

@@ -1,6 +1,6 @@
-"""跨模块共享的批量查询 — dashboard 与 brief_generator 共用的取数管道。
+"""跨模块共享的批量查询 — dashboard 使用的取数管道（原三份重复实现抽取）。
 
-从 dashboard/service.py 与 core/brief_generator.py 的三份重复实现中抽取：
+从 dashboard/service.py 与（已移除的）core/brief_generator.py 的三份重复实现中抽取：
 - 自选公司加载（is_active，watchlist 语义已合并进 Company）
 - 每公司最新研究会话（原 dashboard 内部两份 + brief 一份，共三写）
 - 每 ticker 最新价格（原 dashboard 与 brief 各一份，实现各异）

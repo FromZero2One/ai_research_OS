@@ -61,7 +61,7 @@ PostgreSQL 用 schema 做模块隔离，初始化 SQL 见 `docker/init.sql`：
 | Schema | 表 |
 |--------|-----|
 | `company` | companies, company_tags |
-| `market` | stock_prices, financial_metrics, macro_indicators, data_freshness |
+| `market` | stock_prices, financial_metrics, data_freshness |
 | `document` | documents, document_chunks（含 content_type：mda/risk/notes/announcement/other） |
 | `research` | research_sessions, research_evidences（含 content_nature：quantitative/qualitative）, research_reports |
 | `portfolio` | holdings, investment_journal |
@@ -132,7 +132,7 @@ PYTHONPATH=. python scripts/seed_data.py
 | 公司/行情浏览 | 无 |
 | 文档索引 | Embedding 需 Ollama（`OLLAMA_EMBEDDING_MODEL`，本机 bge-m3） |
 | 知识库搜索 | 无（纯向量 + BM25，无需 LLM） |
-| 研究观点/晨报/摘要/问答/研究报告 | DeepSeek / Ollama / OpenAI |
+| 研究观点/问答/研究报告/证据分类 | DeepSeek / Ollama / OpenAI |
 
 Ollama 版本过旧（<0.3.0）时 `/api/embed` 不可用，Embedding 降级为 BM25 稀疏检索 + RRF 融合，功能不受影响。
 

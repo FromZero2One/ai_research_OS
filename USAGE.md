@@ -272,18 +272,16 @@ make ingest-sample # 加载示例数据
 
 **访问地址**: http://localhost:5173
 
-进入系统后的首页,自动展示4个面板:
+进入系统后的首页,自动展示面板:
 
 | 模块 | 说明 |
 |------|------|
-| **Morning Brief** | AI生成的每日早晨简报,工作日6am自动生成(需AI服务) |
 | **研究提醒** | 超过14天未研究的自选股,按需研究程度排序 |
 | **自选股行情** | 关注公司(is_active)的最新价格和涨跌 |
+| **行情概览** | 自选公司最新价/涨跌幅/行业 |
 | **最近研究** | 最近开展的投研会话,点击可继续 |
 
-右侧5个快捷入口可快速进入各功能模块。
-
-> **Morning Brief机制**: 由Scheduler调度,工作日6am自动运行。也可手动触发(`POST /api/v1/scheduler/run/morning_brief`)。
+> **旧晨报已下线**（2026-10-14）：原"Morning Brief"新闻聚合卡已移除，将由"差异日报"（只报变化）替代——见 Roadmap。
 
 ---
 
@@ -388,15 +386,14 @@ GET /api/v1/knowledge/search/document/{document_id}?query=...  # 只搜索指定
 
 ### 4.6 AI中心 `/ai`
 
-功能:LLM编排、提示词模板管理、文本摘要和结构化信息提取。
+功能:提示词模板管理、模板执行、Token 用量统计。
 
 **核心能力**:
 - **提示词模板**: 预定义的System+User Prompt模板,可变量替换,支持temperature/max_tokens配置
-- **文本摘要**: 对任意文本生成指定长度摘要
-- **结构化提取**: 从文本中按JSON Schema提取结构化数据
+- **模板执行**: `POST /api/v1/ai/generate` 按模板+变量生成（知识中心的 `knowledge_ask` 模板覆盖机制也读这里的模板表）
 - **Token 用量统计**: `GET /api/v1/ai/usage` 按模型汇总调用次数与输入/输出 tokens（进程级统计，服务重启清零）；系统页（/system）有实时展示卡片
 
-> AI 工作流（多步 LLM 编排）已于 2026-10 移除——单用户场景用不上，模板 + 快速研究已覆盖。
+> **AI 是能力不是中心**（2026-10-14 瘦身）：文本摘要/结构化提取已移除——与知识中心 RAG 问答、研究流程内嵌的 LLM 能力重叠；AI 工作流此前已移除。
 
 **依赖**: 必须配置 DeepSeek (或 Ollama/OpenAI 兼容 API)
 
@@ -432,14 +429,6 @@ Body: {"name": "research_summary", "system_prompt": "你是研究分析师", "us
 # 执行提示词模板
 POST /api/v1/ai/generate
 Body: {"prompt_name": "research_summary", "variables": {"company": "AAPL", "topic": "AI战略"}}
-
-# 文本摘要
-POST /api/v1/ai/summarize
-Body: {"text": "很长的文档内容...", "max_length": 200, "format": "paragraph"}
-
-# 结构化提取
-POST /api/v1/ai/extract
-Body: {"text": "Apple Q2 revenue $90.1B, up 4%", "schema": {"revenue": "number", "quarter": "string"}}
 
 # Token 用量汇总（进程级统计，系统页有展示卡片）
 GET /api/v1/ai/usage
@@ -569,13 +558,11 @@ GET  /api/v1/portfolio/journal/{entry_id}     # 日记详情
 | 任务名 | 默认时间 | 功能 |
 |--------|---------|------|
 | `market_data_update` | 工作日2am | 更新市场数据 |
-| `morning_brief` | 工作日6am | 生成Morning Brief |
 | `observation_cycle` | 工作日5:30am | 运行自选股观察周期,更新研究提醒 |
 
 **手动触发**:
 ```
 POST /api/v1/scheduler/run/market_data_update
-POST /api/v1/scheduler/run/morning_brief
 POST /api/v1/scheduler/run/observation_cycle
 ```
 
@@ -826,7 +813,7 @@ ai_research_os/
 **页面：** 底部导航 → 知识库
 
 - 输入关键词搜索（如 `工商银行 净息差`）
-- 系统返回关联切片 + AI 摘要
+- 系统返回关联切片 + 命中高亮（AI 问答用"文档问答"功能）
 
 ### Step 4 — 查看行情
 
@@ -901,11 +888,10 @@ ai_research_os/
 
 | 模块 | 说明 |
 |------|------|
-| ☀️ Morning Brief | 每日自动生成的简报（需开启调度器） |
 | 👁️ 关注列表 | 自选股最新行情、涨跌、研究状态 |
 | ⏰ 研究提醒 | 超过 14 天未研究的股票标记 |
 | 📋 最近研究 | 最近 5 条研究会话，点击可继续 |
 
 ---
 
-*本文档随项目迭代更新. 最后更新: 2026-07-23*
+*本文档随项目迭代更新. 最后更新: 2026-10-14*

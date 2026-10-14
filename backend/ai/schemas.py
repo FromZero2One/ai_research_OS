@@ -53,14 +53,3 @@ class GenerateResponse(BaseModel):
     model: str
     usage: dict | None = None
     processing_time_ms: float | None = None
-
-
-class SummarizeRequest(BaseModel):
-    text: str = Field(..., min_length=10)
-    max_length: int = Field(default=500, le=4000)
-    format: str = Field(default="paragraph", pattern="^(paragraph|bullet|json)$")
-
-
-class ExtractRequest(BaseModel):
-    text: str = Field(..., min_length=10)
-    schema_: dict = Field(alias="schema")

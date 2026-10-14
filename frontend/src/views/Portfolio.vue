@@ -31,7 +31,7 @@ async function handleRemove(companyId: string, ticker: string) {
 
 <template>
   <div class="page">
-    <div class="page-header"><h1 class="page-title">💼 自选列表</h1><p class="page-desc">关注的公司 — 晨报、观察与研究提醒的底座</p></div>
+    <div class="page-header"><h1 class="page-title">💼 自选列表</h1><p class="page-desc">关注的公司 — 观察与研究提醒的底座</p></div>
 
     <div v-if="isLoading" class="loading-state">加载中...</div>
     <div v-else class="wl-card">

@@ -51,7 +51,7 @@ A personal AI-powered investment research assistant. Company → Knowledge → A
 | Center | Responsibility | Tech |
 |--------|---------------|------|
 | **Company Center** | Company profiles, industry, tags | PostgreSQL |
-| **Market Center** | Stock prices, financials, macros (no analysis) | yfinance / AKShare |
+| **Market Center** | Stock prices, financials (no analysis) | yfinance / AKShare |
 | **Document Center** | Ingest → Parse → Chunk → Embed → Index（后台任务，PDF 表格结构化提取） | PyMuPDF + pdfplumber + BGE-M3 |
 | **Knowledge Center** | Hybrid RAG: dense + sparse + rerank（中文停用词、查询扩展、命中高亮） | Qdrant + BM25 + RRF + BGE Reranker |
 | **AI Center** | Prompt mgmt, LLM orchestration, summarization | DeepSeek V4 Flash (默认) / Ollama / OpenAI 兼容 |
@@ -131,8 +131,8 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 | 公司中心 | ~90% | CRUD/搜索/Thesis/自选（is_active）全可用 |
 | 市场中心 | ~85% | A股行情/财务/估值 akshare 直连全链路 + 数据覆盖矩阵；美股 yfinance 备选 |
 | 文档中心 | ~90% | 后台异步索引、PDF 表格结构化、切片内容类型打标、关联公司；OCR 待 V2 |
-| 知识中心 | ~90% | 混合 RAG + Reranker + 文档问答（模型切换）+ 检索评估集 + 内容类型过滤 |
-| AI 中心 | ~75% | 模板/摘要/Token 用量全可用；AI 工作流已移除（单用户用不上） |
+| 知识中心 | ~90% | 混合 RAG + Reranker + 文档问答（模型切换）+ 内容类型过滤 |
+| AI 中心 | ~60% | Prompt 模板管理/执行 + Token 用量；摘要/提取已砍（与 RAG 问答重叠，AI 能力内嵌研究流程） |
 | 研究中心 | ~95% | 全链路 + LLM 证据分类（含定量/定性双轨）+ 多周期比对 + 报告可视化 + [ev:id] 引用回溯 + structured_facts 交叉验证 |
 | 投资组合 | ~40% | 自选已并入公司；持仓/日志后端就绪，前端随 V2 |
 | 系统/调度 | ~85% | 调度/观察/持久任务/事件/新鲜度可用 |
@@ -181,4 +181,4 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 | **比率层 + 历史分位** | 下一项 | 基于标准枚举指标计算毛利率/ROE/负债率等派生比率；PE/PB 历史分位（akshare 历史估值序列） |
 | **覆盖矩阵定性维度** | 未开始 | 覆盖矩阵扩展"定性覆盖"：是否有已索引年报正文（mda/risk 章节） |
 | **证据继承** | 未开始 | 同一公司跨研究 session 复用历史证据并标注"历史已核实" |
-| **差异日报** | 未开始 | 晨报改为只报变化：新公告、财报日历临近、价格异动、证据与旧结论冲突 |
+| **差异日报** | 未开始 | 旧晨报已删（2026-10-14），从零构建"只报变化"日报：新公告、财报日历临近、价格异动、证据与旧结论冲突 |
