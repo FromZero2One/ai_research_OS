@@ -66,7 +66,7 @@ PostgreSQL 用 schema 做模块隔离，初始化 SQL 见 `docker/init.sql`：
 | `research` | research_sessions, research_evidences（含 content_nature：quantitative/qualitative）, research_reports |
 | `portfolio` | holdings, investment_journal |
 | `ai` | prompt_templates |
-| `core` | event_log, task_records, morning_briefs, observations |
+| `core` | event_log, task_records, observations |
 
 - `knowledge` / `dashboard` 无独立 schema：knowledge 复用 document 表 + Qdrant 向量，dashboard 跨 schema 聚合查询
 - 行情/财务数据统一入库 PG（`market` schema），采集走 akshare 子进程直连（无外部 MySQL 依赖）

@@ -734,52 +734,63 @@ OPENAI_API_KEY=<你的Key>
 ```
 ai_research_os/
 ├── backend/
-│   ├── api/app.py           # FastAPI应用工厂,所有路由注册
-│   ├── core/                 # 核心基础设施
-│   │   ├── config.py         # Pydantic配置(所有.env项)
-│   │   ├── database.py      # 异步SQLAlchemy引擎
-│   │   ├── base.py          # ORM Base + TimestampMixin
-│   │   ├── crud.py          # 通用CRUD
-│   │   ├── security.py      # JWT/密码哈希
-│   │   ├── logging.py       # structlog配置
-│   │   ├── scheduler.py     # APScheduler调度器
-│   │   ├── scheduler_jobs.py# 定时任务定义
-│   │   ├── event_service.py # 事件记录
-│   │   ├── event_log.py     # 审计日志模型
+│   ├── api/app.py             # FastAPI应用工厂,所有路由注册
+│   ├── core/                  # 核心基础设施
+│   │   ├── config.py          # Pydantic配置(所有.env项)
+│   │   ├── database.py        # 异步SQLAlchemy引擎 + get_db/managed_session
+│   │   ├── container.py       # DI容器(懒加载单例)
+│   │   ├── base.py            # ORM Base + TimestampMixin/UUIDMixin
+│   │   ├── interfaces.py      # Protocol 接口(Embedding/VectorStore/LLM/服务协议)
+│   │   ├── exceptions.py      # 统一异常体系
+│   │   ├── logging.py         # structlog配置
+│   │   ├── scheduler.py       # APScheduler调度器(market_data/observation/cleanup)
+│   │   ├── scheduler_routes.py# 调度/观察 API 路由
+│   │   ├── market_sync.py     # 市场数据定时采集
+│   │   ├── observation.py     # 观察记录模型
 │   │   ├── observation_engine.py # 自选股观察引擎
-│   │   └── adapters/        # 外部服务适配器
-│   │       ├── llm.py       # Ollama/OpenAI适配器
-│   │       ├── embedding.py # BGE-M3嵌入(Ollama API)
-│   │       ├── vector_store.py # Qdrant向量存储
-│   │   ├── cache.py     # Redis缓存
-│   │   └── llm_usage.py # LLM token 用量累计器
-│   ├── company/              # 公司中心
-│   ├── market/               # 市场中心
-│   ├── document/             # 文档中心
-│   ├── knowledge/            # 知识中心(RAG)
-│   ├── ai/                   # AI中心
-│   ├── research/             # 研究中心
-│   │   ├── quick.py          # 快速研究(SSE流式)
-│   │   └── timeline.py       # 时间线
-│   ├── portfolio/            # 投资组合
-│   ├── dashboard/            # 仪表盘聚合
-│   ├── alembic/versions/     # 数据库迁移脚本
-│   └── scripts/             # 工具脚本
-│       └── seed_data.py     # 种子数据
+│   │   ├── event_service.py / event_log.py / event_routes.py / event_cleanup.py
+│   │   ├── task_manager.py    # 持久任务队列(Postgres+worker)
+│   │   ├── llm_usage.py       # LLM token 用量累计器
+│   │   ├── shared_queries.py  # 跨模块批量查询(dashboard取数管道)
+│   │   ├── security.py        # JWT工具(V1未启用,有意保留)
+│   │   └── adapters/          # 外部服务适配器
+│   │       ├── llm.py         # DeepSeek(OpenAI兼容)/Ollama适配器,分级路由
+│   │       ├── embedding.py   # BGE-M3嵌入(Ollama API)
+│   │       ├── reranker.py    # BGE Reranker
+│   │       ├── vector_store.py# Qdrant向量存储
+│   │       ├── cache.py       # Redis缓存
+│   │       ├── pdf_parser.py  # PyMuPDF解析
+│   │       └── newsnow_mcp.py # NewsNow MCP 新闻源
+│   ├── company/               # 公司中心(CRUD/标签/Thesis/自选is_active)
+│   ├── market/                # 市场中心(service/+routes/子目录+domain/repositories/akshare_executor)
+│   ├── document/              # 文档中心(含 content_classifier.py 内容打标 + table_extractor.py 表格结构化)
+│   ├── knowledge/             # 知识中心(混合RAG,读写document表+Qdrant)
+│   ├── ai/                    # AI中心(prompt模板CRUD+执行+token用量)
+│   ├── research/              # 研究中心
+│   │   ├── session_service.py / planner.py / gather_service.py / evidence_service.py
+│   │   ├── report_service.py / thesis_service.py / timeline_service.py
+│   │   ├── fact_validator.py  # structured_facts vs Market 交叉验证(纯函数)
+│   │   ├── period_compare.py  # YoY/QoQ/同业比对(纯函数)
+│   │   └── quick.py           # 一键快速研究(SSE流式)
+│   ├── portfolio/             # 投资组合(持仓/日志,后端)
+│   ├── dashboard/             # 仪表盘聚合(自选/提醒/行情概览/最近研究)
+│   ├── alembic/versions/      # 数据库迁移脚本
+│   ├── tests/                 # pytest(14个测试文件,专用 airesearch_test 库)
+│   └── scripts/               # 工具脚本(seed_data/ingest_financials/reembed等)
 ├── frontend/
 │   └── src/
-│       ├── main.ts           # 应用入口
-│       ├── App.vue           # 根组件
-│       ├── router/           # Vue Router 路由 (13条)
-│       ├── stores/api.ts     # TanStack VueQuery hooks
-│       ├── types/            # 自动生成的 API 类型
-│       ├── components/       # 共享组件
-│       └── views/            # 13个页面视图
+│       ├── main.ts            # 应用入口
+│       ├── App.vue            # 根组件
+│       ├── router/            # Vue Router 路由
+│       ├── stores/api.ts      # TanStack VueQuery hooks(全部API调用集中于此)
+│       ├── components/        # 共享组件(StockSearch/StockChart/ReportCharts/CommandPalette等)
+│       └── views/             # 13个页面视图
 ├── docker/
-│   ├── docker-compose.yml   # 数据库基础设施
+│   ├── docker-compose.yml     # 数据库基础设施(postgres/qdrant/redis)
 │   ├── Dockerfile.backend
-│   └── init.sql             # 9个schema初始化
-├── USAGE.md                 # 本文档
+│   └── init.sql               # 9个schema初始化
+├── start-dev.cmd              # Windows一键启动(依赖栈+后端+前端)
+├── USAGE.md                   # 本文档
 └── README.md
 ```
 
