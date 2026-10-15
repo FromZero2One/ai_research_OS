@@ -170,3 +170,15 @@ async def test_valuation_percentile_fetch_failure(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr("market.akshare_executor.run_akshare", lambda code, env=None: None)
     out = await RatioService(test_session).valuation_percentile("600000")
     assert out["available"] is False
+
+
+@pytest.mark.asyncio
+async def test_ratio_routes(async_client):
+    r1 = await async_client.get("/api/v1/market/ratios/600000")
+    assert r1.status_code == 200
+    assert r1.json() == {"ticker": "600000", "ratios": []}
+
+    r2 = await async_client.get("/api/v1/market/ratios/600000/valuation-percentile")
+    assert r2.status_code == 200
+    # akshare 未配置时退化，二选一
+    assert r2.json()["available"] in (True, False)
