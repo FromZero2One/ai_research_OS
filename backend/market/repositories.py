@@ -13,7 +13,7 @@ from sqlalchemy import desc, func, select, tuple_
 
 from market.crud import DomainRepository
 from market.domain import FinancialMetricEntry, FreshnessEntry, PriceEntry
-from market.models import DataFreshness, FinancialMetric, StockPrice
+from market.models import DataFreshness, FinancialMetric, StockPrice, ValuationHistory
 
 
 class PriceRepository(DomainRepository[StockPrice]):
@@ -203,3 +203,50 @@ class FreshnessRepository(DomainRepository[DataFreshness]):
             ).group_by(DataFreshness.data_type)
         )
         return [(row[0], row[1], row[2], row[3]) for row in result.all()]
+
+
+class ValuationRepository(DomainRepository[ValuationHistory]):
+    """Persistence for A-stock valuation history (percentile source)."""
+
+    model = ValuationHistory
+
+    async def get_for_ticker(self, ticker: str) -> list[ValuationHistory]:
+        stmt = (
+            select(ValuationHistory)
+            .where(ValuationHistory.ticker == ticker.upper())
+            .order_by(ValuationHistory.trade_date)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def upsert(self, ticker: str, rows: list[dict]) -> int:
+        """按 (ticker, trade_date) 插入不存在的行，返回插入数。"""
+        if not rows:
+            return 0
+        ticker_upper = ticker.upper()
+        dates = [r["trade_date"] for r in rows]
+        existing = await self.session.execute(
+            select(ValuationHistory.trade_date).where(
+                ValuationHistory.ticker == ticker_upper,
+                ValuationHistory.trade_date.in_(dates),
+            )
+        )
+        existing_dates = set(existing.scalars().all())
+        inserted = 0
+        for r in rows:
+            if r["trade_date"] in existing_dates:
+                continue
+            self.session.add(
+                ValuationHistory(
+                    ticker=ticker_upper,
+                    trade_date=r["trade_date"],
+                    pe=r.get("pe"),
+                    pe_ttm=r.get("pe_ttm"),
+                    pb=r.get("pb"),
+                    total_mv=r.get("total_mv"),
+                )
+            )
+            inserted += 1
+        if inserted:
+            await self.session.flush()
+        return inserted

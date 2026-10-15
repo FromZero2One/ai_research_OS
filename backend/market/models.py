@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from enum import StrEnum
 
-from sqlalchemy import Date, DateTime, Float, String, Text
+from sqlalchemy import Date, DateTime, Float, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.base import Base, TimestampMixin, UUIDMixin
@@ -143,3 +143,21 @@ class DataFreshness(Base, UUIDMixin, TimestampMixin):
     """ok | stale | error | never_fetched"""
 
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+class ValuationHistory(Base, UUIDMixin, TimestampMixin):
+    """个股估值历史（A 股，乐咕乐股 stock_a_indicator_lg 全序列）。
+    用于 PE/PB 历史分位：首次访问经 akshare 子进程拉全量入库，之后只查 PG。
+    """
+
+    __tablename__ = "valuation_history"
+    __table_args__ = (
+        UniqueConstraint("ticker", "trade_date", name="uq_valuation_ticker_date"),
+        {"schema": "market"},
+    )
+
+    ticker: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    pe: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pe_ttm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pb: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_mv: Mapped[float | None] = mapped_column(Float, nullable=True)

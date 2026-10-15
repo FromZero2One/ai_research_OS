@@ -178,6 +178,7 @@ ALL_TABLES = [
     "market.stock_prices",
     "market.financial_metrics",
     "market.data_freshness",
+    "market.valuation_history",
     "document.documents",
     "document.document_chunks",
     "ai.prompt_templates",

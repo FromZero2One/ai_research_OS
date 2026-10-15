@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from market.domain import FinancialMetricEntry
+from market.models import ValuationHistory  # noqa: F401
 from market.ratio_service import (
     RATIO_LABELS,
     compute_ratios,
     percentile_rank,
 )
+from market.repositories import ValuationRepository
 
 
 def _entry(year: int, period: str, name: str, value: float | None) -> FinancialMetricEntry:
@@ -84,3 +88,18 @@ def test_ratio_labels_complete():
         "inventory_turnover", "receivables_turnover", "current_ratio",
         "quick_ratio", "eps", "market_cap",
     }
+
+
+@pytest.mark.asyncio
+async def test_valuation_repository_upsert_and_get(test_session: AsyncSession):
+    repo = ValuationRepository(test_session)
+    rows = [
+        {"trade_date": date(2024, 1, 2), "pe": 10.0, "pe_ttm": 11.0, "pb": 1.2, "total_mv": 100.0},
+        {"trade_date": date(2024, 1, 3), "pe": 10.5, "pe_ttm": 11.5, "pb": 1.3, "total_mv": 105.0},
+    ]
+    assert await repo.upsert("600000", rows) == 2
+    # 重复 upsert 幂等
+    assert await repo.upsert("600000", rows) == 0
+    got = await repo.get_for_ticker("600000")
+    assert len(got) == 2
+    assert got[0].trade_date == date(2024, 1, 2)  # 升序
