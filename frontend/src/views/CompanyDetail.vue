@@ -14,9 +14,12 @@ import {
   useIngestPrices,
   useIngestProfile,
   useMarketPrices,
+  useRatios,
   useResearchSessions,
   useUpdateCompany,
   useUpdateThesis,
+  useValuationPercentile,
+  type RatioPeriod,
 } from '@/stores/api'
 import FinancialBars from '@/components/FinancialBars.vue'
 import StockChart from '@/components/StockChart.vue'
@@ -38,6 +41,26 @@ const { data: priceData } = useMarketPrices(ticker, 260)
 const { data: finData } = useFinancialMetrics(ticker)
 const { data: workspace } = useCompanyWorkspace(ticker)
 const updateThesis = useUpdateThesis()
+const { data: ratioData } = useRatios(ticker)
+const { data: vp } = useValuationPercentile(ticker)
+const ratios = computed(() => ratioData.value?.ratios || [])
+const ratioRows: { key: keyof RatioPeriod; label: string; fmt?: (v: number) => string }[] = [
+  { key: 'gross_margin', label: '毛利率', fmt: (v) => v.toFixed(1) + '%' },
+  { key: 'net_margin', label: '净利率', fmt: (v) => v.toFixed(1) + '%' },
+  { key: 'roe', label: 'ROE', fmt: (v) => v.toFixed(1) + '%' },
+  { key: 'debt_to_equity', label: '资产负债率', fmt: (v) => v.toFixed(1) + '%' },
+  { key: 'asset_turnover', label: '总资产周转率', fmt: (v) => v.toFixed(2) },
+  { key: 'current_ratio', label: '流动比率', fmt: (v) => v.toFixed(2) },
+  { key: 'quick_ratio', label: '速动比率', fmt: (v) => v.toFixed(2) },
+  { key: 'eps', label: 'EPS', fmt: (v) => v.toFixed(2) },
+]
+const vpFields = computed(() =>
+  vp.value?.available
+    ? (['pe', 'pe_ttm', 'pb'] as const)
+        .filter((k) => vp.value![k])
+        .map((k) => ({ key: k, label: { pe: 'PE', pe_ttm: 'PE-TTM', pb: 'PB' }[k] }))
+    : [],
+)
 
 const prices = computed(() => priceData.value?.prices || [])
 const financials = computed(() => finData.value?.metrics || [])
@@ -200,6 +223,26 @@ async function handleSaveCompany() {
               </el-card>
             </el-col>
           </el-row>
+          <el-card shadow="never">
+            <template #header>📊 比率与估值分位</template>
+            <el-table v-if="ratios.length" :data="ratios" size="small" style="width:100%">
+              <el-table-column label="报告期" width="110">
+                <template #default="{ row }">{{ row.fiscal_year }} {{ row.fiscal_period }}</template>
+              </el-table-column>
+              <el-table-column v-for="r in ratioRows" :key="r.key" :label="r.label" align="right">
+                <template #default="{ row }">{{ (row[r.key] as number | null) != null ? r.fmt!(row[r.key] as number) : '—' }}</template>
+              </el-table-column>
+            </el-table>
+            <el-empty v-else description="暂无比率数据（需先采集财务）" :image-size="60" />
+            <div v-if="vpFields.length" class="vp-grid mt-4">
+              <div v-for="f in vpFields" :key="f.key">
+                <div class="text-xs text-secondary">{{ f.label }} · {{ vp![f.key]!.samples }} 样本（{{ vp!.trade_date }}）</div>
+                <div class="font-medium">{{ vp![f.key]!.current ?? '—' }}</div>
+                <el-progress :percentage="vp![f.key]!.percentile ?? 0" :stroke-width="8" :format="(p: number) => p.toFixed(0) + '%'" />
+              </div>
+            </div>
+            <div v-else class="text-xs text-secondary mt-2">估值历史分位无数据（仅 A 股可用）</div>
+          </el-card>
         </div>
       </el-tab-pane>
 
@@ -250,4 +293,5 @@ async function handleSaveCompany() {
 .doc-card { padding: 16px; border-radius: 12px; background: var(--bg-secondary); border: 1px solid var(--border); margin-bottom: 8px; }
 .text-success { color: var(--success); }
 .text-warning { color: var(--warning); }
+.vp-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 </style>

@@ -278,7 +278,7 @@ export interface FinancialMetricPoint { fiscal_year: number; fiscal_period: stri
 export interface StockSearchResult { symbol: string; name: string }
 
 export interface CoverageCell { health: 'ok' | 'warn' | 'stale' | 'missing'; age_hours?: number; checked_at?: string; record_count?: number }
-export interface CoverageRow { ticker: string; name: string; cells: Record<string, CoverageCell>; missing: string[]; worst_health: string }
+export interface CoverageRow { ticker: string; name: string; cells: Record<string, CoverageCell>; missing: string[]; worst_health: string; qualitative?: { health: 'ok' | 'partial' | 'missing'; has_mda_risk: boolean } }
 export interface CoverageMatrix { data_types: string[]; rows: CoverageRow[]; counts: { companies: number; fully_covered: number; with_gaps: number; stale: number } }
 export function useCoverageMatrix() {
   return useGet<CoverageMatrix>(['market', 'freshness', 'coverage'], '/market/freshness/coverage', { refetchInterval: 60_000 })
@@ -295,6 +295,47 @@ export function useFinancialMetrics(ticker: MaybeRefOrGetter<string>) {
   return useGet<{ ticker: string; count: number; metrics: FinancialMetricPoint[] }>(
     computed(() => ['financials', toValue(ticker)]),
     computed(() => (toValue(ticker) ? `/market/financials/${toValue(ticker)}` : '')),
+  )
+}
+
+export interface RatioPeriod {
+  fiscal_year: number
+  fiscal_period: string
+  gross_margin: number | null
+  net_margin: number | null
+  roe: number | null
+  debt_to_equity: number | null
+  asset_turnover: number | null
+  inventory_turnover: number | null
+  receivables_turnover: number | null
+  current_ratio: number | null
+  quick_ratio: number | null
+  eps: number | null
+  market_cap: number | null
+}
+
+export interface PercentileField { current: number | null; percentile: number | null; samples: number }
+export interface ValuationPercentile {
+  available: boolean
+  reason?: string
+  trade_date?: string
+  start_date?: string
+  pe?: PercentileField
+  pe_ttm?: PercentileField
+  pb?: PercentileField
+}
+
+export function useRatios(ticker: MaybeRefOrGetter<string>) {
+  return useGet<{ ticker: string; ratios: RatioPeriod[] }>(
+    computed(() => ['ratios', toValue(ticker)]),
+    computed(() => (toValue(ticker) ? `/market/ratios/${toValue(ticker)}` : '')),
+  )
+}
+
+export function useValuationPercentile(ticker: MaybeRefOrGetter<string>) {
+  return useGet<ValuationPercentile>(
+    computed(() => ['valuation-percentile', toValue(ticker)]),
+    computed(() => (toValue(ticker) ? `/market/ratios/${toValue(ticker)}/valuation-percentile` : '')),
   )
 }
 
