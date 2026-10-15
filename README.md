@@ -51,7 +51,7 @@ A personal AI-powered investment research assistant. Company → Knowledge → A
 | Center | Responsibility | Tech |
 |--------|---------------|------|
 | **Company Center** | Company profiles, industry, tags | PostgreSQL |
-| **Market Center** | Stock prices, financials (no analysis) | yfinance / AKShare |
+| **Market Center** | Stock prices, financials, valuation history percentiles, ratio layer (no analysis) | yfinance / AKShare |
 | **Document Center** | Ingest → Parse → Chunk → Embed → Index（后台任务，PDF 表格结构化提取） | PyMuPDF + pdfplumber + BGE-M3 |
 | **Knowledge Center** | Hybrid RAG: dense + sparse + rerank（中文停用词、查询扩展、命中高亮） | Qdrant + BM25 + RRF + BGE Reranker |
 | **AI Center** | Prompt mgmt, LLM orchestration, summarization | DeepSeek V4 Flash (默认) / Ollama / OpenAI 兼容 |
@@ -76,6 +76,10 @@ Portfolio
 
 > 自选列表已并入 Company Center：`is_active` 即关注状态，`priority/target_price/reason` 挂在公司上。
 > Portfolio Center 当前为持仓与投资日志（后端就绪，前端随 V2 P&L 一起提供）。
+>
+> **比率层数据流（2026-10-15）**：`financial_metrics` → `compute_ratios` 纯函数 → `/market/ratios/{ticker}`；
+> `valuation_history`（PG，首次经 akshare `stock_a_indicator_lg` 拉全量）→ `percentile_rank` → `/market/ratios/{ticker}/valuation-percentile`；
+> 两者经 `build_ratio_block` 进报告上下文（标注"禁止改写"，与 period/peer 区块并列）。
 
 **Dependency rule**: Dependencies go UP only. Research can call Knowledge; Knowledge cannot call Research.
 
@@ -129,7 +133,7 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 | 模块 | 完成度 | 备注 |
 |------|:---:|------|
 | 公司中心 | ~90% | CRUD/搜索/Thesis/自选（is_active）全可用 |
-| 市场中心 | ~85% | A股行情/财务/估值 akshare 直连全链路 + 数据覆盖矩阵；美股 yfinance 备选 |
+| 市场中心 | ~90% | A股行情/财务/估值 akshare 直连全链路 + 数据覆盖矩阵（含量性维度）+ 比率层 + PE/PB 历史分位；美股 yfinance 备选 |
 | 文档中心 | ~90% | 后台异步索引、PDF 表格结构化、切片内容类型打标、关联公司；OCR 待 V2 |
 | 知识中心 | ~90% | 混合 RAG + Reranker + 文档问答（模型切换）+ 内容类型过滤 |
 | AI 中心 | ~60% | Prompt 模板管理/执行 + Token 用量；摘要/提取已砍（与 RAG 问答重叠，AI 能力内嵌研究流程） |
@@ -137,8 +141,8 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 | 投资组合 | ~40% | 自选已并入公司；持仓/日志后端就绪，前端随 V2 |
 | 系统/调度 | ~85% | 调度/观察/持久任务/事件/新鲜度可用 |
 
-总体：V1.1 目标基本达成，后端 150 项测试通过（另有 4 项依赖 Ollama embeddings，无 Ollama 环境时不计）；ruff/vue-tsc/build 全绿。
-已知缺口：美股真实行情、持仓/日志前端。下一步（比率层/覆盖矩阵定性维度/证据继承/差异日报）详见 [memory/ai-research-os-session.md](memory/ai-research-os-session.md)。
+总体：V1.1 目标基本达成，后端 168 项测试通过（另有 4 项依赖 Ollama embeddings，无 Ollama 环境时不计；test_finalize_session 需补 LLM mock）；ruff/vue-tsc/build 全绿。
+已知缺口：美股真实行情、持仓/日志前端、Market.vue 覆盖网格列数动态化（当前硬编码 5 列）。下一步（证据继承/差异日报）详见 [memory/ai-research-os-session.md](memory/ai-research-os-session.md)。
 
 ## API (when backend is running)
 
@@ -178,7 +182,9 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 | ~~数据质量看板~~ | ✅ | 覆盖矩阵 `GET /market/freshness/coverage` + Market 页卡片 |
 | ~~报告引用回溯~~ | ✅ | 报告内联 `[ev:id]`，前端点击回跳证据卡（含定量/定性双轨打标） |
 | ~~structured_facts 交叉验证~~ | ✅ | 财报抽取值 vs 接口值偏差≥10% → 观察事件（口径差异提示） |
-| **比率层 + 历史分位** | 下一项 | 基于标准枚举指标计算毛利率/ROE/负债率等派生比率；PE/PB 历史分位（akshare 历史估值序列） |
-| **覆盖矩阵定性维度** | 未开始 | 覆盖矩阵扩展"定性覆盖"：是否有已索引年报正文（mda/risk 章节） |
+| ~~比率层 + 历史分位~~ | ✅ 2026-10-15 | `market/ratio_service.py` 派生毛利率/净利率+透出 ROE/负债率/周转率等；`market.valuation_history` 表（akshare `stock_a_indicator_lg` 全序列入 PG）算 PE/PB 历史分位；API `/market/ratios/{ticker}[/valuation-percentile]`；报告区块 + CompanyDetail 卡片 |
+| ~~覆盖矩阵定性维度~~ | ✅ 2026-10-15 | 矩阵新增定性列：已索引文档含 mda/risk 切片 → ok；仅已索引 → partial；无 → missing；纳入 worst_health |
 | **证据继承** | 未开始 | 同一公司跨研究 session 复用历史证据并标注"历史已核实" |
 | **差异日报** | 未开始 | 旧晨报已删（2026-10-14），从零构建"只报变化"日报：新公告、财报日历临近、价格异动、证据与旧结论冲突 |
+
+收尾待办（小项）：Market.vue 覆盖网格列数动态化（当前硬编码 `repeat(5, 90px)`）；test_finalize_session 补 LLM mock（真实 LLM 调用挂起）；qualColor 硬编码色值统一 CSS 变量。
