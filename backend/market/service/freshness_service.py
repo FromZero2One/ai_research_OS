@@ -178,11 +178,46 @@ class FreshnessService:
         from sqlalchemy import select as sa_select
 
         from company.models import Company
+        from document.models import Document, DocumentChunk
 
         result = await self.session.execute(
             sa_select(Company).where(Company.is_active.is_(True)).order_by(Company.ticker)
         )
         companies = result.scalars().all()
+
+        # 定性覆盖：已索引文档 + 含 mda/risk 切片 → ok；仅已索引 → partial；无 → missing
+        indexed_ids = {
+            row[0]
+            for row in (
+                await self.session.execute(
+                    sa_select(Document.company_id)
+                    .where(Document.is_indexed.is_(True), Document.company_id.isnot(None))
+                    .distinct()
+                )
+            ).all()
+        }
+        mda_risk_ids = {
+            row[0]
+            for row in (
+                await self.session.execute(
+                    sa_select(Document.company_id)
+                    .join(DocumentChunk, DocumentChunk.document_id == Document.id)
+                    .where(
+                        Document.is_indexed.is_(True),
+                        Document.company_id.isnot(None),
+                        DocumentChunk.content_type.in_(["mda", "risk"]),
+                    )
+                    .distinct()
+                )
+            ).all()
+        }
+
+        def _qual_health(cid) -> str:
+            if cid in mda_risk_ids:
+                return "ok"
+            if cid in indexed_ids:
+                return "partial"
+            return "missing"
 
         records = await self.get_freshness(limit=5000)
         by_ticker: dict[str, dict[str, dict[str, Any]]] = {}
@@ -207,6 +242,9 @@ class FreshnessService:
                         "checked_at": rec["checked_at"],
                         "record_count": rec["record_count"],
                     }
+            qual = _qual_health(c.id)
+            qual_rank = {"ok": dt_priority("ok"), "partial": dt_priority("warn"), "missing": dt_priority("missing")}[qual]
+
             worst = "ok"
             for cell in cells.values():
                 h = cell["health"]
@@ -216,12 +254,15 @@ class FreshnessService:
                     worst = "warn"
                 elif h == "missing" and worst not in ("stale", "missing"):
                     worst = "missing" if worst == "missing" else worst
+            if qual_rank > dt_priority(worst):
+                worst = "warn" if qual == "partial" else "missing"
             rows.append(
                 {
                     "ticker": c.ticker,
                     "name": c.name,
                     "cells": cells,
                     "missing": missing,
+                    "qualitative": {"health": qual, "has_mda_risk": qual == "ok"},
                     "worst_health": worst,
                 }
             )
@@ -238,6 +279,7 @@ class FreshnessService:
                 ),
                 "with_gaps": missing_count,
                 "stale": stale_count,
+                "qualitative_ok": sum(1 for r in rows if r["qualitative"]["health"] == "ok"),
             },
         }
 
