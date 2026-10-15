@@ -23,7 +23,7 @@ metadata:
 | 模块 | 完成度 | 现状 |
 |------|:---:|------|
 | 公司中心 | ~90% | CRUD/搜索/标签/Thesis/自选全可用；搜索范围为自建公司库（PG） |
-| 市场中心 | ~85% | A股行情/财务/估值 akshare 直连全链路 + 数据覆盖矩阵；美股 yfinance 备选 |
+| 市场中心 | ~90% | A股行情/财务/估值 akshare 直连全链路 + 数据覆盖矩阵（含量性维度）+ 比率层 + PE/PB 历史分位；美股 yfinance 备选 |
 | 文档中心 | ~90% | 上传→后台索引→表格结构化→关联公司全链路；OCR 明确 V1 不做 |
 | 知识中心 | ~90% | 混合 RAG + Reranker + 中文检索优化 + 文档问答 + 评估集 |
 | AI 中心 | ~75% | 模板/摘要/提取/Token 用量统计；AI 工作流已移除（单用户用不上） |
@@ -57,6 +57,13 @@ metadata:
    - 新 session 带入同公司历史已核实证据，标 `inherited`（gather_service + Evidence 来源标记）
 4. **差异日报**（未开始，方案不变）
    - 晨报只报变化（新公告/财报日临近/价格异动/证据冲突），brief_generator + observation_engine
+
+### 收尾小项（2026-10-15 最终 review 挂账，非阻塞）
+- Market.vue 覆盖网格列数动态化（当前硬编码 `repeat(5, 90px)`，tracked_types 恒为 4+定性 才显示正确）
+- test_finalize_session 补 LLM mock（finalize 走真实 LLM 无 mock/超时，测试挂起，现被 deselect）
+- qualColor/qualLabel 硬编码色值 → 统一 CSS 变量
+- akshare_executor subprocess 输出统一 `encoding='utf-8'`（消 Windows GBK 解码 warning）
+- akshare_mcp venv 本机路径未配好 → A 股采集（含估值历史首次拉取）在本机不可用，分位端点降级 available:false
 
 ### 环境待修（本机）
 - ~~jieba 残缺 0.34~~ 已修（2026-10-14 force-reinstall jieba 0.42.1，BM25 恢复）
