@@ -300,6 +300,7 @@ AAPL (Apple), AMZN (Amazon), GOOGL (Alphabet), MSFT (Microsoft), NVDA (NVIDIA), 
 - 给公司打标签 (tech/ai/ev/megacap/value等)
 - 查看/更新公司的投资观点(Thesis): Bull/Bear/Neutral + 决策(buy/sell/hold/watch/pass)
 - 公司工作区:聚合视图(Thesis+最近研究+证据统计)
+- **比率与估值分位卡片**: 公司详情页展示财务比率(毛利率/净利率/ROE等)与 A 股 PE/PB 历史分位 (`GET /api/v1/market/ratios/{ticker}`、`GET /api/v1/market/ratios/{ticker}/valuation-percentile`)
 - **关注/自选**: 自选已并入公司中心 — `is_active=true` 即自选。添加: `POST /api/v1/companies/watch`;移除: `PATCH /api/v1/companies/{id}` 设 `is_active=false`;优先级/目标价/理由挂在公司上 (`priority`/`target_price`/`reason`)
 
 **相关页面**:
@@ -328,7 +329,9 @@ GET /api/v1/market/prices/600519       # 日K线数据（PG 缓存 → akshare �
 GET /api/v1/market/search?query=茅台    # 搜索公司（PG Companies 表）
 GET /api/v1/market/financials/600519   # 财务指标(EPS/营收/ROE等, 财务摘要直连)
 GET /api/v1/market/info/600519         # 估值(PE/PB/总市值) + 最新价
-GET /api/v1/market/freshness/coverage  # 数据覆盖矩阵（关注公司 × 数据类型）
+GET /api/v1/market/freshness/coverage  # 数据覆盖矩阵（关注公司 × 数据类型，含定性覆盖维度：是否已索引年报正文 mda/risk）
+GET /api/v1/market/ratios/600519       # 财务比率（毛利率/净利率等，最近3期）
+GET /api/v1/market/ratios/600519/valuation-percentile  # A股 PE/PB 历史分位
 ```
 
 > 行情/财务采集链：PG 缓存优先，未命中走 akshare 子进程（Tencent/Sina/Eastmoney），可配云端 MCP 兜底（`AKSHARE_CLOUD_MCP_URL`）。

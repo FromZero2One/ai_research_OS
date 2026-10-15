@@ -61,7 +61,7 @@ PostgreSQL 用 schema 做模块隔离，初始化 SQL 见 `docker/init.sql`：
 | Schema | 表 |
 |--------|-----|
 | `company` | companies, company_tags |
-| `market` | stock_prices, financial_metrics, data_freshness |
+| `market` | stock_prices, financial_metrics, valuation_history（估值历史，PE/PB 分位源）, data_freshness |
 | `document` | documents, document_chunks（含 content_type：mda/risk/notes/announcement/other） |
 | `research` | research_sessions, research_evidences（含 content_nature：quantitative/qualitative）, research_reports |
 | `portfolio` | holdings, investment_journal |
@@ -97,6 +97,7 @@ PYTHONPATH=. python scripts/seed_data.py
 - 所有端点前缀 `/api/v1`，交互式文档见 http://localhost:8000/docs
 - 异常统一走 `core/exceptions.py` → `api/app.py` 集中 handler，返回结构化 JSON：404 / 422 / 409 / 401 / 403 / 502 / 500
 - 接口速查：直接看各模块 `routes.py`，或根目录 `USAGE.md`「功能模块详解」
+- 比率层端点：`GET /api/v1/market/ratios/{ticker}`（财务比率）、`GET /api/v1/market/ratios/{ticker}/valuation-percentile`（PE/PB 历史分位）
 
 ## 配置与环境变量
 

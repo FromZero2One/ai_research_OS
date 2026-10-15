@@ -11,6 +11,7 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-10-15**: 比率层 + PE/PB 历史分位 + 覆盖矩阵定性维度。新增 `market/ratio_service.py`（compute_ratios/percentile_rank 纯函数 + RatioService + build_ratio_block 报告区块）、新表 `market.valuation_history`（估值历史，PE/PB 分位源，akshare `stock_a_indicator_lg` 兜底采集）、`GET /market/ratios/{ticker}[/valuation-percentile]` 端点、公司详情页比率卡片、覆盖矩阵定性覆盖维度（row.qualitative，年报正文 mda/risk 切片）+ Market.vue 定性列。迁移 head `f3a8c2e1b7d9`。回归 168 passed / 4 failed（均预存 Ollama embeddings 环境依赖）。
 - **2026-10-14（瘦身）**: 分析师评价驱动的功能瘦身。**删**: 旧晨报全链路（core/brief_generator.py + core/morning_brief.py + scheduler 任务 + dashboard /brief /generate-brief 路由 + Dashboard/System 前端卡，给"差异日报"让路）；macro_indicators 表（有表无链路死数据，模型+domain entry+迁移 drop）；RAG 评估脚本（scripts/eval_retrieval.py + eval_classifier.py）；AI 中心摘要/提取（/ai/summarize /extract + service 方法 + 前端演示卡；保留 prompt_templates 表 + /ai/generate 模板执行 + /ai/usage——knowledge_ask 覆盖机制依赖模板表）。迁移 e8a2c4f6b9d1。公司中心/观察引擎/Portfolio 后端经依赖分析保留（承重墙）。
 - **2026-10-14**: 数据分工原则落地（接口管"数"，PDF 管"事"）。**完成**: ② 文档 chunk content_type 打标（document/content_classifier.py 纯函数 + chunk 列 + Qdrant payload + /knowledge/search?content_type= 过滤，BM25 sparse 过滤顺带修复了原 doc_type 参数未生效的缺口）；③ 报告双轨（Evidence 加 content_nature 列，LLM 批量分类带 nature，report prompt 双轨规则，证据条目带 [ev:id]，ResearchDetail.vue 报告内联引用可点击回跳证据卡+高亮）；④ structured_facts 交叉验证（research/fact_validator.py 纯函数，偏差≥10% → Observation(attention) 口径差异事件）；① 报告 prompt 规则"数字只准用已核实事实/Market 区块"。迁移 d5e7a9c1b3f4（chunk content_type + evidence content_nature）。新增单测 test_content_classifier(7) + test_fact_validator(9)。测试 150 passed / 5 failed（既有环境：无 Ollama embeddings；本机 jieba 装的是残缺 0.34 版无 lcut，BM25 不可用，待修环境）。前端 build+vue-tsc 绿。
 - **2026-10-13**: 分析师优化方案（先砍后补）。**砍**: AI 工作流（drop ai_workflows 表，0d04258）、akshare MySQL 镜像层（A股改 akshare 子进程直连，bac6cf3）、合成数据种子脚本（10e324b）。**补**: 数据覆盖矩阵（ae90779 + 单测 c3ef444）。另: 迁移补齐 morning_briefs/observations（8208cea）、LLM 切 DeepSeek 云端并完成分类评测（deepseek-chat 15/15=100% vs 关键词基线 26.7%）、plan_type 贯通快速研究（67a138f）、token 用量统计、period_compare（YoY/QoQ/同业中位）、ReportCharts 可视化、start-dev.cmd 一键启动、三份文档架构同步（5894dda）。全套测试 132 passed / 5 failed（失败均为无 Ollama embeddings 的环境依赖）。
@@ -46,11 +47,11 @@ metadata:
 - ✅ structured_facts 交叉验证（fact_validator 纯函数 → Observation 口径差异）
 - ✅ 定量唯一事实源规则（报告 prompt 数字只走已核实事实/Market 区块）
 
-1. **比率层 + 历史分位**（下一项，未开始，完全建立在接口数据上）
+1. ✅ **比率层 + 历史分位**（2026-10-15 完成，迁移 head `f3a8c2e1b7d9`）
    - 基于标准枚举指标计算派生比率：毛利率/净利率/ROE/资产负债率/周转率
    - PE/PB 历史分位：akshare `stock_a_indicator_lg` 历史序列入 PG 后算分位
    - 产出：`market/ratio_service.py`（纯函数可单测）+ 报告上下文区块 + 前端展示
-2. **覆盖矩阵加定性维度**（未开始）
+2. ✅ **覆盖矩阵加定性维度**（2026-10-15 完成）
    - coverage 矩阵扩展"定性覆盖"：该公司是否有已索引年报正文（mda/risk 章节存在）
 3. **跨会话证据继承**（未开始，方案不变）
    - 新 session 带入同公司历史已核实证据，标 `inherited`（gather_service + Evidence 来源标记）
