@@ -8,7 +8,14 @@ RatioService 负责取数与缓存（PG first，akshare 子进程兜底）。
 
 from __future__ import annotations
 
+from datetime import date as _date
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from core.event_service import EventLogger
+from market import akshare_executor
 from market.domain import FinancialMetricEntry
+from market.repositories import FinancialRepository, ValuationRepository
 
 # 比率键 → 中文标签（报告区块与前端共用）
 RATIO_LABELS: dict[str, str] = {
@@ -121,3 +128,107 @@ def build_percentile_result(ticker: str, rows) -> dict:
         "start_date": rows[0].trade_date.isoformat(),
         **fields,
     }
+
+
+# A 股估值历史全序列（乐咕乐股），ticker 经环境变量传入
+_A_VALUATION_HISTORY_CODE = """\
+import json, os, sys
+import akshare as ak
+try:
+    ticker = os.environ["AKSHARE_TICKER"]
+    df = ak.stock_a_indicator_lg(symbol=ticker)
+    if df is None or df.empty:
+        print("__R__:[]")
+    else:
+        def _g(row, k):
+            v = row.get(k)
+            return float(v) if v is not None and v == v else None
+        rows = []
+        for _, row in df.iterrows():
+            rows.append({
+                "trade_date": str(row.get("trade_date"))[:10],
+                "pe": _g(row, "pe"), "pe_ttm": _g(row, "pe_ttm"),
+                "pb": _g(row, "pb"), "total_mv": _g(row, "total_mv"),
+            })
+        print("__R__:" + json.dumps(rows, ensure_ascii=False))
+except Exception as e:
+    print("__E__:" + str(e), file=sys.stderr)
+"""
+
+
+class RatioService:
+    """比率层服务 — 财务比率（PG）+ A 股 PE/PB 历史分位（PG first，akshare 兜底）。"""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+        self.events = EventLogger(session)
+        self.financial_repo = FinancialRepository(session)
+        self.valuation_repo = ValuationRepository(session)
+
+    async def read_ratios(self, ticker: str, limit: int = 3) -> list[dict]:
+        """最近 N 期财务比率（纯函数计算，原料只来自指标库）。"""
+        metrics = await self.financial_repo.get_for_ticker(ticker.upper())
+        return compute_ratios(metrics)[:limit]
+
+    async def valuation_percentile(self, ticker: str) -> dict:
+        """PE/PE-TTM/PB 历史分位（仅 A 股）。历史不足 2 行时先经 akshare 拉全量入库。"""
+        ticker_upper = ticker.upper()
+        if not akshare_executor.is_a_stock(ticker):
+            return {"ticker": ticker_upper, "available": False, "reason": "non_a_stock"}
+        rows = await self.valuation_repo.get_for_ticker(ticker_upper)
+        if len(rows) < 2:
+            fetched = await self._fetch_valuation_history(ticker_upper)
+            if fetched:
+                await self.valuation_repo.upsert(ticker_upper, fetched)
+                await self.events.record(
+                    source="market",
+                    event_type="valuation_history.ingested",
+                    entity_type="valuation_history",
+                    entity_id=ticker_upper,
+                    payload={"count": len(fetched), "ticker": ticker_upper},
+                )
+                rows = await self.valuation_repo.get_for_ticker(ticker_upper)
+        return build_percentile_result(ticker_upper, rows)
+
+    async def _fetch_valuation_history(self, ticker: str) -> list[dict]:
+        """akshare 子进程拉估值历史；失败返回 []（不抛错，分位退化为无数据）。
+
+        注意：经模块引用调用 run_akshare，保证 monkeypatch 模块属性时可生效。
+        """
+        import asyncio as _asyncio
+        import json as _json
+
+        try:
+            stdout = await _asyncio.to_thread(
+                akshare_executor.run_akshare,
+                _A_VALUATION_HISTORY_CODE,
+                akshare_executor.build_akshare_env(ticker),
+            )
+        except Exception:
+            return []
+        if not stdout:
+            return []
+        for line in stdout.splitlines():
+            if not line.startswith("__R__:"):
+                continue
+            try:
+                raw = _json.loads(line[6:])
+            except _json.JSONDecodeError:
+                return []
+            rows: list[dict] = []
+            for r in raw:
+                try:
+                    trade_date = _date.fromisoformat(str(r.get("trade_date", ""))[:10])
+                except ValueError:
+                    continue
+                rows.append(
+                    {
+                        "trade_date": trade_date,
+                        "pe": r.get("pe"),
+                        "pe_ttm": r.get("pe_ttm"),
+                        "pb": r.get("pb"),
+                        "total_mv": r.get("total_mv"),
+                    }
+                )
+            return rows
+        return []
