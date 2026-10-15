@@ -279,7 +279,7 @@ export interface StockSearchResult { symbol: string; name: string }
 
 export interface CoverageCell { health: 'ok' | 'warn' | 'stale' | 'missing'; age_hours?: number; checked_at?: string; record_count?: number }
 export interface CoverageRow { ticker: string; name: string; cells: Record<string, CoverageCell>; missing: string[]; worst_health: string; qualitative?: { health: 'ok' | 'partial' | 'missing'; has_mda_risk: boolean } }
-export interface CoverageMatrix { data_types: string[]; rows: CoverageRow[]; counts: { companies: number; fully_covered: number; with_gaps: number; stale: number } }
+export interface CoverageMatrix { data_types: string[]; rows: CoverageRow[]; counts: { companies: number; fully_covered: number; with_gaps: number; stale: number; qualitative_ok: number } }
 export function useCoverageMatrix() {
   return useGet<CoverageMatrix>(['market', 'freshness', 'coverage'], '/market/freshness/coverage', { refetchInterval: 60_000 })
 }

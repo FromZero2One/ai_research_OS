@@ -79,6 +79,10 @@ const HEALTH_META: Record<string, { label: string; color: string }> = {
 }
 function healthMeta(h?: string) { return HEALTH_META[h || 'missing'] || HEALTH_META.missing }
 
+// 定性覆盖辅助：health -> 展示标签 / 颜色
+const qualLabel = (h?: string) => ({ ok: '✔', partial: '⚠️', missing: '✘' } as Record<string, string>)[h || 'missing'] ?? '✘'
+const qualColor = (h?: string) => ({ ok: '#34d399', partial: 'var(--warning)', missing: '#f87171' } as Record<string, string>)[h || 'missing'] ?? '#f87171'
+
 </script>
 
 <template>
@@ -86,11 +90,12 @@ function healthMeta(h?: string) { return HEALTH_META[h || 'missing'] || HEALTH_M
     <div class="page-header"><h1 class="page-title">📊 行情中心</h1><p class="page-desc">股票行情 · 财务指标 · 宏观数据</p></div>
 
     <el-card v-if="coverage && coverage.rows.length" shadow="never">
-      <template #header><div class="flex items-center justify-between"><span>🩺 数据覆盖矩阵</span><span class="text-xs text-secondary">{{ coverage.counts.companies }} 家关注 · 全覆盖 {{ coverage.counts.fully_covered }} · 缺口 {{ coverage.counts.with_gaps }} · 过期 {{ coverage.counts.stale }}</span></div></template>
+      <template #header><div class="flex items-center justify-between"><span>🩺 数据覆盖矩阵</span><span class="text-xs text-secondary">{{ coverage.counts.companies }} 家关注 · 全覆盖 {{ coverage.counts.fully_covered }} · 缺口 {{ coverage.counts.with_gaps }} · 过期 {{ coverage.counts.stale }} · 定性 {{ coverage.counts.qualitative_ok }}</span></div></template>
       <div class="coverage-grid">
         <div class="coverage-row coverage-head">
           <span class="c-ticker">公司</span>
           <span v-for="dt in coverage.data_types" :key="dt" class="c-cell">{{ dt }}</span>
+          <span class="c-cell">定性</span>
         </div>
         <div v-for="row in coverage.rows" :key="row.ticker" class="coverage-row" @click="tickerRef = row.ticker; tickerNames = { ...tickerNames, [row.ticker]: row.name }">
           <span class="c-ticker" :style="{ color: row.worst_health === 'ok' ? 'var(--text-primary)' : 'var(--warning)' }">{{ row.ticker }} {{ row.name }}</span>
@@ -98,6 +103,7 @@ function healthMeta(h?: string) { return HEALTH_META[h || 'missing'] || HEALTH_M
             <span class="health-dot" :style="{ background: healthMeta(row.cells[dt]?.health).color }" />
             <span class="text-xs text-secondary">{{ row.cells[dt]?.health === 'missing' ? '—' : `${Math.round(row.cells[dt].age_hours || 0)}h` }}</span>
           </span>
+          <span class="c-cell" :style="{ color: qualColor(row.qualitative?.health) }">{{ qualLabel(row.qualitative?.health) }}</span>
         </div>
       </div>
     </el-card>
@@ -156,7 +162,7 @@ function healthMeta(h?: string) { return HEALTH_META[h || 'missing'] || HEALTH_M
 .chart-card { padding: 16px; border-radius: 12px; }
 .chart-empty { display: flex; align-items: center; justify-content: center; height: 256px; color: var(--text-secondary); }
 .coverage-grid { display: flex; flex-direction: column; gap: 6px; }
-.coverage-row { display: grid; grid-template-columns: 1fr repeat(4, 90px); align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
+.coverage-row { display: grid; grid-template-columns: 1fr repeat(5, 90px); align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
 .coverage-row:hover { background: var(--bg-tertiary); }
 .coverage-head { cursor: default; color: var(--text-secondary); font-size: 12px; }
 .coverage-head:hover { background: transparent; }
