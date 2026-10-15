@@ -217,6 +217,12 @@ class ReportService:
         if peer_block := await build_peer_comparison_block(self.session, session.company_id):
             context_parts.append(f"\n{peer_block}")
 
+        # 比率层 + 估值分位（Market 数字事实源，同 period/peer block 模式）
+        from market.ratio_service import build_ratio_block
+
+        if ratio_block := await build_ratio_block(self.session, session.company_id):
+            context_parts.append(f"\n{ratio_block}")
+
         messages = [
             LLMMessage(role="system", content=REPORT_SYSTEM_PROMPT),
             LLMMessage(role="user", content="\n".join(context_parts)),

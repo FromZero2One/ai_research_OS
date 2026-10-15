@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import date
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from company.models import Company
 from market.domain import FinancialMetricEntry
 from market.models import FinancialMetric, ValuationHistory  # noqa: F401
 from market.ratio_service import (
@@ -182,3 +184,35 @@ async def test_ratio_routes(async_client):
     assert r2.status_code == 200
     # akshare 未配置时退化，二选一
     assert r2.json()["available"] in (True, False)
+
+
+@pytest.mark.asyncio
+async def test_build_ratio_block_none_without_company(test_session: AsyncSession):
+    from market.ratio_service import build_ratio_block
+
+    assert await build_ratio_block(test_session, None) is None
+    assert await build_ratio_block(test_session, uuid.uuid4()) is None
+
+
+@pytest.mark.asyncio
+async def test_build_ratio_block_with_data(test_session: AsyncSession):
+    from market.ratio_service import build_ratio_block
+
+    company = Company(ticker="600000", name="测试银行", is_active=True)
+    test_session.add(company)
+    await test_session.flush()
+    test_session.add_all(
+        [
+            FinancialMetric(ticker="600000", fiscal_year=2024, fiscal_period="Annual", metric_name="revenue", metric_value=1000.0),
+            FinancialMetric(ticker="600000", fiscal_year=2024, fiscal_period="Annual", metric_name="gross_profit", metric_value=400.0),
+            ValuationHistory(ticker="600000", trade_date=date(2024, 1, 2), pe=10.0, pe_ttm=11.0, pb=1.2),
+            ValuationHistory(ticker="600000", trade_date=date(2024, 1, 3), pe=20.0, pe_ttm=21.0, pb=2.2),
+        ]
+    )
+    await test_session.commit()
+    block = await build_ratio_block(test_session, company.id)
+    assert block is not None
+    assert "财务比率" in block
+    assert "毛利率" in block and "40" in block
+    assert "禁止改写" in block
+    assert "分位" in block and "100" in block

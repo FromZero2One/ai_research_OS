@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import date as _date
 
+from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.event_service import EventLogger
@@ -232,3 +233,50 @@ class RatioService:
                 )
             return rows
         return []
+
+
+async def build_ratio_block(db: AsyncSession, company_id) -> str | None:
+    """报告上下文区块：财务比率（最新期）+ PE/PB 分位（A 股）。无数据返回 None。"""
+    if not company_id:
+        return None
+    from company.models import Company
+
+    company = (
+        await db.execute(sa_select(Company).where(Company.id == company_id))
+    ).scalar_one_or_none()
+    if not company or not company.ticker:
+        return None
+
+    svc = RatioService(db)
+    lines: list[str] = []
+
+    ratios = await svc.read_ratios(company.ticker, limit=1)
+    if ratios:
+        r = ratios[0]
+        parts = [
+            f"{RATIO_LABELS[k]} {v:g}"
+            for k, v in r.items()
+            if k not in ("fiscal_year", "fiscal_period") and v is not None
+        ]
+        if parts:
+            lines.append(
+                f"## 财务比率（{r['fiscal_year']} {r['fiscal_period']}，"
+                f"来源 Market 指标库，禁止改写）\n" + "；".join(parts)
+            )
+
+    vp = await svc.valuation_percentile(company.ticker)
+    if vp.get("available"):
+        vp_parts = [
+            f"{k.upper()} 当前 {v['current']:g}，历史分位 {v['percentile']:g}%（样本 {v['samples']}）"
+            for k, v in vp.items()
+            if k in ("pe", "pe_ttm", "pb")
+            and v.get("current") is not None
+            and v.get("percentile") is not None
+        ]
+        if vp_parts:
+            lines.append(
+                f"## 估值历史分位（截至 {vp['trade_date']}，来源 Market 估值库，禁止改写）\n"
+                + "；".join(vp_parts)
+            )
+
+    return "\n\n".join(lines) if lines else None
