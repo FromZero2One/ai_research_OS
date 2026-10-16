@@ -184,7 +184,7 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 | ~~structured_facts 交叉验证~~ | ✅ | 财报抽取值 vs 接口值偏差≥10% → 观察事件（口径差异提示） |
 | ~~比率层 + 历史分位~~ | ✅ 2026-10-15 | `market/ratio_service.py` 派生毛利率/净利率+透出 ROE/负债率/周转率等；`market.valuation_history` 表（akshare `stock_a_indicator_lg` 全序列入 PG）算 PE/PB 历史分位；API `/market/ratios/{ticker}[/valuation-percentile]`；报告区块 + CompanyDetail 卡片 |
 | ~~覆盖矩阵定性维度~~ | ✅ 2026-10-15 | 矩阵新增定性列：已索引文档含 mda/risk 切片 → ok；仅已索引 → partial；无 → missing；纳入 worst_health |
-| **证据继承** | 未开始 | 同一公司跨研究 session 复用历史证据并标注"历史已核实" |
+| ~~证据继承~~ | ✅ 2026-10-16 | auto-gather 自动带入同公司已完成会话证据（上限 10 条/去重/幂等），标 inherited_from_session_id，前端「📥 历史已核实」徽标可跳原会话 |
 | **差异日报** | 未开始 | 旧晨报已删（2026-10-14），从零构建"只报变化"日报：新公告、财报日历临近、价格异动、证据与旧结论冲突 |
 
 收尾待办（小项）：Market.vue 覆盖网格列数动态化（当前硬编码 `repeat(5, 90px)`）；test_finalize_session 补 LLM mock（真实 LLM 调用挂起）；qualColor 硬编码色值统一 CSS 变量。
