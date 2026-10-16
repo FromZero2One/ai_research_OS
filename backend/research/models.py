@@ -111,6 +111,13 @@ class ResearchEvidence(Base, UUIDMixin, TimestampMixin):
         nullable=True,
         comment="从证据文本抽取的结构化财务事实 JSON（{facts: [...], not_mentioned: bool}）",
     )
+
+    inherited_from_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("research.research_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="继承自历史已完成会话的证据（非空即继承证据）",
+    )
     # ----------------------------------------------------------------
 
     session: Mapped[ResearchSession] = relationship(back_populates="evidences")

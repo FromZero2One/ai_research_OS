@@ -174,6 +174,7 @@ class EvidenceResponse(BaseModel):
     classification_source: str | None = None
     classification_confidence: float | None = None
     structured_facts: dict | None = None
+    inherited_from_session_id: UUID | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
