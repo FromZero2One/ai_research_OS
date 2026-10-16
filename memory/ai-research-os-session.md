@@ -54,7 +54,7 @@ metadata:
    - 产出：`market/ratio_service.py`（纯函数可单测）+ 报告上下文区块 + 前端展示
 2. ✅ **覆盖矩阵加定性维度**（2026-10-15 完成）
    - coverage 矩阵扩展"定性覆盖"：该公司是否有已索引年报正文（mda/risk 章节存在）
-3. **跨会话证据继承**（未开始，方案不变）
+3. ✅ **跨会话证据继承**（2026-10-16 完成，迁移 head `a9c4d7e2f1b8`）
    - 新 session 带入同公司历史已核实证据，标 `inherited`（gather_service + Evidence 来源标记）
 4. **差异日报**（未开始，方案不变）
    - 晨报只报变化（新公告/财报日临近/价格异动/证据冲突），brief_generator + observation_engine
