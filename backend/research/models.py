@@ -44,7 +44,10 @@ class ResearchSession(Base, UUIDMixin, TimestampMixin):
 
     # Relationships
     evidences: Mapped[list[ResearchEvidence]] = relationship(
-        back_populates="session", cascade="all, delete-orphan"
+        back_populates="session",
+        cascade="all, delete-orphan",
+        # 表间存在两个外键（session_id / inherited_from_session_id），需显式指定连接键
+        foreign_keys="ResearchEvidence.session_id",
     )
     reports: Mapped[list[ResearchReport]] = relationship(
         back_populates="session", cascade="all, delete-orphan"
@@ -120,7 +123,10 @@ class ResearchEvidence(Base, UUIDMixin, TimestampMixin):
     )
     # ----------------------------------------------------------------
 
-    session: Mapped[ResearchSession] = relationship(back_populates="evidences")
+    session: Mapped[ResearchSession] = relationship(
+        back_populates="evidences",
+        foreign_keys=[session_id],
+    )
 
 
 class ResearchReport(Base, UUIDMixin, TimestampMixin):

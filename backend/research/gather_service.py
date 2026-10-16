@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.logging import logger
@@ -183,13 +184,116 @@ class GatherService:
             except Exception as e:
                 logger.warning("Fact cross-validation skipped: %s", e)
 
+        # 6. 证据继承：同公司已完成会话的历史证据原样带入（标 inherited_from_session_id）
+        inherited_added = 0
+        if session.company_id:
+            try:
+                from company.service import CompanyService
+
+                company = await CompanyService(self.session).get(session.company_id)
+                inherited_added = await _select_and_inherit(
+                    self.session, session_id, session.company_id, company.ticker
+                )
+            except Exception as e:
+                logger.warning("Evidence inheritance skipped: %s", e)
+
         return {
             "session_id": str(session_id),
             "evidences_added": count,
             "searched_queries": len(search_queries),
             "llm_classified": settings_enabled_classifier(),
             "fact_discrepancies": discrepancies,
+            "inherited_added": inherited_added,
         }
+
+
+# 证据继承上限：单次 auto-gather 最多带入的历史证据条数
+_INHERIT_MAX = 10
+
+
+async def _select_and_inherit(
+    session_db: AsyncSession,
+    session_id: uuid.UUID,
+    company_id: uuid.UUID,
+    ticker: str | None,
+) -> int:
+    """证据继承：同公司已完成会话的证据原样带入当前会话，标 inherited_from_session_id。
+
+    规则（见 specs/2026-10-16-evidence-inheritance-design.md）：
+    - 仅源会话 status='completed'；按会话 updated_at 倒序（最新会话优先）
+    - 幂等：已是继承证据（标记非空）不重复带入
+    - 去重：与当前会话已有 (source_type, source_id, content[:256]) 相同的跳过
+    - 上限 _INHERIT_MAX 条；不重新走 LLM 分类/事实抽取（原会话已完成）
+    """
+    from research.models import ResearchEvidence, ResearchSession
+
+    existing = (
+        (await session_db.execute(
+            select(ResearchEvidence).where(ResearchEvidence.session_id == session_id)
+        )).scalars().all()
+    )
+    seen = {
+        (ev.source_type, ev.source_id, (ev.content or "")[:256])
+        for ev in existing
+    }
+
+    stmt = (
+        select(ResearchEvidence, ResearchSession)
+        .join(ResearchSession, ResearchEvidence.session_id == ResearchSession.id)
+        .where(
+            ResearchSession.company_id == company_id,
+            ResearchSession.id != session_id,
+            ResearchSession.status == "completed",
+            ResearchEvidence.inherited_from_session_id.is_(None),
+        )
+        .order_by(ResearchSession.updated_at.desc(), ResearchEvidence.created_at.desc())
+        .limit(_INHERIT_MAX * 6)  # 预留去重过滤后的余量
+    )
+    rows = (await session_db.execute(stmt)).all()  # list of (evidence, source_session)
+
+    added = 0
+    for evidence, _src_session in rows:
+        if added >= _INHERIT_MAX:
+            break
+        key = (evidence.source_type, evidence.source_id, (evidence.content or "")[:256])
+        if key in seen:
+            continue
+        session_db.add(
+            ResearchEvidence(
+                session_id=session_id,
+                content=evidence.content,
+                source_type=evidence.source_type,
+                source_id=evidence.source_id,
+                source_title=evidence.source_title,
+                relevance_score=evidence.relevance_score,
+                evidence_type=evidence.evidence_type,
+                content_nature=evidence.content_nature,
+                summary=evidence.summary,
+                reliability=evidence.reliability,
+                data_freshness=evidence.data_freshness,
+                citation_quality=evidence.citation_quality,
+                classification_source=evidence.classification_source,
+                classification_confidence=evidence.classification_confidence,
+                structured_facts=evidence.structured_facts,
+                inherited_from_session_id=evidence.session_id,
+            )
+        )
+        seen.add(key)
+        added += 1
+
+    if added:
+        await session_db.flush()
+        from core.event_service import EventLogger
+
+        await EventLogger(session_db).record(
+            source="research",
+            event_type="evidence.inherited",
+            entity_type="research_evidence_batch",
+            entity_id=str(session_id),
+            payload={"count": added, "ticker": ticker},
+        )
+        logger.info("Evidence inherited: %d rows into session %s", added, session_id)
+    return added
 
 
 def settings_enabled_classifier() -> str:
