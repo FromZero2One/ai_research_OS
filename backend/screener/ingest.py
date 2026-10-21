@@ -23,7 +23,9 @@ _MCP_DIR_ENV = "AKSHARE_MCP_DIR"
 
 def _run_child(code: str, timeout: int = 180) -> dict | list | None:
     """本地 akshare venv 子进程执行代码，返回 __R__ JSON payload。"""
-    mcp_dir = os.getenv(_MCP_DIR_ENV)
+    from core.config import settings
+
+    mcp_dir = os.getenv(_MCP_DIR_ENV) or settings.AKSHARE_MCP_DIR
     if not mcp_dir:
         raise RuntimeError(f"{_MCP_DIR_ENV} 未配置")
     env = os.environ.copy()
