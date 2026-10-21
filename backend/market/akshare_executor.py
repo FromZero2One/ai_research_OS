@@ -39,23 +39,23 @@ def build_akshare_env(ticker: str) -> dict[str, str]:
     return {"TICKER": ticker}
 
 
-def run_akshare(code: str, env_args: dict[str, str] | None = None) -> str | None:
+def run_akshare(code: str, env_args: dict[str, str] | None = None, timeout: int = 60) -> str | None:
     """Run akshare Python code in akshare_mcp venv and return stdout.
 
     ``env_args`` values are exported to the child as ``AKSHARE_<KEY>``
     environment variables — never embedded in ``code``.
+    ``timeout`` 默认 60s；全市场批量采集等重任务可调大。
     """
     akshare_mcp_dir = _os.getenv("AKSHARE_MCP_DIR") or settings.AKSHARE_MCP_DIR
     if not akshare_mcp_dir:
         logger.warning("  [akshare] AKSHARE_MCP_DIR not configured — subprocess layer disabled")
         return None
-    env = {
-        "HOME": _os.environ.get("HOME", ""),
-        "PATH": _os.environ.get("PATH", ""),
-        "USER": _os.environ.get("USER", ""),
-        "NO_PROXY": "localhost,127.0.0.0/8,::1",
-        "no_proxy": "localhost,127.0.0.0/8,::1",
-    }
+    # 继承完整环境（Windows 下裁剪环境会破坏 Winsock 初始化），仅覆盖必要项
+    env = _os.environ.copy()
+    env["NO_PROXY"] = "localhost,127.0.0.0/8,::1"
+    env["no_proxy"] = "localhost,127.0.0.0/8,::1"
+    # 强制子进程 stdout 用 UTF-8（中文 Windows 默认 GBK 会解码失败）
+    env["PYTHONIOENCODING"] = "utf-8"
     if env_args:
         env.update({f"AKSHARE_{k}": v for k, v in env_args.items()})
     try:
@@ -63,7 +63,9 @@ def run_akshare(code: str, env_args: dict[str, str] | None = None) -> str | None
             ["uv", "run", "--directory", akshare_mcp_dir, "python", "-c", code],
             capture_output=True,
             text=True,
-            timeout=60,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
             env=env,
         )
         if result.returncode != 0:

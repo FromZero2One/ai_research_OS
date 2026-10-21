@@ -100,7 +100,7 @@ class TestFetchMarketSpot:
         sample = [{"ticker": "600519", "name": "贵州茅台", "price": 1500.5, "turnover": 0.32, "market_cap": 1.88e12}]
         monkeypatch.setattr(
             "screener.screening.run_akshare",
-            lambda code, env_args=None: "__R__:" + json.dumps(sample, ensure_ascii=False),
+            lambda code, env_args=None, timeout=60: "__R__:" + json.dumps(sample, ensure_ascii=False),
         )
         spot = await fetch_market_spot()
         assert spot[0]["ticker"] == "600519"
@@ -114,7 +114,7 @@ class TestFetchMarketSpot:
         sample = [{"ticker": "000001", "name": "平安银行", "price": "-", "turnover": None, "market_cap": "NaN"}]
         monkeypatch.setattr(
             "screener.screening.run_akshare",
-            lambda code, env_args=None: "__R__:" + json.dumps(sample),
+            lambda code, env_args=None, timeout=60: "__R__:" + json.dumps(sample),
         )
         spot = await fetch_market_spot()
         assert spot[0]["price"] is None
@@ -122,6 +122,6 @@ class TestFetchMarketSpot:
         assert spot[0]["market_cap"] is None
 
     async def test_akshare_none_raises(self, monkeypatch):
-        monkeypatch.setattr("screener.screening.run_akshare", lambda code, env_args=None: None)
+        monkeypatch.setattr("screener.screening.run_akshare", lambda code, env_args=None, timeout=60: None)
         with pytest.raises(Exception):
             await fetch_market_spot()

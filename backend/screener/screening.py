@@ -43,7 +43,7 @@ _SNAPSHOT_FIELDS = frozenset({"price", "turnover", "market_cap"})
 
 async def fetch_market_spot() -> list[dict]:
     """全市场 A 股快照（akshare 子进程，to_thread 防阻塞事件循环）。失败 raise DataSourceError。"""
-    raw = await asyncio.to_thread(run_akshare, _SPOT_CODE)
+    raw = await asyncio.to_thread(run_akshare, _SPOT_CODE, None, 300)
     if raw is None:
         raise DataSourceError("akshare", "全市场快照采集失败（子进程无输出）")
     if raw.startswith("E:"):
