@@ -20,6 +20,8 @@ from sqlalchemy.pool import NullPool
 
 from api.app import create_app
 from core.config import settings
+
+import screener.models  # noqa: F401  # 尚未挂载路由，需显式导入以注册到 Base.metadata
 from core.container import Container
 from core.database import get_container, get_db
 
@@ -89,6 +91,7 @@ def _ensure_test_db() -> None:
             "ai",
             "research",
             "portfolio",
+            "screener",
             "core",
             "akshare",
         ):
@@ -188,6 +191,9 @@ ALL_TABLES = [
     "portfolio.holdings",
     "portfolio.investment_journal",
     "core.event_log",
+    "screener.screener_judgements",
+    "screener.screener_runs",
+    "screener.screener_rules",
 ]
 
 

@@ -23,6 +23,7 @@ from document.models import *  # noqa: F401, F403
 from market.models import *  # noqa: F401, F403
 from portfolio.models import *  # noqa: F401, F403
 from research.models import *  # noqa: F401, F403
+from screener.models import *  # noqa: F401, F403
 
 config = context.config
 if config.config_file_name is not None:
