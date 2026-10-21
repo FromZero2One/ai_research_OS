@@ -29,6 +29,25 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+async def _reload_financials(db: AsyncSession) -> dict[str, list]:
+    """加载全库财务指标 → {ticker: [FinancialMetricEntry]}（初筛求值用）。"""
+    from market.domain import FinancialMetricEntry
+    from market.models import FinancialMetric
+
+    rows = (await db.execute(select(FinancialMetric))).scalars().all()
+    financials: dict[str, list] = {}
+    for m in rows:
+        financials.setdefault(m.ticker, []).append(
+            FinancialMetricEntry(
+                fiscal_year=m.fiscal_year,
+                fiscal_period=m.fiscal_period,
+                metric_name=m.metric_name,
+                metric_value=m.metric_value,
+            )
+        )
+    return financials
+
+
 async def trigger_run(db: AsyncSession) -> ScreenerRun | None:
     """手动触发一次筛选。已有 pending/running 时返回 None（路由转 409）。"""
     active = (
@@ -86,23 +105,22 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
         )
         pool = filter_pool(spot, rules.get("stock_pool", {"type": "all"}), watched)
 
-        from market.models import FinancialMetric
-
-        rows = (await db.execute(select(FinancialMetric))).scalars().all()
-        financials: dict[str, list] = {}
-        from market.domain import FinancialMetricEntry
-
-        for m in rows:
-            financials.setdefault(m.ticker, []).append(
-                FinancialMetricEntry(
-                    fiscal_year=m.fiscal_year,
-                    fiscal_period=m.fiscal_period,
-                    metric_name=m.metric_name,
-                    metric_value=m.metric_value,
-                )
-            )
+        financials = await _reload_financials(db)
 
         passed, excluded_missing = screening.evaluate_quant_rules(pool, rules.get("quant_rules", []), financials)
+
+        # 候选缺 bs/cf 类指标（资产负债表/现金流）→ 对初筛通过者补采后重筛一次
+        from screener.ingest import ingest_single_company
+
+        need_metrics = {r["metric"] for r in rules.get("quant_rules", [])}
+        needs_bs_cf = bool(need_metrics & {"total_assets", "total_liabilities", "debt_to_equity", "current_ratio", "operating_cash_flow"})
+        if needs_bs_cf and passed:
+            await db.flush()
+            for cand in passed[: rules.get("candidate_limit", 50)]:
+                await ingest_single_company(db, cand["ticker"])
+            financials = await _reload_financials(db)
+            passed, excluded_missing = screening.evaluate_quant_rules(pool, rules.get("quant_rules", []), financials)
+
         candidates = screening.rank_candidates(passed, limit=rules.get("candidate_limit", 50))
         run.candidate_count = len(candidates)
         run.status = "judging"
