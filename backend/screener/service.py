@@ -130,6 +130,7 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
         judgements = await judge_candidates(
             llm, candidates, run.criteria_text, knowledge=None,
             qualitative=rules.get("qualitative_criteria", []),
+            financials_by_ticker=financials,
         )
         for j in judgements:
             db.add(ScreenerJudgement(run_id=run.id, **j))

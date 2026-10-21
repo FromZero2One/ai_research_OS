@@ -61,6 +61,18 @@ class TestBuildContext:
         ctx = build_judge_context(CAND, [])
         assert "600519" in ctx
 
+    def test_includes_financial_metrics(self):
+        """财务指标（ROE 等）必须出现在深判上下文里，否则 LLM 无法核对量化标准。"""
+        fin = {"roe": 26.09, "gross_margin": 91.5, "net_margin": 49.4, "debt_to_equity": 15.2}
+        ctx = build_judge_context(CAND, [], financials=fin)
+        assert "ROE" in ctx or "roe" in ctx
+        assert "26.09" in ctx
+        assert "91.5" in ctx
+
+    def test_no_financials_ok(self):
+        ctx = build_judge_context(CAND, [], financials=None)
+        assert "600519" in ctx
+
 
 class TestJudgeOne:
     async def test_valid(self):

@@ -46,13 +46,38 @@ _JUDGE_SYSTEM_PROMPT = (
 _MAX_ATTEMPTS = 2
 
 
-def build_judge_context(candidate: dict, knowledge_snippets: list[str]) -> str:
-    """拼装单只候选的判断上下文（纯函数）。"""
+_METRIC_CN = {
+    "roe": "ROE(%)", "gross_margin": "毛利率(%)", "net_margin": "净利率(%)",
+    "debt_to_equity": "负债/权益(%)", "current_ratio": "流动比率(倍)",
+    "operating_cash_flow": "经营现金流(元)", "revenue": "营业总收入(元)",
+    "net_income": "净利润(元)", "total_assets": "总资产(元)", "total_liabilities": "总负债(元)",
+    "eps": "每股收益(元)", "market_cap": "总市值(元)",
+}
+
+
+def build_judge_context(
+    candidate: dict,
+    knowledge_snippets: list[str],
+    financials: dict[str, float] | None = None,
+) -> str:
+    """拼装单只候选的判断上下文（纯函数）。
+
+    financials 为该候选最新一期的财务指标（metric → value），
+    LLM 需要它来核对量化标准；缺数据时明确标注"无"而非留空。
+    """
     lines = [
         f"股票: {candidate.get('name')}（{candidate.get('ticker')}）",
         f"行情快照: 现价 {candidate.get('price')}, 换手率 {candidate.get('turnover')}, "
         f"总市值 {candidate.get('market_cap')}, 初筛得分 {candidate.get('score')}",
     ]
+    if financials:
+        parts = [f"{_METRIC_CN.get(k, k)}={v}" for k, v in financials.items() if v is not None]
+        if parts:
+            lines.append(f"财务指标（最新报告期）: {'; '.join(parts)}")
+        else:
+            lines.append("财务指标（最新报告期）: 无")
+    else:
+        lines.append("财务指标（最新报告期）: 无")
     if knowledge_snippets:
         lines.append("相关资料片段：")
         for i, snippet in enumerate(knowledge_snippets, 1):
@@ -77,6 +102,7 @@ async def judge_one(
     candidate: dict,
     criteria: list[str],
     knowledge=None,
+    financials: dict[str, float] | None = None,
 ) -> dict:
     """单只候选深判。两次尝试都失败 raise ValueError（调用方决定隔离策略）。"""
     # 知识库检索：失败静默吞掉（资料是加分项，不是必需品）
@@ -89,7 +115,7 @@ async def judge_one(
             logger.warning("深判知识库检索失败 %s: %s", candidate["ticker"], e)
 
     user_msg = (
-        f"{build_judge_context(candidate, snippets)}\n\n"
+        f"{build_judge_context(candidate, snippets, financials=financials)}\n\n"
         f"定性标准：\n" + "\n".join(f"- {c}" for c in criteria)
     )
     messages = [
@@ -117,17 +143,31 @@ async def judge_candidates(
     criteria_text: str,
     knowledge=None,
     qualitative: list[str] | None = None,
+    financials_by_ticker: dict[str, list] | None = None,
 ) -> list[dict]:
     """逐只深判；单只 ValueError → 该只 status=failed，循环继续。
 
     qualitative 为结构化规则里的定性条目；未提供时退回用标准原文整段判断。
+    financials_by_ticker 提供候选的最新财务指标（进入深判上下文）。
     """
     criteria = qualitative or [criteria_text]
 
     results: list[dict] = []
     for cand in candidates:
+        # 最新一期财务指标 → 简化 dict（metric → value）
+        fin: dict[str, float] | None = None
+        if financials_by_ticker:
+            entries = financials_by_ticker.get(cand["ticker"]) or []
+            best: dict[str, tuple] = {}
+            for e in entries:
+                if e.metric_value is None:
+                    continue
+                key = (e.fiscal_year, e.fiscal_period)
+                if e.metric_name not in best or key > best[e.metric_name][0]:
+                    best[e.metric_name] = (key, e.metric_value)
+            fin = {k: v[1] for k, v in best.items()} if best else None
         try:
-            judgement = await judge_one(llm, cand, criteria or [criteria_text], knowledge=knowledge)
+            judgement = await judge_one(llm, cand, criteria or [criteria_text], knowledge=knowledge, financials=fin)
             results.append(
                 {
                     "ticker": cand["ticker"],
