@@ -55,6 +55,8 @@ from dashboard.routes import router as dashboard_router
 from document.models import *  # noqa: F401, F403
 from document.routes import router as document_router
 from document.tasks import *  # noqa: F401, F403
+from screener.models import *  # noqa: F401, F403
+from screener.routes import router as screener_router
 from knowledge.routes import router as knowledge_router
 from market.models import *  # noqa: F401, F403
 from market.routes.financial_routes import router as market_financial_router
@@ -261,6 +263,7 @@ def create_app() -> FastAPI:
     app.include_router(scheduler_router, prefix="/api/v1")
     app.include_router(event_router, prefix="/api/v1")
     app.include_router(dashboard_router, prefix="/api/v1")
+    app.include_router(screener_router, prefix="/api/v1")
 
     return app
 

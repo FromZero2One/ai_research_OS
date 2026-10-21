@@ -74,6 +74,9 @@ from core.interfaces import (
     SearchService as SearchServiceProtocol,
 )
 from core.interfaces import (
+    ScreenerService as ScreenerServiceProtocol,
+)
+from core.interfaces import (
     TimelineService as TimelineServiceProtocol,
 )
 
@@ -104,6 +107,7 @@ class Container:
         self._ai: AIServiceProtocol | None = None
         self._dashboard: DashboardServiceProtocol | None = None
         self._ratio: "RatioService | None" = None
+        self._screener: ScreenerServiceProtocol | None = None
 
     @property
     def price_service(self) -> PriceServiceProtocol:
@@ -258,6 +262,14 @@ class Container:
 
             self._dashboard = DashboardService(self.session)
         return self._dashboard
+
+    @property
+    def screener_service(self) -> ScreenerServiceProtocol:
+        if self._screener is None:
+            from screener.service import ScreenerService
+
+            self._screener = ScreenerService(self.session)
+        return self._screener
 
     @property
     def ratio_service(self) -> "RatioService":

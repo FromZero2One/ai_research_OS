@@ -333,6 +333,15 @@ class KnowledgeService(Protocol):
     ) -> list[Any]: ...
 
 
+@runtime_checkable
+class ScreenerService(Protocol):
+    """Interface for the LLM stock screener orchestration."""
+
+    async def trigger_run(self) -> Any:
+        """手动触发一次筛选；已有进行中运行时返回 None。"""
+        ...
+
+
 # ── Remaining business services (containerized in B7) ────────────────────
 
 
