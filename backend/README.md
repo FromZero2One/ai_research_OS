@@ -26,8 +26,17 @@ Company → Market + Document → Knowledge(RAG) → AI → Research → Portfol
 | `service/` + `routes/` 子目录拆分 | market（另含 domain/repositories/akshare_executor）、portfolio（2 服务） |
 | 顶层多个 `*_service.py` | research（session/evidence/report/gather/thesis/timeline 6 服务） |
 | 薄模块（仅 routes + service，无自有 models/schemas） | knowledge（读写 document 表 + Qdrant）、dashboard（跨模块聚合） |
-
+| 编排型（pipeline + LLM 两层） | screener（criteria/translate/screening/judge/report/service，2026-10-21 新增） |
 服务通过 `core/container.py` DI 容器懒加载，路由经 `Depends(get_container)` 获取。
+
+### Screener（智能选股，2026-10-21）
+
+用户维护 `screener/criteria.md` 自然语言选股标准，手动触发 `/screener/runs`：
+① LLM 翻译标准为结构化规则（`ScreenerRule` 按 doc_hash 缓存，标准不变零 LLM 调用）
+→ ② 确定性初筛（akshare `stock_zh_a_spot_em` 全市场快照 + 股票池过滤 + 量化规则求值 + 排名截断）
+→ ③ LLM 逐只深判候选（单只失败隔离，结果落 `ScreenerJudgement` 供后续回测）
+→ ④ Markdown 报告落 `screener/reports/`（推荐列表 + 标准吻合度逐条说明）。
+LLM 只在 ①③ 参与，筛选执行确定性。迁移 `b5d2f8a3c6e1`，schema `screener`。
 
 ### 数据分工原则（2026-10-14 定稿）
 
