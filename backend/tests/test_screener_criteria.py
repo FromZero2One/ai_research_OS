@@ -85,6 +85,17 @@ def test_validate_bad_pool_type():
     assert validate_rules(rules) != []
 
 
+def test_validate_empty_rules_rejected():
+    """quant_rules 和 qualitative_criteria 全空 → 无效（防止无意义标准静默通过）。"""
+    rules = {
+        "stock_pool": {"type": "all", "tickers": []},
+        "quant_rules": [],
+        "qualitative_criteria": [],
+        "candidate_limit": 50,
+    }
+    assert validate_rules(rules) != []
+
+
 def test_schema_is_dict():
     """RULES_JSON_SCHEMA 是合法 JSON Schema 结构（给 LLM 用）。"""
     assert RULES_JSON_SCHEMA["type"] == "object"

@@ -37,6 +37,21 @@ class TestEvaluateQuantRules:
         # 净资产收益率不命中且策略 exclude → 进 excluded（缺数据）
         assert [c["ticker"] for c in excluded] == ["300750"]
 
+    def test_missing_data_exclude_even_with_other_hits(self):
+        """exclude 策略的规则缺数据 → 即使命中其他规则也必须排除。"""
+        rule_missing = {"metric": "roe", "op": ">", "value": 15.0, "missing_data_policy": "exclude"}
+        candidates = [_c("300750", price=8.0)]  # price 命中、roe 缺数据
+        passed, excluded = evaluate_quant_rules(candidates, [RULE_PRICE, rule_missing], {})
+        assert passed == []
+        assert [c["ticker"] for c in excluded] == ["300750"]
+        assert excluded[0]["missing"] == ["roe"]  # 报告需要列出缺失指标
+
+    def test_excluded_carries_missing_list(self):
+        rule_a = {"metric": "roe", "op": ">", "value": 15.0, "missing_data_policy": "exclude"}
+        rule_b = {"metric": "eps", "op": ">", "value": 1.0, "missing_data_policy": "exclude"}
+        passed, excluded = evaluate_quant_rules([_c("300750")], [rule_a, rule_b], {})
+        assert excluded[0]["missing"] == ["roe", "eps"]
+
     def test_snapshot_field(self):
         passed, _ = evaluate_quant_rules([_c("600519", price=8.0), _c("300750", price=25.0)], [RULE_PRICE], {})
         assert [c["ticker"] for c in passed] == ["600519"]
@@ -91,6 +106,20 @@ class TestFetchMarketSpot:
         assert spot[0]["ticker"] == "600519"
         assert spot[0]["price"] == 1500.5
         assert spot[0]["market_cap"] == 1.88e12
+
+    async def test_dirty_numeric_becomes_none(self, monkeypatch):
+        """akshare 对停牌股返回 '-' / NaN → 数值字段清洗为 None（走缺数据路径）。"""
+        import json
+
+        sample = [{"ticker": "000001", "name": "平安银行", "price": "-", "turnover": None, "market_cap": "NaN"}]
+        monkeypatch.setattr(
+            "screener.screening.run_akshare",
+            lambda code, env_args=None: "__R__:" + json.dumps(sample),
+        )
+        spot = await fetch_market_spot()
+        assert spot[0]["price"] is None
+        assert spot[0]["turnover"] is None
+        assert spot[0]["market_cap"] is None
 
     async def test_akshare_none_raises(self, monkeypatch):
         monkeypatch.setattr("screener.screening.run_akshare", lambda code, env_args=None: None)

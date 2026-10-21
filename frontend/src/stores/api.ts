@@ -627,10 +627,13 @@ export interface ScreenerRunDetail extends ScreenerRunSummary {
 export function useScreenerRuns() {
   return useGet<{ runs: ScreenerRunSummary[] }>(['screener-runs'], '/screener/runs')
 }
-export function useScreenerRun(id: MaybeRefOrGetter<string>) {
+export function useScreenerRun(id: MaybeRefOrGetter<string>, opts?: { poll?: MaybeRefOrGetter<boolean> }) {
   return useGet<ScreenerRunDetail>(
     computed(() => ['screener-run', toValue(id)]),
     computed(() => (toValue(id) ? `/screener/runs/${toValue(id)}` : '')),
+    {
+      refetchInterval: computed(() => (toValue(opts?.poll ?? false) ? 3_000 : false)),
+    },
   )
 }
 export function useTriggerScreenerRun(invalidateKeys: string[][] = [['screener-runs']]) {

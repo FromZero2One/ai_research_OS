@@ -120,6 +120,11 @@ def validate_rules(obj: object) -> list[str]:
     if not isinstance(qual, list) or any(not isinstance(q, str) for q in qual):
         errors.append("qualitative_criteria 必须是字符串数组")
 
+    # 无意义/含混标准的防线：翻译出零条件时明确报错，不静默产出空推荐
+    quant_list = obj.get("quant_rules", [])
+    if isinstance(quant_list, list) and isinstance(qual, list) and not quant_list and not qual:
+        errors.append("标准文档未能翻译出任何有效筛选条件（量化与定性均为空）")
+
     limit = obj.get("candidate_limit", 50)
     if not isinstance(limit, int) or isinstance(limit, bool) or not (1 <= limit <= 200):
         errors.append("candidate_limit 必须是 1-200 的整数")

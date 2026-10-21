@@ -36,15 +36,11 @@ const activeRunId = ref<string | null>(null)
 const triggerRun = useTriggerScreenerRun()
 const { data: runsData, refetch: refetchRuns } = useScreenerRuns()
 
-const { data: activeRun } = useScreenerRun(activeRunId)
-watch(activeRun, (run) => {
-  if (run && (run.status === 'completed' || run.status === 'failed')) {
-    refetchRuns()
-  }
-}, { immediate: true })
-
-// 进行中的运行每 3s 轮询
 const activeStatus = computed(() => activeRun.value?.status)
+// 进行中的运行每 3s 轮询详情
+const { data: activeRun } = useScreenerRun(activeRunId, {
+  poll: computed(() => !!activeRunId.value && running.value),
+})
 watch(activeStatus, (s) => {
   if (s === 'completed') ElMessage.success('筛选完成')
   if (s === 'failed') ElMessage.error(`筛选失败：${activeRun.value?.error || '未知原因'}`)
@@ -54,6 +50,12 @@ const running = computed(() =>
   activeStatus.value === 'pending' || activeStatus.value === 'screening' || activeStatus.value === 'judging'
   || (runsData.value?.runs || []).some((r) => ['pending', 'screening', 'judging'].includes(r.status)),
 )
+
+watch(activeRun, (run) => {
+  if (run && (run.status === 'completed' || run.status === 'failed')) {
+    refetchRuns()
+  }
+}, { immediate: true })
 
 async function handleTrigger() {
   try {

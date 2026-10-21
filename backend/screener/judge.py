@@ -156,4 +156,19 @@ async def judge_candidates(
                     "error": str(e),
                 }
             )
+        except Exception as e:  # noqa: BLE001 — 网络超时等传输故障同样只隔离单只
+            logger.warning("深判异常 %s: %s", cand["ticker"], e)
+            results.append(
+                {
+                    "ticker": cand["ticker"],
+                    "name": cand["name"],
+                    "recommend": None,
+                    "reasons": [],
+                    "criteria_hits": [],
+                    "confidence": None,
+                    "snapshot": {k: cand.get(k) for k in ("price", "turnover", "market_cap", "score")},
+                    "status": "failed",
+                    "error": f"LLM 调用异常: {e}",
+                }
+            )
     return results

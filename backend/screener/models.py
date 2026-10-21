@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Float, ForeignKey, String, Text
+from sqlalchemy import Float, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -15,7 +15,16 @@ class ScreenerRun(Base, UUIDMixin, TimestampMixin):
     """一次选股运行的完整记录（状态机 pending → screening → judging → completed/failed）。"""
 
     __tablename__ = "screener_runs"
-    __table_args__ = {"schema": "screener"}
+    __table_args__ = (
+        # 并发触发防线：同一时刻至多一个进行中的 run（路由 409 判断 + 数据库兜底）
+        Index(
+            "uq_screener_runs_active",
+            "status",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'screening', 'judging')"),
+        ),
+        {"schema": "screener"},
+    )
 
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
     criteria_hash: Mapped[str] = mapped_column(String(64), nullable=False)

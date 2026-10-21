@@ -107,3 +107,21 @@ class TestJudgeCandidates:
         assert by_ticker["600519"]["recommend"] is True
         assert by_ticker["300750"]["status"] == "failed"
         assert by_ticker["300750"]["error"]
+
+    async def test_transport_error_isolated(self):
+        """LLM 网络异常（超时等）也只隔离单只，不拖垮整次运行。"""
+        ok_cand = {**CAND, "ticker": "600519"}
+        timeout_cand = {**CAND, "ticker": "300750", "name": "宁德时代"}
+
+        class FlakyLLM(FakeLLM):
+            async def generate(self, messages: Any, **kwargs: Any) -> LLMResponse:
+                self.calls += 1
+                if "宁德时代" in messages[-1].content:
+                    raise TimeoutError("LLM request timed out")
+                return LLMResponse(content=_json_text(VALID_JUDGE), model="fake", usage=None)
+
+        results = await judge_candidates(FlakyLLM([]), [ok_cand, timeout_cand], "标准文本", knowledge=None)
+        by_ticker = {r["ticker"]: r for r in results}
+        assert by_ticker["600519"]["status"] == "ok"
+        assert by_ticker["300750"]["status"] == "failed"
+        assert "timed out" in by_ticker["300750"]["error"]
