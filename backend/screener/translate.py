@@ -11,6 +11,7 @@ import json
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.adapters.llm import create_llm
 from core.interfaces import LLM, LLMMessage, LLMResponse
 from core.logging import logger
 from screener.models import ScreenerRule
@@ -79,8 +80,6 @@ async def get_or_translate_rules(
     llm: LLM | None = None,
 ) -> dict:
     """按文档 hash 查缓存；未命中则调用翻译并落 ScreenerRule。"""
-    from core.adapters.llm import create_llm
-
     doc_hash = hash_criteria(criteria_text)
     existing = (
         await db.execute(select(ScreenerRule).where(ScreenerRule.doc_hash == doc_hash))
