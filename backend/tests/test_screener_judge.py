@@ -1,0 +1,109 @@
+"""深判单测（mock LLM + fake knowledge）。"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+import pytest
+
+from core.interfaces import LLMResponse
+from screener.judge import build_judge_context, judge_candidates, judge_one
+
+VALID_JUDGE = {
+    "recommend": True,
+    "reasons": ["ROE 高", "行业格局稳定"],
+    "criteria_hits": [{"criterion": "ROE>15", "hit": True, "evidence": "ROE 30.2"}],
+    "confidence": 0.85,
+}
+
+CAND = {
+    "ticker": "600519",
+    "name": "贵州茅台",
+    "price": 1500.0,
+    "turnover": 0.3,
+    "market_cap": 1.88e12,
+    "score": 0.9,
+}
+
+
+class FakeLLM:
+    def __init__(self, responses: list[str]):
+        self.responses = list(responses)
+        self.calls = 0
+
+    async def generate(self, messages: Any, **kwargs: Any) -> LLMResponse:
+        self.calls += 1
+        return LLMResponse(content=self.responses.pop(0), model="fake", usage=None)
+
+
+def _json_text(obj: dict) -> str:
+    return f"```json\n{json.dumps(obj, ensure_ascii=False)}\n```"
+
+
+class ExplodingKnowledge:
+    async def search(self, *a: Any, **kw: Any) -> list:
+        raise RuntimeError("qdrant down")
+
+
+class EmptyKnowledge:
+    async def search(self, *a: Any, **kw: Any) -> list:
+        return []
+
+
+class TestBuildContext:
+    def test_includes_ticker_and_criteria(self):
+        ctx = build_judge_context(CAND, ["ROE 30.2%", "毛利率 91%"])
+        assert "600519" in ctx
+        assert "ROE 30.2%" in ctx
+
+    def test_empty_snippets_ok(self):
+        ctx = build_judge_context(CAND, [])
+        assert "600519" in ctx
+
+
+class TestJudgeOne:
+    async def test_valid(self):
+        llm = FakeLLM([_json_text(VALID_JUDGE)])
+        out = await judge_one(llm, CAND, ["行业格局稳定"], knowledge=EmptyKnowledge())
+        assert out["recommend"] is True
+        assert out["confidence"] == 0.85
+
+    async def test_knowledge_failure_silently_ignored(self):
+        llm = FakeLLM([_json_text(VALID_JUDGE)])
+        out = await judge_one(llm, CAND, ["x"], knowledge=ExplodingKnowledge())
+        assert out["recommend"] is True  # 知识库挂了不阻塞深判
+
+    async def test_bad_json_retries(self):
+        llm = FakeLLM(["坏输出", _json_text(VALID_JUDGE)])
+        out = await judge_one(llm, CAND, ["x"], knowledge=None)
+        assert out["recommend"] is True
+        assert llm.calls == 2
+
+    async def test_double_failure_raises(self):
+        llm = FakeLLM(["坏1", "坏2"])
+        with pytest.raises(ValueError):
+            await judge_one(llm, CAND, ["x"], knowledge=None)
+
+
+class TestJudgeCandidates:
+    async def test_failure_isolated(self):
+        """单只深判失败 → 该只 status=failed，其余正常，循环不中断。"""
+        ok_cand = {**CAND, "ticker": "600519"}
+        bad_cand = {**CAND, "ticker": "300750", "name": "宁德时代"}
+
+        class PickyLLM(FakeLLM):
+            async def generate(self, messages: Any, **kwargs: Any) -> LLMResponse:
+                self.calls += 1
+                # 第二只（宁德时代）返回坏输出两次（触发重试后仍失败）
+                if "宁德时代" in messages[-1].content:
+                    return LLMResponse(content="坏输出", model="fake", usage=None)
+                return LLMResponse(content=_json_text(VALID_JUDGE), model="fake", usage=None)
+
+        results = await judge_candidates(PickyLLM([]), [ok_cand, bad_cand], "标准文本", knowledge=None)
+        assert len(results) == 2
+        by_ticker = {r["ticker"]: r for r in results}
+        assert by_ticker["600519"]["status"] == "ok"
+        assert by_ticker["600519"]["recommend"] is True
+        assert by_ticker["300750"]["status"] == "failed"
+        assert by_ticker["300750"]["error"]
