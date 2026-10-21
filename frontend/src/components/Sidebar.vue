@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { HomeFilled, Lightning, Search, Timer, Briefcase, Document, Collection, TrendCharts, Cpu, Money, Monitor, Setting } from '@element-plus/icons-vue'
+import { HomeFilled, Lightning, Search, Timer, Briefcase, Document, Collection, TrendCharts, Cpu, Money, Monitor, Setting, DataAnalysis } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,6 +15,7 @@ const navItems = [
   { label: '文档', route: '/documents', icon: Document },
   { label: '知识库', route: '/knowledge', icon: Collection },
   { label: '行情', route: '/market', icon: TrendCharts },
+  { label: '智能选股', route: '/screener', icon: DataAnalysis },
   { label: 'AI 中心', route: '/ai', icon: Cpu },
   { label: '自选列表', route: '/portfolio', icon: Money },
   { label: '系统状态', route: '/system', icon: Monitor },

@@ -11,6 +11,7 @@ const router = createRouter({
     { path: '/companies', name: 'companies', component: () => import('@/views/Companies.vue') },
     { path: '/companies/:id', name: 'company-detail', component: () => import('@/views/CompanyDetail.vue') },
     { path: '/market', name: 'market', component: () => import('@/views/Market.vue') },
+    { path: '/screener', name: 'screener', component: () => import('@/views/Screener.vue') },
     { path: '/documents', name: 'documents', component: () => import('@/views/Documents.vue') },
     { path: '/knowledge', name: 'knowledge', component: () => import('@/views/Knowledge.vue') },
     { path: '/ai', name: 'ai', component: () => import('@/views/AICenter.vue') },

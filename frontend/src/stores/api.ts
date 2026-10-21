@@ -605,3 +605,53 @@ export function useCompanyWorkspace(ticker: MaybeRefOrGetter<string>) {
     computed(() => (toValue(ticker) ? `/companies/by-ticker/${encodeURIComponent(toValue(ticker))}/workspace` : '')),
   )
 }
+
+// ── Screener（智能选股）──
+export interface ScreenerRunSummary {
+  id: string; status: string; criteria_hash: string
+  candidate_count: number | null; result_count: number | null
+  report_path: string | null; error: string | null
+  created_at: string | null; finished_at: string | null
+}
+export interface ScreenerJudgement {
+  ticker: string; name: string; recommend: boolean | null
+  reasons: string[]; criteria_hits: { criterion: string; hit: boolean; evidence?: string }[]
+  confidence: number | null; snapshot: Record<string, any> | null
+  status: string; error: string | null
+}
+export interface ScreenerRunDetail extends ScreenerRunSummary {
+  rules: Record<string, any> | null; started_at: string | null
+  judgements: ScreenerJudgement[]
+}
+
+export function useScreenerRuns() {
+  return useGet<{ runs: ScreenerRunSummary[] }>(['screener-runs'], '/screener/runs')
+}
+export function useScreenerRun(id: MaybeRefOrGetter<string>) {
+  return useGet<ScreenerRunDetail>(
+    computed(() => ['screener-run', toValue(id)]),
+    computed(() => (toValue(id) ? `/screener/runs/${toValue(id)}` : '')),
+  )
+}
+export function useTriggerScreenerRun(invalidateKeys: string[][] = [['screener-runs']]) {
+  return useCreate<{ id: string; status: string }>('/screener/runs', invalidateKeys)
+}
+export function useScreenerCriteria() {
+  return useGet<{ criteria: string }>(['screener-criteria'], '/screener/criteria')
+}
+export function useSaveCriteria() {
+  const qc = useQueryClient()
+  return useMutation<void, Error, { criteria: string }>({
+    mutationFn: (body) => fetchApi('/screener/criteria', { method: 'PUT', body: JSON.stringify(body) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['screener-criteria'] }); qc.invalidateQueries({ queryKey: ['screener-rules'] }) },
+  })
+}
+export function useScreenerRunReport(id: MaybeRefOrGetter<string>) {
+  return useGet<{ report: string }>(
+    computed(() => ['screener-report', toValue(id)]),
+    computed(() => (toValue(id) ? `/screener/runs/${toValue(id)}/report` : '')),
+  )
+}
+export function useScreenerRules() {
+  return useGet<{ rules: Record<string, any> | null; criteria_hash?: string }>(['screener-rules'], '/screener/rules')
+}
