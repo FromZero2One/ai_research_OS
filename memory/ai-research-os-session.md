@@ -11,6 +11,7 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-10-22（Screener 数据补全）**: F10 主要指标全市场采集（`RPT_F10_FINANCE_MAINFINADATA`：`LD`/`SD`/`TOAZZL`/`CHZZL`/`YSZKZZL`/`EPSJB` + 营收/净利同比，A 股前缀过滤）；yjbb 补 eps/营收同比/净利同比映射；新增 revenue_growth / net_income_growth 指标与迁移 `e2b6f4a8c9d1`；高成长预设改用营收/净利同比（>20%）；报告概览标注财务数据截至。实跑：深度价值 50 候选/21 推荐，高成长 106 候选；current_ratio/quick_ratio 覆盖 98.2%。全套 305 passed / 2 failed（research 证据继承依赖真实 light-tier LLM 的预存环境问题，非本次改动）。
 - **2026-10-21**: LLM 智能选股器（Screener）。新模块 `backend/screener/`：用户维护 `screener/criteria.md` 自然语言标准，`POST /screener/runs` 手动触发 → LLM 翻译标准（`ScreenerRule` doc_hash 缓存）→ 确定性初筛（akshare 全市场快照 `stock_zh_a_spot_em` + 股票池过滤 + 量化规则）→ LLM 逐只深判（单只失败隔离，落 `ScreenerJudgement` 备将来回测）→ Markdown 报告（`screener/reports/`，含标准吻合度逐条说明）。新表 screener.screener_runs/judgements/rules（迁移 `b5d2f8a3c6e1`，head）。前端 `/screener` 页（标准编辑 + 触发 + 报告渲染）。v1 不接知识库检索与定时触发；模拟盘明确排除（用户手动）。
 - **2026-10-16**: 跨会话证据继承。auto-gather 第 6 步带入同公司已完成会话证据（`_select_and_inherit`，上限 10 条 + 去重 + 幂等，不走 LLM 二次分类）；Evidence 新列 `inherited_from_session_id`（迁移 `a9c4d7e2f1b8`）；前端「📥 历史已核实」徽标跳原会话。auto_gather 响应新增 inherited_added。
 - **2026-10-15**: 比率层 + PE/PB 历史分位 + 覆盖矩阵定性维度。新增 `market/ratio_service.py`（compute_ratios/percentile_rank 纯函数 + RatioService + build_ratio_block 报告区块）、新表 `market.valuation_history`（估值历史，PE/PB 分位源，akshare `stock_a_indicator_lg` 兜底采集）、`GET /market/ratios/{ticker}[/valuation-percentile]` 端点、公司详情页比率卡片、覆盖矩阵定性覆盖维度（row.qualitative，年报正文 mda/risk 切片）+ Market.vue 定性列。迁移 head `f3a8c2e1b7d9`。回归 168 passed / 4 failed（均预存 Ollama embeddings 环境依赖）。
@@ -31,6 +32,7 @@ metadata:
 | AI 中心 | ~75% | 模板/摘要/提取/Token 用量统计；AI 工作流已移除（单用户用不上） |
 | 研究中心 | ~92% | 全链路 + plan_type 四模板 + LLM 证据分类 + 多周期/同业比对 + 报告可视化 |
 | 投资组合 | ~40% | 自选已并入公司；持仓/日志仅后端，前端待做 |
+| 智能选股 | ~90% | v1.5 预设库（18 指标 + 5 内置预设 + 组合模式）+ F10 主要指标补采；深度价值/高成长真实跑通；缺财务数据调度、预设回测 |
 | 系统/调度 | ~85% | 调度/观察/任务/事件/新鲜度/覆盖矩阵/Token 用量卡片 |
 
 总体：V1.1 达成，V2 按分析师优先级推进中（见下）。

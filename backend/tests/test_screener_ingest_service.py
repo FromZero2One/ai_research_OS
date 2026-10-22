@@ -9,7 +9,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from market.models import FinancialMetric
-from screener.ingest import ingest_marketwide_bs_cf, ingest_marketwide_yjbb, ingest_single_company
+from screener.ingest import (
+    ingest_marketwide_bs_cf,
+    ingest_marketwide_main_finance,
+    ingest_marketwide_yjbb,
+    ingest_single_company,
+)
 
 
 class TestIngestMarketwideYjbb:
@@ -39,6 +44,64 @@ class TestIngestMarketwideYjbb:
         monkeypatch.setattr("screener.ingest.fetch_yjbb_raw", AsyncMock(return_value=raw))
         n = await ingest_marketwide_yjbb(test_session, date="20240930")
         assert n == 1
+
+    async def test_eps_and_growth_fields_mapped(self, test_session: AsyncSession, monkeypatch):
+        raw = [{
+            "股票代码": "600519",
+            "每股收益": 35.57,
+            "营业总收入-同比增长": 1.30,
+            "净利润-同比增长": -1.95,
+        }]
+        monkeypatch.setattr("screener.ingest.fetch_yjbb_raw", AsyncMock(return_value=raw))
+        await ingest_marketwide_yjbb(test_session, date="20260630")
+        await test_session.flush()
+
+        rows = (await test_session.execute(
+            select(FinancialMetric).where(FinancialMetric.ticker == "600519")
+        )).scalars().all()
+        by_metric = {r.metric_name: r.metric_value for r in rows}
+        assert by_metric["eps"] == 35.57
+        assert by_metric["revenue_growth"] == 1.30
+        assert by_metric["net_income_growth"] == -1.95
+
+
+class TestIngestMarketwideMainFinance:
+    async def test_maps_ratios_and_filters_non_a_share(
+        self, test_session: AsyncSession, monkeypatch
+    ):
+        raw = [
+            {
+                "SECURITY_CODE": "600519",
+                "REPORT_DATE": "2026-06-30 00:00:00",
+                "LD": 5.59,
+                "SD": 4.27,
+                "EPSJB": 35.57,
+                "TOAZZL": 0.30,
+                "CHZZL": 0.15,
+                "YSZKZZL": 100.0,
+                "TOTALOPERATEREVETZ": 1.30,
+                "PARENTNETPROFITTZ": -1.95,
+            },
+            # 新三板 83 前缀：应在入库前被过滤
+            {"SECURITY_CODE": "873283", "REPORT_DATE": "2026-06-30 00:00:00", "LD": 3.6},
+        ]
+        monkeypatch.setattr("screener.ingest.fetch_main_finance_raw", AsyncMock(return_value=raw))
+
+        n = await ingest_marketwide_main_finance(test_session, date="20260630")
+        await test_session.flush()
+
+        assert n == 1
+        rows = (await test_session.execute(select(FinancialMetric))).scalars().all()
+        assert {r.ticker for r in rows} == {"600519"}
+        by_metric = {r.metric_name: r.metric_value for r in rows}
+        assert by_metric["current_ratio"] == 5.59
+        assert by_metric["quick_ratio"] == 4.27
+        assert by_metric["asset_turnover"] == 0.30
+        assert by_metric["inventory_turnover"] == 0.15
+        assert by_metric["receivables_turnover"] == 100.0
+        assert by_metric["eps"] == 35.57
+        assert by_metric["revenue_growth"] == 1.30
+        assert by_metric["net_income_growth"] == -1.95
 
 
 class TestIngestSingleCompany:

@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import json
-
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from market.models import FinancialMetric
-from screener.ingest import fetch_yjbb_raw, upsert_metrics
+from screener.ingest import fetch_main_finance_raw, fetch_yjbb_raw, upsert_metrics
 
 
 class TestFetchYjbbRaw:
@@ -29,6 +27,52 @@ class TestFetchYjbbRaw:
         monkeypatch.setattr("screener.ingest._run_child", _boom)
         with pytest.raises(RuntimeError):
             await fetch_yjbb_raw("20240930")
+
+
+class TestFetchMainFinanceRaw:
+    async def test_passes_report_date_filter(self, monkeypatch):
+        captured: dict[str, str] = {}
+
+        def fake_child(code, timeout=180):
+            captured["code"] = code
+            return [{"SECURITY_CODE": "600519"}]
+
+        monkeypatch.setattr("screener.ingest._run_child", fake_child)
+        rows = await fetch_main_finance_raw("20260630")
+        assert rows == [{"SECURITY_CODE": "600519"}]
+        assert "2026-06-30" in captured["code"]
+
+
+class TestParseMainFinanceRow:
+    def test_maps_all_missing_metrics(self):
+        from screener.ingest import parse_main_finance_row
+
+        row = {
+            "EPSJB": 35.57,
+            "LD": 5.59,
+            "SD": 4.27,
+            "TOAZZL": 0.30,
+            "CHZZL": 0.15,
+            "YSZKZZL": 100.0,
+            "TOTALOPERATEREVETZ": 1.30,
+            "PARENTNETPROFITTZ": -1.95,
+        }
+        entries = {e.metric_name: e.metric_value for e in parse_main_finance_row(row, 2026, "Q2")}
+        assert entries == {
+            "eps": 35.57,
+            "current_ratio": 5.59,
+            "quick_ratio": 4.27,
+            "asset_turnover": 0.30,
+            "inventory_turnover": 0.15,
+            "receivables_turnover": 100.0,
+            "revenue_growth": 1.30,
+            "net_income_growth": -1.95,
+        }
+
+    def test_missing_values_skipped(self):
+        from screener.ingest import parse_main_finance_row
+
+        assert parse_main_finance_row({"LD": None, "SECURITY_CODE": "600519"}, 2026, "Q2") == []
 
 
 class TestUpsertMetrics:

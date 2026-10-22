@@ -34,6 +34,9 @@ KNOWN_METRICS: frozenset[str] = frozenset(
         "receivables_turnover",
         "current_ratio",
         "quick_ratio",
+        # 成长率（yjbb 同比 / F10 主要指标）
+        "revenue_growth",
+        "net_income_growth",
     }
 )
 

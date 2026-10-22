@@ -46,6 +46,12 @@ def screener_env(monkeypatch):
     monkeypatch.setattr("screener.service.create_llm", lambda: FakeLLM())
     monkeypatch.setattr("screener.translate.create_llm", lambda: FakeLLM())
 
+    # API 测试不做真实财务数据补采
+    async def _no_ingest(db, needed):
+        return False
+
+    monkeypatch.setattr("screener.service._ensure_market_data", _no_ingest)
+
 
 def _async(value):
     import asyncio

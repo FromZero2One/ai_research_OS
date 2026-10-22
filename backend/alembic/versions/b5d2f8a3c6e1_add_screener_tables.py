@@ -17,12 +17,6 @@ depends_on = None
 
 def upgrade() -> None:
     op.execute("CREATE SCHEMA IF NOT EXISTS screener")
-    # 并发触发防线：同一时刻至多一个进行中的 run
-    op.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_screener_runs_active "
-        "ON screener.screener_runs (status) "
-        "WHERE status IN ('pending', 'screening', 'judging')"
-    )
     op.create_table(
         "screener_runs",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -39,6 +33,12 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=True),
         schema="screener",
+    )
+    # 并发触发防线：同一时刻至多一个进行中的 run（须在建表之后创建）
+    op.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_screener_runs_active "
+        "ON screener.screener_runs (status) "
+        "WHERE status IN ('pending', 'screening', 'judging')"
     )
     op.create_table(
         "screener_judgements",

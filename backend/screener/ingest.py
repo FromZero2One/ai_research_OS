@@ -1,9 +1,10 @@
 """财务数据入库管道 — 用本地 akshare 子进程给 screener 初筛供数。
 
-三层（均为全市场一次调用 ~5000 只）：
-- 业绩报表（stock_yjbb_em）→ roe / gross_margin / revenue / net_income / net_margin
-- 资产负债表（stock_zcfz_em）→ total_assets / total_liabilities / debt_to_equity / current_ratio
+四层（均为全市场一次调用）：
+- 业绩报表（stock_yjbb_em）→ roe / gross_margin / revenue / net_income / net_margin / eps / 成长率
+- 资产负债表（stock_zcfz_em）→ total_assets / total_liabilities / debt_to_equity
 - 现金流量表（stock_xjll_em）→ operating_cash_flow
+- F10 主要指标（RPT_F10_FINANCE_MAINFINADATA）→ current_ratio / quick_ratio / 周转率
 
 单只接口（stock_balance_sheet_by_report_em / stock_cash_flow_sheet_by_report_em）
 保留作兜底，但主路径不再逐只拉取（400+ 子进程调用会拖垮一轮 run）。
@@ -15,6 +16,8 @@ import json
 import math
 import os
 import subprocess
+from datetime import date as _date
+from datetime import timedelta
 
 from market.akshare_executor import to_float
 from market.domain import FinancialMetricEntry
@@ -67,6 +70,9 @@ YJBB_ROW_MAP: dict[str, str] = {
     "gross_margin": "销售毛利率",
     "revenue": "营业总收入-营业总收入",
     "net_income": "净利润-净利润",
+    "eps": "每股收益",
+    "revenue_growth": "营业总收入-同比增长",
+    "net_income_growth": "净利润-同比增长",
 }
 
 
@@ -179,6 +185,38 @@ def parse_cash_flow_row(row: dict) -> list[FinancialMetricEntry]:
     ]
 
 
+# 东财 F10 主要指标（RPT_F10_FINANCE_MAINFINADATA）字段 → 指标键。
+# 注意：该接口的流动比率字段是 LD（不是 CURRENT_RATIO），速动比率是 SD；
+# stock_zcfz_em 原始表并没有 CURRENT_RATIO 列，故 current_ratio 只能从这里补。
+MAIN_FINANCE_ROW_MAP: dict[str, str] = {
+    "eps": "EPSJB",
+    "current_ratio": "LD",
+    "quick_ratio": "SD",
+    "asset_turnover": "TOAZZL",
+    "inventory_turnover": "CHZZL",
+    "receivables_turnover": "YSZKZZL",
+    "revenue_growth": "TOTALOPERATEREVETZ",
+    "net_income_growth": "PARENTNETPROFITTZ",
+}
+
+
+def parse_main_finance_row(row: dict, fiscal_year: int, fiscal_period: str) -> list[FinancialMetricEntry]:
+    """F10 主要指标行 → eps / 流动比率 / 速动比率 / 周转率 / 成长率。"""
+    entries: list[FinancialMetricEntry] = []
+    for metric, column in MAIN_FINANCE_ROW_MAP.items():
+        value = _num(row.get(column))
+        if value is not None:
+            entries.append(
+                FinancialMetricEntry(
+                    fiscal_year=fiscal_year,
+                    fiscal_period=fiscal_period,
+                    metric_name=metric,
+                    metric_value=value,
+                )
+            )
+    return entries
+
+
 # ── 拉取层（子进程） ─────────────────────────────────────────────
 
 
@@ -208,6 +246,39 @@ _AKSHARE_PROLOGUE = (
     "    k.setdefault('max_retries', _retry)\n"
     "    return _orig_init(self, *a, **k)\n"
     "HTTPAdapter.__init__ = _init_with_retry\n"
+)
+
+# 全市场 F10 主要指标（东财 datacenter）。分页 500/页，通常 ~27 页（含新三板）。
+_MAIN_FINANCE_CODE = (
+    _AKSHARE_PROLOGUE
+    + "import json, time\n"
+    + "import requests\n"
+    + "_URL = 'https://datacenter.eastmoney.com/securities/api/data/get'\n"
+    + "_rows = []\n"
+    + "_page = 1\n"
+    + "while True:\n"
+    + "    _params = {\n"
+    + "        'type': 'RPT_F10_FINANCE_MAINFINADATA',\n"
+    + "        'sty': 'APP_F10_MAINFINADATA',\n"
+    + "        'quoteColumns': '',\n"
+    + "        'filter': \"(REPORT_DATE='__DATE__')\",\n"
+    + "        'p': str(_page),\n"
+    + "        'ps': '500',\n"
+    + "        'sr': '-1',\n"
+    + "        'st': 'REPORT_DATE',\n"
+    + "        'source': 'HSF10',\n"
+    + "        'client': 'PC',\n"
+    + "    }\n"
+    + "    _r = requests.get(_URL, params=_params, timeout=60)\n"
+    + "    _r.raise_for_status()\n"
+    + "    _res = _r.json().get('result') or {}\n"
+    + "    _batch = _res.get('data') or []\n"
+    + "    _rows.extend(_batch)\n"
+    + "    if not _batch or _page >= int(_res.get('pages') or 1):\n"
+    + "        break\n"
+    + "    _page += 1\n"
+    + "    time.sleep(0.2)\n"
+    + "print('__R__:' + json.dumps(_rows, ensure_ascii=False, default=str))\n"
 )
 
 
@@ -255,6 +326,15 @@ async def fetch_xjll_raw(date: str) -> list[dict]:
         + 'print("__R__:" + json.dumps(df.to_dict(orient="records"), ensure_ascii=False, default=str))\n'
     )
     return await asyncio.to_thread(_run_child, code, 300)
+
+
+async def fetch_main_finance_raw(date: str) -> list[dict]:
+    """全市场 F10 主要指标原始行（date 形如 '20260630'）。"""
+    import asyncio
+
+    date_fmt = f"{date[:4]}-{date[4:6]}-{date[6:8]}"
+    code = _MAIN_FINANCE_CODE.replace("__DATE__", date_fmt)
+    return await asyncio.to_thread(_run_child, code, 420)
 
 
 def _child_single(ticker: str, fn: str) -> dict:
@@ -334,15 +414,11 @@ async def ingest_single_company(db, ticker: str) -> int:
     return total
 
 
-def _latest_report_date(today: date | None = None) -> str:
+def _latest_report_date(today: _date | None = None) -> str:
     """今天 → 最近一个已披露的季度末 'YYYYMMDD'（季报披露滞后约 1 个月）。"""
-    from datetime import date as _date
-
     today = today or _date.today()
     quarter_ends = [(3, 31), (6, 30), (9, 30), (12, 31)]
     # 披露滞后：季末后 45 天内用上一期
-    from datetime import timedelta
-
     anchor = today - timedelta(days=45)
     candidates = [_date(anchor.year, m, d) for m, d in quarter_ends]
     past = [d for d in candidates if d <= anchor]
@@ -394,6 +470,39 @@ async def ingest_marketwide_xjll(db, date: str) -> int:
     return ok
 
 
+# 当前选股池只覆盖 A 股（沪/深/北交所）；F10 全市场接口还含新三板，入库前过滤。
+_A_SHARE_PREFIXES = ("00", "30", "60", "68", "92")
+
+
+async def ingest_marketwide_main_finance(db, date: str | None = None) -> int:
+    """全市场 F10 主要指标灌库（eps/流动/速动/周转/成长率）。
+
+    接口返回含新三板（83/87/4x 等），只保留 A 股前缀，避免无关数据入库。
+    返回成功入库的公司数。
+    """
+    from core.logging import logger
+
+    date = date or _latest_report_date()
+    raw = await fetch_main_finance_raw(date)
+    ok = 0
+    for row in raw:
+        ticker = str(row.get("SECURITY_CODE") or "").strip()
+        if len(ticker) != 6 or not ticker.isdigit() or not ticker.startswith(_A_SHARE_PREFIXES):
+            continue
+        try:
+            year, period = _fiscal(
+                str(row.get("REPORT_DATE") or f"{date[:4]}-{date[4:6]}-{date[6:8]} 00:00:00")
+            )
+            entries = parse_main_finance_row(row, year, period)
+            if entries:
+                await upsert_metrics(db, ticker, entries)
+                ok += 1
+        except Exception as e:  # noqa: BLE001 — 单行失败不阻塞全市场
+            logger.warning("F10 主要指标行入库失败 %s: %s", ticker, e)
+    logger.info("全市场 F10 主要指标入库: %d/%d 家", ok, len(raw))
+    return ok
+
+
 async def ingest_marketwide_bs_cf(db, date: str | None = None) -> int:
     """全市场 bs/cf 灌库（zcfz + xjll 各一次调用，替代逐只补采）。
 
@@ -421,9 +530,11 @@ async def ingest_marketwide_bs_cf(db, date: str | None = None) -> int:
 # 指标 → 单位（FinancialMetricUnit 值）
 _UNIT_MAP = {
     "roe": "%", "gross_margin": "%", "net_margin": "%",
-    "revenue": "元", "net_income": "元", "operating_cash_flow": "元",
+    "revenue": "元", "net_income": "元", "eps": "元", "operating_cash_flow": "元",
     "total_assets": "元", "total_liabilities": "元",
-    "debt_to_equity": "%", "current_ratio": "倍",
+    "debt_to_equity": "%", "current_ratio": "倍", "quick_ratio": "倍",
+    "asset_turnover": "次", "inventory_turnover": "次", "receivables_turnover": "次",
+    "revenue_growth": "%", "net_income_growth": "%",
 }
 
 

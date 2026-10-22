@@ -18,7 +18,7 @@ from core.logging import logger
 from screener import screening
 from screener.criteria import read_criteria
 from screener.judge import judge_candidates
-from screener.models import ScreenerJudgement, ScreenerRule, ScreenerRun
+from screener.models import ScreenerJudgement, ScreenerRun
 from screener.pool import filter_pool
 from screener.report import build_report, report_path_for
 from screener.rules_schema import hash_criteria
@@ -46,6 +46,107 @@ async def _reload_financials(db: AsyncSession) -> dict[str, list]:
             )
         )
     return financials
+
+
+_YJBB_METRICS = frozenset({"roe", "gross_margin", "net_margin", "revenue", "net_income"})
+_MAIN_FINANCE_METRICS = frozenset({
+    "eps", "current_ratio", "quick_ratio", "asset_turnover",
+    "inventory_turnover", "receivables_turnover",
+    "revenue_growth", "net_income_growth",
+})
+_BS_CF_METRICS = frozenset({
+    "total_assets", "total_liabilities", "debt_to_equity", "operating_cash_flow",
+})
+_MONTH_TO_PERIOD = {3: "Q1", 6: "Q2", 9: "Q3", 12: "Q4"}
+_PERIOD_RANK = {"Q1": 1, "Q2": 2, "Semi": 2, "Q3": 3, "Q4": 4, "Annual": 4}
+_PERIOD_END = {
+    "Q1": "03-31", "Q2": "06-30", "Semi": "06-30",
+    "Q3": "09-30", "Q4": "12-31", "Annual": "12-31",
+}
+
+
+def _latest_fiscal() -> tuple[str, int, str]:
+    """最近已披露报告期 (YYYYMMDD, year, Qn)。"""
+    from screener.ingest import _latest_report_date
+
+    date = _latest_report_date()
+    return date, int(date[:4]), _MONTH_TO_PERIOD[int(date[4:6])]
+
+
+async def _missing_metric_keys(
+    db: AsyncSession, needed: set[str], year: int, period: str
+) -> set[str]:
+    """needed 中在指定报告期尚无数据的指标键。"""
+    from market.models import FinancialMetric
+
+    needed = set(needed) & (_YJBB_METRICS | _MAIN_FINANCE_METRICS | _BS_CF_METRICS)
+    if not needed:
+        return set()
+    present = set(
+        (
+            await db.execute(
+                select(FinancialMetric.metric_name)
+                .where(
+                    FinancialMetric.metric_name.in_(needed),
+                    FinancialMetric.fiscal_year == year,
+                    FinancialMetric.fiscal_period == period,
+                )
+                .distinct()
+            )
+        ).scalars().all()
+    )
+    return needed - present
+
+
+async def _ensure_market_data(db: AsyncSession, needed: set[str]) -> bool:
+    """按需补齐最新报告期的财务指标；返回是否发生入库（调用方需重新 reload）。
+
+    缺数据会让量化规则直接排除候选，因此必须在初筛前补齐，而不是等
+    `passed` 为空后再补。三类数据源互相隔离，单个失败只记录、不中断整次运行。
+    """
+    date, year, period = _latest_fiscal()
+    changed = False
+
+    async def _try(loader, label: str) -> bool:
+        try:
+            await db.flush()
+            # SAVEPOINT 隔离：补采失败只回滚本次采集，不污染 run 所在事务
+            async with db.begin_nested():
+                await loader()
+            return True
+        except Exception as e:  # noqa: BLE001 — 数据源故障降级为“缺数据”
+            logger.warning("%s 补采失败: %s", label, e)
+            return False
+
+    missing = await _missing_metric_keys(db, needed, year, period)
+    if missing & _YJBB_METRICS:
+        from screener.ingest import ingest_marketwide_yjbb
+
+        changed |= await _try(lambda: ingest_marketwide_yjbb(db, date), "yjbb")
+
+    missing = await _missing_metric_keys(db, needed, year, period)
+    if missing & _MAIN_FINANCE_METRICS:
+        from screener.ingest import ingest_marketwide_main_finance
+
+        changed |= await _try(lambda: ingest_marketwide_main_finance(db, date), "F10 主要指标")
+
+    missing = await _missing_metric_keys(db, needed, year, period)
+    if missing & _BS_CF_METRICS:
+        from screener.ingest import ingest_marketwide_bs_cf
+
+        changed |= await _try(lambda: ingest_marketwide_bs_cf(db, date), "资产负债表/现金流")
+
+    return changed
+
+
+def _financial_asof(financials: dict[str, list]) -> str | None:
+    """财务数据最新报告期（用于报告标注）。"""
+    periods = {(e.fiscal_year, e.fiscal_period) for entries in financials.values() for e in entries}
+    if not periods:
+        return None
+    year, period = max(periods, key=lambda p: (p[0], _PERIOD_RANK.get(p[1], 0)))
+    end = _PERIOD_END.get(period)
+    return f"{year}{period}（{year}-{end}）" if end else f"{year}{period}"
 
 
 async def trigger_run(db: AsyncSession, params: dict | None = None) -> ScreenerRun | None:
@@ -95,8 +196,15 @@ async def trigger_run(db: AsyncSession, params: dict | None = None) -> ScreenerR
         if missing:
             raise ValueError(f"预设不存在: {missing}")
 
-        names = " + ".join(r.name for r in rows)
+        # 保持用户选择顺序；深判无定性条目时会回退用 criteria_text，
+        # 因此把预设描述一并带上，避免退化成「预设组合（核心资产）」这类空泛标签。
+        by_id = {str(r.id): r for r in rows}
+        ordered = [by_id[str(i)] for i in parsed_ids if str(i) in by_id]
+        names = " + ".join(r.name for r in ordered)
         criteria_text = f"预设组合（{combine}）：{names}"
+        descriptions = "；".join(f"{r.name}：{r.description}" for r in ordered if r.description)
+        if descriptions:
+            criteria_text += f"\n投资逻辑：{descriptions}"
         run = ScreenerRun(
             criteria_hash=hash_criteria(criteria_text + "|" + "|".join(sorted(found))),
             criteria_text=criteria_text,
@@ -138,7 +246,6 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
         presets = None
         if run.mode == "presets":
             from screener.compose import compose_rules
-
             from screener.models import CriteriaPreset
 
             rows = (
@@ -171,25 +278,28 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
 
         financials = await _reload_financials(db)
 
+        # 先补齐所需财务指标，再做确定性初筛：缺数据会让规则直接排除候选，
+        # 因此不能等 passed 为空后再补采。
+        if run.mode == "presets":
+            needed_metrics = {r["metric"] for p in presets for r in p.quant_rules}
+        else:
+            needed_metrics = {r["metric"] for r in rules.get("quant_rules", [])}
+        if await _ensure_market_data(db, needed_metrics):
+            financials = await _reload_financials(db)
+
         if run.mode == "presets" and run.combine_mode == "union":
             # union：每个预设独立初筛 → 票数排名（hits ↓ → score ↓ → 市值 ↓）
             from screener.compose import evaluate_quant_rules_by_preset
-
-            need_metrics_union = {r["metric"] for p in presets for r in p.quant_rules}
-            needs_bs_cf_union = bool(need_metrics_union & {"total_assets", "total_liabilities", "debt_to_equity", "current_ratio", "operating_cash_flow"})
-            if needs_bs_cf_union:
-                # 预设依赖 bs/cf 指标：全市场一次灌库（zcfz+xjll 各一个子进程调用）
-                from screener.ingest import ingest_marketwide_bs_cf
-
-                await db.flush()
-                await ingest_marketwide_bs_cf(db)
-                financials = await _reload_financials(db)
 
             union_map = evaluate_quant_rules_by_preset(pool, presets, financials)
             spot_by_ticker = {c["ticker"]: c for c in pool}
             ranked = sorted(
                 union_map.values(),
-                key=lambda e: (e["hits"], e["score"], spot_by_ticker.get(e["ticker"], {}).get("market_cap") or 0.0),
+                key=lambda e: (
+                    e["hits"],
+                    e["score"],
+                    spot_by_ticker.get(e["ticker"], {}).get("market_cap") or 0.0,
+                ),
                 reverse=True,
             )
             candidates = [
@@ -198,20 +308,12 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
             ]
             excluded_missing: list[dict] = []
         else:
-            passed, excluded_missing = screening.evaluate_quant_rules(pool, rules.get("quant_rules", []), financials)
-
-            # 候选缺 bs/cf 类指标（资产负债表/现金流）→ 全市场一次灌库后重筛
-            from screener.ingest import ingest_marketwide_bs_cf
-
-            need_metrics = {r["metric"] for r in rules.get("quant_rules", [])}
-            needs_bs_cf = bool(need_metrics & {"total_assets", "total_liabilities", "debt_to_equity", "current_ratio", "operating_cash_flow"})
-            if needs_bs_cf and passed:
-                await db.flush()
-                await ingest_marketwide_bs_cf(db)
-                financials = await _reload_financials(db)
-                passed, excluded_missing = screening.evaluate_quant_rules(pool, rules.get("quant_rules", []), financials)
-
-            candidates = screening.rank_candidates(passed, limit=rules.get("candidate_limit", 50))
+            passed, excluded_missing = screening.evaluate_quant_rules(
+                pool, rules.get("quant_rules", []), financials
+            )
+            candidates = screening.rank_candidates(
+                passed, limit=rules.get("candidate_limit", 50)
+            )
         run.candidate_count = len(candidates)
         run.status = "judging"
         await db.flush()
@@ -231,6 +333,7 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
             {"id": str(run.id), "candidate_count": run.candidate_count,
              "result_count": sum(1 for j in judgements if j.get("recommend") is True)},
             judgements, run.criteria_text, excluded_missing,
+            financial_asof=_financial_asof(financials),
         )
         path = report_path_for(str(run.id))
         path.parent.mkdir(parents=True, exist_ok=True)

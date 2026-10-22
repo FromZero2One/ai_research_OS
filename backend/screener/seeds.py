@@ -20,17 +20,19 @@ BUILTIN_METRICS: list[dict] = [
     {"key": "net_margin", "name_cn": "销售净利率(%)", "category": "profitability", "data_source": "yjbb", "description": "净利润 / 营业收入"},
     {"key": "revenue", "name_cn": "营业收入(元)", "category": "growth", "data_source": "yjbb", "description": "报告期营业收入"},
     {"key": "net_income", "name_cn": "净利润(元)", "category": "growth", "data_source": "yjbb", "description": "报告期归母净利润"},
+    {"key": "revenue_growth", "name_cn": "营业收入同比(%)", "category": "growth", "data_source": "yjbb", "description": "营业总收入同比增长率"},
+    {"key": "net_income_growth", "name_cn": "净利润同比(%)", "category": "growth", "data_source": "yjbb", "description": "归母净利润同比增长率"},
     {"key": "eps", "name_cn": "每股收益(元)", "category": "profitability", "data_source": "yjbb", "description": "基本每股收益"},
-    # 资产负债表
-    {"key": "debt_to_equity", "name_cn": "资产负债率(%)", "category": "solvency", "data_source": "balance_sheet", "description": "总负债 / 总资产"},
-    {"key": "current_ratio", "name_cn": "流动比率", "category": "solvency", "data_source": "balance_sheet", "description": "流动资产 / 流动负债"},
-    {"key": "quick_ratio", "name_cn": "速动比率", "category": "solvency", "data_source": "balance_sheet", "description": "(流动资产-存货) / 流动负债"},
+    # 资产负债表 / F10 主要指标
+    {"key": "debt_to_equity", "name_cn": "负债权益比(%)", "category": "solvency", "data_source": "balance_sheet", "description": "总负债 / 股东权益 × 100（D/E）"},
+    {"key": "current_ratio", "name_cn": "流动比率", "category": "solvency", "data_source": "main_finance", "description": "流动资产 / 流动负债"},
+    {"key": "quick_ratio", "name_cn": "速动比率", "category": "solvency", "data_source": "main_finance", "description": "(流动资产-存货) / 流动负债"},
     # 现金流量表
     {"key": "operating_cash_flow", "name_cn": "经营现金流净额(元)", "category": "cashflow", "data_source": "cash_flow", "description": "经营活动产生的现金流量净额"},
-    # 营运效率
-    {"key": "asset_turnover", "name_cn": "总资产周转率", "category": "profitability", "data_source": "balance_sheet", "description": "营业收入 / 平均总资产"},
-    {"key": "inventory_turnover", "name_cn": "存货周转率", "category": "profitability", "data_source": "balance_sheet", "description": "营业成本 / 平均存货"},
-    {"key": "receivables_turnover", "name_cn": "应收账款周转率", "category": "profitability", "data_source": "balance_sheet", "description": "营业收入 / 平均应收账款"},
+    # 营运效率（F10 主要指标）
+    {"key": "asset_turnover", "name_cn": "总资产周转率", "category": "profitability", "data_source": "main_finance", "description": "营业收入 / 平均总资产"},
+    {"key": "inventory_turnover", "name_cn": "存货周转率", "category": "profitability", "data_source": "main_finance", "description": "营业成本 / 平均存货"},
+    {"key": "receivables_turnover", "name_cn": "应收账款周转率", "category": "profitability", "data_source": "main_finance", "description": "营业收入 / 平均应收账款"},
 ]
 
 # ── 内置五套预设（spec「内置五套预设」一节逐字落地）──────────────────────
@@ -53,14 +55,16 @@ BUILTIN_PRESETS: list[dict] = [
     },
     {
         "name": "高成长",
-        "description": "费雪式：盈利能力达标的中大市值成长股，配合定性赛道判断",
+        "description": "费雪式：营收与净利润双高增长的中大市值成长股，配合定性赛道判断",
         "style_tag": "growth",
         "quant_rules": [
+            {"metric": "revenue_growth", "op": ">", "value": 20, "missing_data_policy": _EX},
+            {"metric": "net_income_growth", "op": ">", "value": 20, "missing_data_policy": _EX},
             {"metric": "roe", "op": ">", "value": 12, "missing_data_policy": _EX},
             {"metric": "net_margin", "op": ">", "value": 8, "missing_data_policy": _EX},
             {"metric": "market_cap", "op": ">", "value": 1e10, "missing_data_policy": _EX},
         ],
-        "qualitative": ["所处行业渗透率正在提升", "增长由主营业务驱动", "细分行业排名前二"],
+        "qualitative": ["所处行业渗透率持续提升", "增长由主营业务驱动", "细分行业排名前二"],
         "suggested_pool": "all",
     },
     {

@@ -55,6 +55,12 @@ def screener_env(monkeypatch):
     monkeypatch.setattr("screener.service.create_llm", lambda: FakeLLM())
     monkeypatch.setattr("screener.translate.create_llm", lambda: FakeLLM())
 
+    # 单测不做真实财务数据补采（网络 + 会改变“空财务数据”的断言）
+    async def _no_ingest(db, needed):
+        return False
+
+    monkeypatch.setattr("screener.service._ensure_market_data", _no_ingest)
+
 
 async def _builtin_ids(db: AsyncSession, tags: list[str]) -> list:
     rows = (

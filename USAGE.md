@@ -582,7 +582,7 @@ POST /api/v1/scheduler/observe          # 手动触发一次观察
 
 **预设模式（推荐，零 LLM 翻译，结果可复现）**：
 1. 打开 `/screener`，触发区切换到「预设模式」
-2. 多选预设（5 套内置：核心资产/高成长/深度价值/质量价值GARP/周期反转，也可自建）
+2. 多选预设（5 套内置：核心资产/高成长/深度价值/质量价值GARP/周期反转，也可自建；首次进入默认勾选全部内置预设）
 3. 选组合方式：union（命中任一）/ intersection（全部命中）/ flatten（合并规则）
 4. 触发运行 → 报告中每只推荐股标注命中预设
 
@@ -592,7 +592,7 @@ POST /api/v1/scheduler/observe          # 手动触发一次观察
 
 **API**：
 ```
-GET  /api/v1/screener/metrics              # 16 个标准化指标
+GET  /api/v1/screener/metrics              # 18 个标准化指标（含营收/净利同比）
 GET  /api/v1/screener/presets              # 预设列表（含内置）
 POST /api/v1/screener/runs                 # Body: {"mode": "presets", "pool": "all", "preset_ids": [...], "combine": "union"}
 GET  /api/v1/screener/runs/{id}            # 运行详情（含逐只判断）
@@ -601,7 +601,9 @@ GET  /api/v1/screener/runs/{id}/report     # Markdown 报告
 
 > 全流程约 2-10 分钟（全市场快照 + 财务补采 + LLM 深判）。报告落 `backend/screener/reports/`。
 >
-> ⚠️ **数据时效**：筛选基于最近入库的财务数据（业绩报表/资产负债表/现金流）。数据更新暂无自动调度，长期未更新时会用过期数据筛选——关注报告中的报告期标注，或手动检查 `GET /api/v1/market/freshness/coverage`。
+> **数据来源**：业绩报表（`stock_yjbb_em`）提供 ROE/毛利率/净利率/EPS/营收与净利同比；资产负债表与现金流（`stock_zcfz_em`/`stock_xjll_em`）提供规模、负债率与经营现金流；流动/速动比率与三项周转率来自东财 F10 主要指标（`RPT_F10_FINANCE_MAINFINADATA`）。缺失指标会在初筛前按需补采。
+>
+> ⚠️ **数据时效**：筛选基于最近入库的财务数据。报告概览会标注「财务数据截至 YYYYQn」；自动更新调度尚未接入，长期未运行时注意报告期，或手动检查 `GET /api/v1/market/freshness/coverage`。
 
 ---
 

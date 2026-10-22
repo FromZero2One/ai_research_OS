@@ -6,12 +6,14 @@ import { marked } from 'marked'
 import {
   useSaveCriteria,
   useScreenerCriteria,
+  useScreenerMetrics,
   useScreenerPresets,
   useScreenerRun,
   useScreenerRunReport,
   useScreenerRuns,
   useTriggerScreenerRun,
   useTriggerScreenerRunPresets,
+  type ScreenerPreset,
   type ScreenerRunSummary,
 } from '@/stores/api'
 import PresetManager from '@/components/PresetManager.vue'
@@ -82,6 +84,50 @@ const selectedPresetIds = ref<string[]>([])
 const combineMode = ref<'union' | 'intersection' | 'flatten'>('union')
 const pool = ref('all')
 const showPresetManager = ref(false)
+
+// 指标中文名，用于卡片上的规则摘要
+const { data: metricsData } = useScreenerMetrics()
+const metricNames = computed(
+  () => new Map((metricsData.value?.metrics || []).map((m) => [m.key, m.name_cn])),
+)
+
+// 首次加载默认勾选内置标准；之后只裁剪已停用的预设，不覆盖用户选择
+const defaultPresetSelectionApplied = ref(false)
+watch(activePresets, (list) => {
+  if (!list.length) return
+  if (!defaultPresetSelectionApplied.value) {
+    selectedPresetIds.value = list.filter((p) => p.is_builtin).map((p) => p.id)
+    defaultPresetSelectionApplied.value = true
+  } else {
+    const activeIds = new Set(list.map((p) => p.id))
+    selectedPresetIds.value = selectedPresetIds.value.filter((id) => activeIds.has(id))
+  }
+}, { immediate: true })
+
+function selectAllActive() {
+  selectedPresetIds.value = activePresets.value.map((p) => p.id)
+}
+
+function togglePresetSelection(id: string) {
+  selectedPresetIds.value = selectedPresetIds.value.includes(id)
+    ? selectedPresetIds.value.filter((x) => x !== id)
+    : [...selectedPresetIds.value, id]
+}
+
+function formatThreshold(metric: string, value: number): string {
+  if (metric === 'market_cap') {
+    return `${(value / 100_000_000).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}亿`
+  }
+  return value.toLocaleString('zh-CN', { maximumFractionDigits: 2 })
+}
+
+function presetRuleSummary(p: ScreenerPreset): string {
+  const rules = p.quant_rules.map(
+    (r) => `${metricNames.value.get(r.metric) || r.metric} ${r.op} ${formatThreshold(r.metric, r.value)}`,
+  )
+  const shown = rules.slice(0, 4).join(' · ')
+  return rules.length > 4 ? `${shown} · +${rules.length - 4}` : shown
+}
 
 const _POOLS = [
   { value: 'all', label: '全市场' },
@@ -179,8 +225,15 @@ function viewReport(run: ScreenerRunSummary) {
             </div>
             <div class="preset-section">
               <div class="section-label">
-                选择预设
-                <el-button size="small" link type="primary" @click="showPresetManager = true">管理预设</el-button>
+                <span>
+                  选择预设
+                  <span class="section-hint">已选 {{ selectedPresetIds.length }}/{{ activePresets.length }}，默认勾选内置标准</span>
+                </span>
+                <span class="section-actions">
+                  <el-button size="small" link type="primary" @click="selectAllActive">全选</el-button>
+                  <el-button size="small" link @click="selectedPresetIds = []">清空</el-button>
+                  <el-button size="small" link type="primary" @click="showPresetManager = true">管理预设</el-button>
+                </span>
               </div>
               <el-empty v-if="!activePresets.length" description="暂无启用的预设，点击「管理预设」新建" :image-size="48" />
               <div class="preset-cards">
@@ -189,12 +242,23 @@ function viewReport(run: ScreenerRunSummary) {
                   :key="p.id"
                   class="preset-card"
                   :class="{ selected: selectedPresetIds.includes(p.id) }"
-                  @click="selectedPresetIds.includes(p.id)
-                    ? selectedPresetIds = selectedPresetIds.filter((id) => id !== p.id)
-                    : selectedPresetIds.push(p.id)"
+                  @click="togglePresetSelection(p.id)"
                 >
-                  <div class="preset-card-name">{{ p.name }}</div>
-                  <el-tag v-if="p.style_tag" size="small" class="preset-card-tag">{{ styleLabels[p.style_tag] || p.style_tag }}</el-tag>
+                  <div class="preset-card-head">
+                    <span class="preset-card-name">{{ p.name }}</span>
+                    <span class="preset-card-tags">
+                      <el-tag v-if="p.is_builtin" size="small" type="warning">内置</el-tag>
+                      <el-tag v-if="p.style_tag && styleLabels[p.style_tag] !== p.name" size="small">
+                        {{ styleLabels[p.style_tag] || p.style_tag }}
+                      </el-tag>
+                    </span>
+                  </div>
+                  <div v-if="p.description" class="preset-card-desc">{{ p.description }}</div>
+                  <div class="preset-card-rules">{{ presetRuleSummary(p) }}</div>
+                  <div class="preset-card-foot">
+                    <span v-if="p.qualitative.length" class="preset-card-qual">定性 {{ p.qualitative.length }} 条</span>
+                    <span class="preset-card-check">{{ selectedPresetIds.includes(p.id) ? '✓ 已选' : '选择' }}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -273,17 +337,29 @@ function viewReport(run: ScreenerRunSummary) {
 .run-status { margin-top: 12px; display: flex; align-items: center; gap: 12px; }
 .run-error { margin-top: 8px; color: var(--danger); font-size: 13px; white-space: pre-wrap; }
 .preset-section { margin-bottom: 14px; }
-.section-label { font-size: 13px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+.section-label {
+  font-size: 13px; font-weight: 600; margin-bottom: 6px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.section-hint { margin-left: 6px; font-size: 12px; font-weight: 400; color: var(--text-secondary, #909399); }
+.section-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
 .preset-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .preset-card {
   border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;
-  cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  cursor: pointer; display: flex; flex-direction: column; gap: 5px;
   transition: border-color 0.15s, background 0.15s;
 }
 .preset-card:hover { border-color: var(--primary, #409eff); }
 .preset-card.selected { border-color: var(--primary, #409eff); background: var(--el-color-primary-light-9, #ecf5ff); }
-.preset-card-name { font-size: 13px; font-weight: 500; }
-.preset-card-tag { flex-shrink: 0; }
+.preset-card-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.preset-card-name { font-size: 13px; font-weight: 600; }
+.preset-card-tags { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.preset-card-desc { font-size: 12px; color: var(--text-secondary, #909399); line-height: 1.4; }
+.preset-card-rules { font-size: 12px; line-height: 1.45; color: var(--text-regular, #606266); }
+.preset-card-foot { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
+.preset-card-qual { color: var(--text-secondary, #909399); }
+.preset-card-check { color: var(--primary, #409eff); font-weight: 500; }
+.preset-card:not(.selected) .preset-card-check { color: var(--text-secondary, #909399); font-weight: 400; }
 .freeform-hint { font-size: 13px; margin-bottom: 8px; }
 .report-md :deep(h1) { font-size: 20px; margin: 12px 0; }
 .report-md :deep(h2) { font-size: 16px; margin: 16px 0 8px; }

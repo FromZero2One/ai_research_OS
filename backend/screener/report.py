@@ -51,6 +51,7 @@ def build_report(
     judgements: list[dict],
     criteria_text: str,
     excluded_missing_data: list[dict],
+    financial_asof: str | None = None,
 ) -> str:
     """生成选股报告 Markdown。"""
     recommended = [j for j in judgements if j.get("status") == "ok" and j.get("recommend") is True]
@@ -66,6 +67,8 @@ def build_report(
         f"- 候选数：{run.get('candidate_count', 0)} ｜ 推荐数：{len(recommended)} ｜ "
         f"深判失败：{len(failed)}"
     )
+    if financial_asof:
+        lines.append(f"- 财务数据截至：{financial_asof}")
     lines.append("")
     lines.append("## 推荐列表")
     lines.append("")
@@ -106,26 +109,57 @@ def build_report(
     lines.append("## 标准吻合度说明")
     lines.append("")
     ok_judgements = recommended + rejected
-    for item in _extract_criteria_items(criteria_text):
-        hits = [j for j in ok_judgements if any(
-            h.get("hit") and item in str(h.get("criterion", "")) for h in (j.get("criteria_hits") or [])
-        )]
-        misses = [j for j in ok_judgements if any(
-            not h.get("hit") and item in str(h.get("criterion", "")) for h in (j.get("criteria_hits") or [])
-        )]
-        if hits:
-            sample = hits[0]
-            evidence = next(
-                (h.get("evidence", "") for h in sample.get("criteria_hits") or [] if h.get("hit") and item in str(h.get("criterion", ""))),
-                "",
-            )
-            lines.append(
-                f"- **{item}**：命中 {len(hits)} 只（如 {sample['name']} — {evidence or '见理由'}）"
-            )
-        elif misses:
-            lines.append(f"- **{item}**：{len(misses)} 只候选未命中该条")
-        else:
-            lines.append(f"- **{item}**：本次候选无相关判断记录")
+    if preset_mode:
+        # 预设模式的 criteria_text 是组合标签/投资逻辑，不是逐条标准；
+        # 直接按深判返回的 criteria_hits 统计，避免文本匹配落空。
+        order: list[str] = []
+        stats: dict[str, dict] = {}
+        for j in ok_judgements:
+            for h in j.get("criteria_hits") or []:
+                criterion = str(h.get("criterion", "")).strip()
+                if not criterion:
+                    continue
+                if criterion not in stats:
+                    order.append(criterion)
+                    stats[criterion] = {"hits": 0, "misses": 0, "sample": None}
+                if h.get("hit"):
+                    stats[criterion]["hits"] += 1
+                    if stats[criterion]["sample"] is None:
+                        stats[criterion]["sample"] = (j["name"], h.get("evidence") or "见理由")
+                else:
+                    stats[criterion]["misses"] += 1
+        if not order:
+            lines.append("- 本次深判未返回标准命中明细")
+        for criterion in order:
+            s = stats[criterion]
+            if s["hits"]:
+                name, evidence = s["sample"]
+                lines.append(f"- **{criterion}**：命中 {s['hits']} 只（如 {name} — {evidence}）")
+            elif s["misses"]:
+                lines.append(f"- **{criterion}**：{s['misses']} 只候选未命中该条")
+            else:
+                lines.append(f"- **{criterion}**：本次候选无相关判断记录")
+    else:
+        for item in _extract_criteria_items(criteria_text):
+            hits = [j for j in ok_judgements if any(
+                h.get("hit") and item in str(h.get("criterion", "")) for h in (j.get("criteria_hits") or [])
+            )]
+            misses = [j for j in ok_judgements if any(
+                not h.get("hit") and item in str(h.get("criterion", "")) for h in (j.get("criteria_hits") or [])
+            )]
+            if hits:
+                sample = hits[0]
+                evidence = next(
+                    (h.get("evidence", "") for h in sample.get("criteria_hits") or [] if h.get("hit") and item in str(h.get("criterion", ""))),
+                    "",
+                )
+                lines.append(
+                    f"- **{item}**：命中 {len(hits)} 只（如 {sample['name']} — {evidence or '见理由'}）"
+                )
+            elif misses:
+                lines.append(f"- **{item}**：{len(misses)} 只候选未命中该条")
+            else:
+                lines.append(f"- **{item}**：本次候选无相关判断记录")
     lines.append("")
 
     lines.append("## 附：候选但未推荐")

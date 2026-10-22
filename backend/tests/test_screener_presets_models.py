@@ -56,7 +56,7 @@ async def test_builtin_preset_seeds_exist(test_session: AsyncSession):
 
 
 async def test_metric_def_seeds_exist(test_session: AsyncSession):
-    """迁移种子：metric_defs 至少含 10 个核心指标，data_source 正确（snapshot 类 → snapshot）。"""
+    """迁移种子：metric_defs 含核心指标，data_source 与采集层一致。"""
     rows = (await test_session.execute(select(MetricDef))).scalars().all()
     by_key = {r.key: r for r in rows}
 
@@ -64,8 +64,12 @@ async def test_metric_def_seeds_exist(test_session: AsyncSession):
         "roe": "yjbb",
         "net_margin": "yjbb",
         "gross_margin": "yjbb",
+        "revenue_growth": "yjbb",
+        "net_income_growth": "yjbb",
         "debt_to_equity": "balance_sheet",
-        "current_ratio": "balance_sheet",
+        "current_ratio": "main_finance",
+        "quick_ratio": "main_finance",
+        "asset_turnover": "main_finance",
         "operating_cash_flow": "cash_flow",
         "revenue": "yjbb",
         "net_income": "yjbb",
@@ -75,8 +79,8 @@ async def test_metric_def_seeds_exist(test_session: AsyncSession):
     for key, source in expected_sources.items():
         assert key in by_key, f"缺少指标种子: {key}"
         assert by_key[key].data_source == source, f"{key} data_source 应为 {source}"
-    # 种子总量约 15 条
-    assert len(rows) >= 12
+    # 原 16 条 + 新增 2 条成长指标
+    assert len(rows) >= 16
 
 
 async def test_run_v1_mode_columns_nullable(test_session: AsyncSession):

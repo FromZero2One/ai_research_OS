@@ -627,9 +627,9 @@ export interface ScreenerRunDetail extends ScreenerRunSummary {
 export function useScreenerRuns() {
   return useGet<{ runs: ScreenerRunSummary[] }>(['screener-runs'], '/screener/runs')
 }
-export function useScreenerRun(id: MaybeRefOrGetter<string>, opts?: { poll?: MaybeRefOrGetter<boolean> }) {
+export function useScreenerRun(id: MaybeRefOrGetter<string | null>, opts?: { poll?: MaybeRefOrGetter<boolean> }) {
   return useGet<ScreenerRunDetail>(
-    computed(() => ['screener-run', toValue(id)]),
+    computed(() => ['screener-run', toValue(id) ?? '']),
     computed(() => (toValue(id) ? `/screener/runs/${toValue(id)}` : '')),
     {
       refetchInterval: computed(() => (toValue(opts?.poll ?? false) ? 3_000 : false)),
@@ -649,9 +649,9 @@ export function useSaveCriteria() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['screener-criteria'] }); qc.invalidateQueries({ queryKey: ['screener-rules'] }) },
   })
 }
-export function useScreenerRunReport(id: MaybeRefOrGetter<string>) {
+export function useScreenerRunReport(id: MaybeRefOrGetter<string | null>) {
   return useGet<{ report: string }>(
-    computed(() => ['screener-report', toValue(id)]),
+    computed(() => ['screener-report', toValue(id) ?? '']),
     computed(() => (toValue(id) ? `/screener/runs/${toValue(id)}/report` : '')),
   )
 }
