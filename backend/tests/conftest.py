@@ -97,6 +97,11 @@ def _ensure_test_db() -> None:
         ):
             conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
     Base.metadata.create_all(test_engine)
+    # 预设库内置种子（测试库不跑 alembic，与迁移共用唯一事实源）
+    from screener.seeds import insert_builtin_seeds
+
+    with test_engine.begin() as conn:
+        insert_builtin_seeds(conn)
     test_engine.dispose()
 
 
