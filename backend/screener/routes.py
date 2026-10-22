@@ -6,7 +6,7 @@ import uuid
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,7 +14,15 @@ from core.container import Container
 from core.database import get_container, get_db
 from core.exceptions import NotFoundError
 from screener.criteria import read_criteria, write_criteria
-from screener.models import ScreenerJudgement, ScreenerRule, ScreenerRun
+from screener.models import CriteriaPreset, ScreenerJudgement, ScreenerRule, ScreenerRun
+from screener.presets import (
+    BuiltinPresetError,
+    create_preset,
+    delete_preset,
+    list_metrics,
+    list_presets,
+    update_preset,
+)
 
 router = APIRouter(prefix="/screener", tags=["Screener"])
 
@@ -23,13 +31,106 @@ class CriteriaUpdate(BaseModel):
     criteria: str
 
 
+class PresetUpsert(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    style_tag: str | None = None
+    quant_rules: list[dict] | None = None
+    qualitative: list[str] | None = None
+    suggested_pool: str | None = None
+    is_active: bool | None = None
+
+
+class TriggerParams(BaseModel):
+    """POST /runs 可选 body — 缺省 = v1 自由文本模式。"""
+
+    mode: str = "presets"
+    pool: str = "all"
+    preset_ids: list[str] = Field(default_factory=list)
+    combine: str = "union"
+
+
+def _preset_json(p: CriteriaPreset) -> dict:
+    return {
+        "id": str(p.id), "name": p.name, "description": p.description,
+        "style_tag": p.style_tag, "quant_rules": p.quant_rules,
+        "qualitative": p.qualitative, "suggested_pool": p.suggested_pool,
+        "is_builtin": p.is_builtin, "is_active": p.is_active,
+    }
+
+
+@router.get("/metrics")
+async def get_metrics(db: AsyncSession = Depends(get_db)):
+    """指标定义库（按 category, key 排序，前端按分类分组）。"""
+    metrics = await list_metrics(db)
+    return {"metrics": [
+        {"key": m.key, "name_cn": m.name_cn, "category": m.category,
+         "data_source": m.data_source, "description": m.description}
+        for m in metrics
+    ]}
+
+
+@router.get("/presets")
+async def get_presets(include_inactive: bool = False, db: AsyncSession = Depends(get_db)):
+    """预设列表（内置 + 自建）。"""
+    presets = await list_presets(db, include_inactive=include_inactive)
+    return {"presets": [_preset_json(p) for p in presets]}
+
+
+@router.post("/presets", status_code=201)
+async def post_preset(data: PresetUpsert, db: AsyncSession = Depends(get_db)):
+    """新建用户预设。校验失败 → 422。"""
+    try:
+        preset = await create_preset(db, data.model_dump(exclude_none=True))
+    except ValueError as e:
+        return JSONResponse(status_code=422, content={"error": str(e)})
+    return _preset_json(preset)
+
+
+@router.put("/presets/{preset_id}")
+async def put_preset(preset_id: uuid.UUID, data: PresetUpsert, db: AsyncSession = Depends(get_db)):
+    """更新预设；内置预设 → 409（复制后编辑）。"""
+    try:
+        preset = await update_preset(db, preset_id, data.model_dump(exclude_none=True))
+    except BuiltinPresetError as e:
+        return JSONResponse(status_code=409, content={"error": str(e)})
+    except ValueError as e:
+        return JSONResponse(status_code=422, content={"error": str(e)})
+    if preset is None:
+        raise NotFoundError("CriteriaPreset", str(preset_id))
+    return _preset_json(preset)
+
+
+@router.delete("/presets/{preset_id}")
+async def remove_preset(preset_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """删除预设；内置预设 → 409。"""
+    try:
+        deleted = await delete_preset(db, preset_id)
+    except BuiltinPresetError as e:
+        return JSONResponse(status_code=409, content={"error": str(e)})
+    if not deleted:
+        raise NotFoundError("CriteriaPreset", str(preset_id))
+    return {"ok": True}
+
+
 @router.post("/runs", status_code=201)
-async def trigger_run(container: Container = Depends(get_container)):
+async def trigger_run(
+    container: Container = Depends(get_container),
+    params: TriggerParams | None = None,
+):
     """触发一次智能选股（持久后台任务）。已有进行中的运行 → 409。"""
-    run = await container.screener_service.trigger_run()
+    try:
+        run = await container.screener_service.trigger_run(
+            params.model_dump() if params is not None else None
+        )
+    except ValueError as e:
+        return JSONResponse(status_code=422, content={"error": str(e)})
     if run is None:
         return JSONResponse(status_code=409, content={"error": "已有筛选进行中，请等待完成后再触发"})
-    return {"id": str(run.id), "status": run.status, "criteria_hash": run.criteria_hash}
+    return {
+        "id": str(run.id), "status": run.status, "criteria_hash": run.criteria_hash,
+        "mode": run.mode, "combine": run.combine_mode,
+    }
 
 
 @router.get("/runs")

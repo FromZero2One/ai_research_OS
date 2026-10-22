@@ -246,8 +246,8 @@ class ScreenerService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def trigger_run(self) -> ScreenerRun | None:
-        return await trigger_run(self.db)
+    async def trigger_run(self, params: dict | None = None) -> ScreenerRun | None:
+        return await trigger_run(self.db, params)
 
 
 async def run_screener_by_id(run_id: str) -> None:
