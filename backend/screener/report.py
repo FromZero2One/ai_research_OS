@@ -32,6 +32,20 @@ def _extract_criteria_items(criteria_text: str) -> list[str]:
     return items
 
 
+def _preset_mode(run: dict, judgements: list[dict]) -> bool:
+    """union/intersection 预设模式判定：任一 judgement snapshot 带 presets 标注即启用。"""
+    return any((j.get("snapshot") or {}).get("presets") for j in judgements)
+
+
+def _preset_label(snapshot: dict) -> str:
+    presets = snapshot.get("presets") or []
+    label = " + ".join(presets)
+    hits = snapshot.get("hits")
+    if hits is not None and hits > 1:
+        return f"{label}（{hits} 个）"
+    return label
+
+
 def build_report(
     run: dict,
     judgements: list[dict],
@@ -55,8 +69,19 @@ def build_report(
     lines.append("")
     lines.append("## 推荐列表")
     lines.append("")
+    preset_mode = _preset_mode(run, judgements)
     if not recommended:
         lines.append("本次无推荐 — 初筛候选均未通过定性判断。")
+    elif preset_mode:
+        lines.append("| 代码 | 名称 | 现价 | 总市值 | 置信度 | 命中预设 |")
+        lines.append("|---|---|---|---|---|---|")
+        for j in recommended:
+            snap = j.get("snapshot") or {}
+            lines.append(
+                f"| {j['ticker']} | {j['name']} | {snap.get('price', '-')} | "
+                f"{snap.get('market_cap', '-')} | {j.get('confidence', '-')} | {_preset_label(snap)} |"
+            )
+        lines.append("")
     else:
         lines.append("| 代码 | 名称 | 现价 | 总市值 | 置信度 |")
         lines.append("|---|---|---|---|---|")
@@ -70,6 +95,9 @@ def build_report(
         for j in recommended:
             lines.append(f"### {j['name']}（{j['ticker']}）")
             lines.append("")
+            snap = j.get("snapshot") or {}
+            if preset_mode and snap.get("presets"):
+                lines.append(f"- 命中：{_preset_label(snap)}")
             for reason in j.get("reasons") or []:
                 lines.append(f"- {reason}")
             lines.append("")
