@@ -48,8 +48,13 @@ async def _reload_financials(db: AsyncSession) -> dict[str, list]:
     return financials
 
 
-async def trigger_run(db: AsyncSession) -> ScreenerRun | None:
-    """手动触发一次筛选。已有 pending/running 时返回 None（路由转 409）。"""
+async def trigger_run(db: AsyncSession, params: dict | None = None) -> ScreenerRun | None:
+    """手动触发一次筛选。已有 pending/running 时返回 None（路由转 409）。
+
+    params 形如 {"mode": "presets", "pool": "all", "preset_ids": [...], "combine": "union"}；
+    None = v1 自由文本模式（读 criteria.md，走 LLM 翻译）。
+    preset_ids 引用不存在的预设 → ValueError（路由层转 422）。
+    """
     active = (
         await db.execute(
             select(ScreenerRun).where(ScreenerRun.status.in_(["pending", "screening", "judging"])).limit(1)
@@ -58,8 +63,42 @@ async def trigger_run(db: AsyncSession) -> ScreenerRun | None:
     if active:
         return None
 
-    text = read_criteria()
-    run = ScreenerRun(criteria_hash=hash_criteria(text), criteria_text=text)
+    if params is None:
+        text = read_criteria()
+        run = ScreenerRun(criteria_hash=hash_criteria(text), criteria_text=text)
+    else:
+        from screener.models import CriteriaPreset
+
+        mode = params.get("mode", "presets")
+        preset_ids = params.get("preset_ids") or []
+        combine = params.get("combine", "union")
+        pool = params.get("pool", "all")
+        if mode != "presets":
+            raise ValueError(f"未知触发模式: {mode!r}")
+        if combine not in {"union", "intersection", "flatten"}:
+            raise ValueError(f"未知组合方式: {combine!r}")
+        if not preset_ids:
+            raise ValueError("presets 模式必须选择至少一个预设")
+        rows = (
+            await db.execute(
+                select(CriteriaPreset).where(CriteriaPreset.id.in_(preset_ids))
+            )
+        ).scalars().all()
+        found = {str(r.id) for r in rows}
+        missing = [str(i) for i in preset_ids if str(i) not in found]
+        if missing:
+            raise ValueError(f"预设不存在: {missing}")
+
+        names = " + ".join(r.name for r in rows)
+        criteria_text = f"预设组合（{combine}）：{names}"
+        run = ScreenerRun(
+            criteria_hash=hash_criteria(criteria_text + "|" + "|".join(sorted(found))),
+            criteria_text=criteria_text,
+            mode="presets",
+            preset_ids=[str(i) for i in preset_ids],
+            combine_mode=combine,
+            pool_override=pool,
+        )
     db.add(run)
     await db.flush()
 
@@ -88,9 +127,25 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
     await db.flush()
 
     try:
-        # ① 翻译标准（hash 缓存）
+        # ① 标准来源：presets 模式纯函数组装（零 LLM）；自由文本走 LLM 翻译（hash 缓存）
         llm = create_llm()
-        rules = await get_or_translate_rules(db, run.criteria_text, llm=llm)
+        presets = None
+        if run.mode == "presets":
+            from screener.compose import compose_rules
+
+            from screener.models import CriteriaPreset
+
+            rows = (
+                await db.execute(
+                    select(CriteriaPreset).where(CriteriaPreset.id.in_(run.preset_ids))
+                )
+            ).scalars().all()
+            by_id = {str(p.id): p for p in rows}
+            presets = [by_id[i] for i in run.preset_ids]
+            rules = compose_rules(presets, run.pool_override or "all", run.combine_mode or "union")
+            rules["preset_ids"] = run.preset_ids
+        else:
+            rules = await get_or_translate_rules(db, run.criteria_text, llm=llm)
         run.rules = rules
         await db.flush()
 
@@ -107,21 +162,38 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
 
         financials = await _reload_financials(db)
 
-        passed, excluded_missing = screening.evaluate_quant_rules(pool, rules.get("quant_rules", []), financials)
+        if run.mode == "presets" and run.combine_mode == "union":
+            # union：每个预设独立初筛 → 票数排名（hits ↓ → score ↓ → 市值 ↓）
+            from screener.compose import evaluate_quant_rules_by_preset
 
-        # 候选缺 bs/cf 类指标（资产负债表/现金流）→ 对初筛通过者补采后重筛一次
-        from screener.ingest import ingest_single_company
-
-        need_metrics = {r["metric"] for r in rules.get("quant_rules", [])}
-        needs_bs_cf = bool(need_metrics & {"total_assets", "total_liabilities", "debt_to_equity", "current_ratio", "operating_cash_flow"})
-        if needs_bs_cf and passed:
-            await db.flush()
-            for cand in passed[: rules.get("candidate_limit", 50)]:
-                await ingest_single_company(db, cand["ticker"])
-            financials = await _reload_financials(db)
+            union_map = evaluate_quant_rules_by_preset(pool, presets, financials)
+            spot_by_ticker = {c["ticker"]: c for c in pool}
+            ranked = sorted(
+                union_map.values(),
+                key=lambda e: (e["hits"], e["score"], e.get("market_cap") or 0.0),
+                reverse=True,
+            )
+            candidates = [
+                {**spot_by_ticker[e["ticker"]], **e}
+                for e in ranked[: rules.get("candidate_limit", 50)]
+            ]
+            excluded_missing: list[dict] = []
+        else:
             passed, excluded_missing = screening.evaluate_quant_rules(pool, rules.get("quant_rules", []), financials)
 
-        candidates = screening.rank_candidates(passed, limit=rules.get("candidate_limit", 50))
+            # 候选缺 bs/cf 类指标（资产负债表/现金流）→ 对初筛通过者补采后重筛一次
+            from screener.ingest import ingest_single_company
+
+            need_metrics = {r["metric"] for r in rules.get("quant_rules", [])}
+            needs_bs_cf = bool(need_metrics & {"total_assets", "total_liabilities", "debt_to_equity", "current_ratio", "operating_cash_flow"})
+            if needs_bs_cf and passed:
+                await db.flush()
+                for cand in passed[: rules.get("candidate_limit", 50)]:
+                    await ingest_single_company(db, cand["ticker"])
+                financials = await _reload_financials(db)
+                passed, excluded_missing = screening.evaluate_quant_rules(pool, rules.get("quant_rules", []), financials)
+
+            candidates = screening.rank_candidates(passed, limit=rules.get("candidate_limit", 50))
         run.candidate_count = len(candidates)
         run.status = "judging"
         await db.flush()

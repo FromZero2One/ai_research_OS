@@ -176,7 +176,7 @@ async def judge_candidates(
                     "reasons": judgement.get("reasons", []),
                     "criteria_hits": judgement.get("criteria_hits", []),
                     "confidence": judgement.get("confidence"),
-                    "snapshot": {k: cand.get(k) for k in ("price", "turnover", "market_cap", "score")},
+                    "snapshot": {k: cand.get(k) for k in ("price", "turnover", "market_cap", "score", "hits", "presets") if cand.get(k) is not None},
                     "status": "ok",
                     "error": None,
                 }
@@ -191,7 +191,7 @@ async def judge_candidates(
                     "reasons": [],
                     "criteria_hits": [],
                     "confidence": None,
-                    "snapshot": {k: cand.get(k) for k in ("price", "turnover", "market_cap", "score")},
+                    "snapshot": {k: cand.get(k) for k in ("price", "turnover", "market_cap", "score", "hits", "presets") if cand.get(k) is not None},
                     "status": "failed",
                     "error": str(e),
                 }
@@ -206,7 +206,7 @@ async def judge_candidates(
                     "reasons": [],
                     "criteria_hits": [],
                     "confidence": None,
-                    "snapshot": {k: cand.get(k) for k in ("price", "turnover", "market_cap", "score")},
+                    "snapshot": {k: cand.get(k) for k in ("price", "turnover", "market_cap", "score", "hits", "presets") if cand.get(k) is not None},
                     "status": "failed",
                     "error": f"LLM 调用异常: {e}",
                 }
