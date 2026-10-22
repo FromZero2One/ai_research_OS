@@ -658,3 +658,48 @@ export function useScreenerRunReport(id: MaybeRefOrGetter<string>) {
 export function useScreenerRules() {
   return useGet<{ rules: Record<string, any> | null; criteria_hash?: string }>(['screener-rules'], '/screener/rules')
 }
+
+// ── Screener 预设库（v1.5）──
+export interface ScreenerMetricDef {
+  key: string; name_cn: string; category: string
+  data_source: string; description: string | null
+}
+export interface ScreenerPreset {
+  id: string; name: string; description: string | null; style_tag: string | null
+  quant_rules: { metric: string; op: string; value: number; missing_data_policy: string }[]
+  qualitative: string[]; suggested_pool: string
+  is_builtin: boolean; is_active: boolean
+}
+export interface TriggerParamsBody {
+  mode: 'presets' | 'freeform'
+  pool: string
+  preset_ids: string[]
+  combine: 'union' | 'intersection' | 'flatten'
+}
+
+export function useScreenerMetrics() {
+  return useGet<{ metrics: ScreenerMetricDef[] }>(['screener-metrics'], '/screener/metrics')
+}
+export function useScreenerPresets() {
+  return useGet<{ presets: ScreenerPreset[] }>(['screener-presets'], '/screener/presets')
+}
+const PRESET_KEYS = [['screener-presets'], ['screener-runs']]
+
+export function useCreateScreenerPreset() {
+  return useCreate<ScreenerPreset, Record<string, any>>('/screener/presets', PRESET_KEYS)
+}
+export function useUpdateScreenerPreset(id: MaybeRefOrGetter<string>) {
+  const qc = useQueryClient()
+  return useMutation<ScreenerPreset, Error, Record<string, any>>({
+    mutationFn: (body) => fetchApi<ScreenerPreset>(`/screener/presets/${toValue(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    onSuccess: () => { PRESET_KEYS.forEach((key) => qc.invalidateQueries({ queryKey: key })) },
+  })
+}
+export function useDeleteScreenerPreset() {
+  return useDelete(PRESET_KEYS)
+}
+export function useTriggerScreenerRunPresets(invalidateKeys: string[][] = [['screener-runs']]) {
+  return useCreate<{ id: string; status: string; mode: string | null; combine: string | null }>(
+    '/screener/runs', invalidateKeys,
+  )
+}
