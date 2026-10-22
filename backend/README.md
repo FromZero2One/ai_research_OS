@@ -29,14 +29,21 @@ Company → Market + Document → Knowledge(RAG) → AI → Research → Portfol
 | 编排型（pipeline + LLM 两层） | screener（criteria/translate/screening/judge/report/service，2026-10-21 新增） |
 服务通过 `core/container.py` DI 容器懒加载，路由经 `Depends(get_container)` 获取。
 
-### Screener（智能选股，2026-10-21）
+### Screener（智能选股，2026-10-21 v1；2026-10-22 v1.5 预设库）
 
-用户维护 `screener/criteria.md` 自然语言选股标准，手动触发 `/screener/runs`：
+两种选股模式（`POST /screener/runs` 的 `mode`）：
+
+**freeform（v1）**：用户维护 `screener/criteria.md` 自然语言选股标准，手动触发：
 ① LLM 翻译标准为结构化规则（`ScreenerRule` 按 doc_hash 缓存，标准不变零 LLM 调用）
-→ ② 确定性初筛（akshare `stock_zh_a_spot_em` 全市场快照 + 股票池过滤 + 量化规则求值 + 排名截断）
+→ ② 确定性初筛（全市场快照 + 股票池过滤 + 量化规则求值 + 排名截断）
 → ③ LLM 逐只深判候选（单只失败隔离，结果落 `ScreenerJudgement` 供后续回测）
-→ ④ Markdown 报告落 `screener/reports/`（推荐列表 + 标准吻合度逐条说明）。
-LLM 只在 ①③ 参与，筛选执行确定性。迁移 `b5d2f8a3c6e1`，schema `screener`。
+→ ④ Markdown 报告落 `screener/reports/`。
+
+**presets（v1.5）**：预设标准库驱动，零 LLM 翻译。`screener/metrics`（16 个标准化指标）+ `screener/presets`（5 套内置大师预设：核心资产/高成长/深度价值/GARP/周期反转，只读；用户可自建）。触发时传 `preset_ids` + `combine`（union/intersection/flatten），规则纯确定性组装（`compose.py`），报告标注每只候选命中的预设（`[预设名]` 前缀 + snapshot `hits`/`presets`）。前端 `/screener` 有模式切换 + PresetManager 抽屉。
+
+LLM 只在深判参与，筛选执行确定性。迁移 `b5d2f8a3c6e1` → `c8e1b7d4f2a9`，schema `screener`。
+
+**数据采集（2026-10-22 东财风控后）**：全市场快照走新浪 `Market_Center` 分页接口；财务三表均为市场级一次调用——业绩报表 `stock_yjbb_em`、资产负债表 `stock_zcfz_em`（含 `CURRENT_RATIO÷100` 还原流动比率）、现金流量表 `stock_xjll_em`，全部经 `_AKSHARE_PROLOGUE` 反风控头（浏览器 UA + 直连 + IPv4 + urllib3 重试）。单只报表接口仅作兜底保留。
 
 ### 数据分工原则（2026-10-14 定稿）
 
@@ -63,7 +70,7 @@ cd backend && ALL_PROXY= all_proxy= PYTHONPATH=. uvicorn api.app:app --reload --
 
 > **注意**：`run_dev.sh` 内含硬编码绝对路径（`/home/wsm/codes/ai_research_OS/backend`），换机器需改。必须从 `backend/` 目录启动（`UPLOAD_DIR=data/uploads` 为相对路径）。代理环境变量会干扰 httpx，需 `ALL_PROXY= all_proxy=` 前缀。
 
-## 数据库（7 个 Schema）
+## 数据库（8 个 Schema）
 
 PostgreSQL 用 schema 做模块隔离，初始化 SQL 见 `docker/init.sql`：
 
@@ -76,6 +83,7 @@ PostgreSQL 用 schema 做模块隔离，初始化 SQL 见 `docker/init.sql`：
 | `portfolio` | holdings, investment_journal |
 | `ai` | prompt_templates |
 | `core` | event_log, task_records, observations |
+| `screener` | screener_rules, screener_runs, screener_judgements, screener_metric_defs, screener_presets |
 
 - `knowledge` / `dashboard` 无独立 schema：knowledge 复用 document 表 + Qdrant 向量，dashboard 跨 schema 聚合查询
 - 行情/财务数据统一入库 PG（`market` schema），采集走 akshare 子进程直连（无外部 MySQL 依赖）

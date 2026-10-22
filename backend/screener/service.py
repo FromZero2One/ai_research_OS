@@ -178,12 +178,11 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
             need_metrics_union = {r["metric"] for p in presets for r in p.quant_rules}
             needs_bs_cf_union = bool(need_metrics_union & {"total_assets", "total_liabilities", "debt_to_equity", "current_ratio", "operating_cash_flow"})
             if needs_bs_cf_union:
-                # 预设依赖 bs/cf 指标：先对股票池补采一轮（与 v1 对候选补采同一策略）
-                from screener.ingest import ingest_single_company
+                # 预设依赖 bs/cf 指标：全市场一次灌库（zcfz+xjll 各一个子进程调用）
+                from screener.ingest import ingest_marketwide_bs_cf
 
                 await db.flush()
-                for cand in pool[:200]:
-                    await ingest_single_company(db, cand["ticker"])
+                await ingest_marketwide_bs_cf(db)
                 financials = await _reload_financials(db)
 
             union_map = evaluate_quant_rules_by_preset(pool, presets, financials)
@@ -201,15 +200,14 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
         else:
             passed, excluded_missing = screening.evaluate_quant_rules(pool, rules.get("quant_rules", []), financials)
 
-            # 候选缺 bs/cf 类指标（资产负债表/现金流）→ 对初筛通过者补采后重筛一次
-            from screener.ingest import ingest_single_company
+            # 候选缺 bs/cf 类指标（资产负债表/现金流）→ 全市场一次灌库后重筛
+            from screener.ingest import ingest_marketwide_bs_cf
 
             need_metrics = {r["metric"] for r in rules.get("quant_rules", [])}
             needs_bs_cf = bool(need_metrics & {"total_assets", "total_liabilities", "debt_to_equity", "current_ratio", "operating_cash_flow"})
             if needs_bs_cf and passed:
                 await db.flush()
-                for cand in passed[: rules.get("candidate_limit", 50)]:
-                    await ingest_single_company(db, cand["ticker"])
+                await ingest_marketwide_bs_cf(db)
                 financials = await _reload_financials(db)
                 passed, excluded_missing = screening.evaluate_quant_rules(pool, rules.get("quant_rules", []), financials)
 

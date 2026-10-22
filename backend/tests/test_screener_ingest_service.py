@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from market.models import FinancialMetric
-from screener.ingest import ingest_marketwide_yjbb, ingest_single_company
+from screener.ingest import ingest_marketwide_bs_cf, ingest_marketwide_yjbb, ingest_single_company
 
 
 class TestIngestMarketwideYjbb:
@@ -77,3 +77,98 @@ class TestIngestSingleCompany:
 
         n = await ingest_single_company(test_session, "600519")
         assert n == 1  # 只有 operating_cash_flow
+
+
+class TestParseZcfzRow:
+    """全市场资产负债表行解析（stock_zcfz_em 列）。"""
+
+    def test_full_row(self):
+        from screener.ingest import parse_zcfz_row
+
+        row = {
+            "股票代码": "600519",
+            "资产-总资产": 3.0e11,
+            "负债-总负债": 5.0e10,
+            "股东权益合计": 2.5e11,
+            "资产负债率": 16.41,
+        }
+        entries = {e.metric_name: e.metric_value for e in parse_zcfz_row(row, 2025, "Q4")}
+        assert entries["total_assets"] == 3.0e11
+        assert entries["total_liabilities"] == 5.0e10
+        assert entries["debt_to_equity"] == pytest.approx(5.0e10 / 2.5e11 * 100)
+
+    def test_missing_values_skipped(self):
+        from screener.ingest import parse_zcfz_row
+
+        row = {"股票代码": "600519", "资产-总资产": None, "负债-总负债": None}
+        assert parse_zcfz_row(row, 2025, "Q4") == []
+
+
+class TestParseXjllRow:
+    """全市场现金流量表行解析（stock_xjll_em 列）。"""
+
+    def test_full_row(self):
+        from screener.ingest import parse_xjll_row
+
+        row = {"股票代码": "600519", "经营性现金流-现金流量净额": 9.2e10}
+        entries = parse_xjll_row(row, 2025, "Q4")
+        assert len(entries) == 1
+        assert entries[0].metric_name == "operating_cash_flow"
+        assert entries[0].metric_value == 9.2e10
+
+    def test_missing_value_skipped(self):
+        from screener.ingest import parse_xjll_row
+
+        assert parse_xjll_row({"股票代码": "600519"}, 2025, "Q4") == []
+
+
+class TestIngestMarketwideBsCf:
+    async def test_bulk_ingest(self, test_session: AsyncSession, monkeypatch):
+        zcfz = [
+            {"股票代码": "600519", "资产-总资产": 3.0e11, "负债-总负债": 5.0e10, "股东权益合计": 2.5e11},
+            {"股票代码": "000001", "资产-总资产": None, "负债-总负债": None},
+        ]
+        xjll = [{"股票代码": "600519", "经营性现金流-现金流量净额": 9.2e10}]
+        monkeypatch.setattr("screener.ingest.fetch_zcfz_raw", AsyncMock(return_value=zcfz))
+        monkeypatch.setattr("screener.ingest.fetch_xjll_raw", AsyncMock(return_value=xjll))
+
+        n = await ingest_marketwide_bs_cf(test_session, date="20250930")
+        await test_session.flush()
+
+        assert n == 2  # 600519 有 bs+cf 指标；000001 全空跳过
+        rows = (await test_session.execute(select(FinancialMetric).where(FinancialMetric.ticker == "600519"))).scalars().all()
+        names = {r.metric_name for r in rows}
+        assert {"total_assets", "total_liabilities", "debt_to_equity", "operating_cash_flow"} <= names
+
+    async def test_zcfz_failure_does_not_block_xjll(self, test_session: AsyncSession, monkeypatch):
+        async def boom(db, date):
+            raise RuntimeError("zcfz 接口挂了")
+
+        monkeypatch.setattr("screener.ingest.ingest_marketwide_zcfz", boom)
+        monkeypatch.setattr("screener.ingest.fetch_xjll_raw", AsyncMock(
+            return_value=[{"股票代码": "600519", "经营性现金流-现金流量净额": 9.2e10}]))
+
+        n = await ingest_marketwide_bs_cf(test_session, date="20250930")
+        assert n == 1
+
+
+class TestIngestMarketwideCurrentRatio:
+    """datacenter CURRENT_RATIO = 流动比率 × 100（茅台 509.00 ↔ 真实 5.09 验证）。"""
+
+    async def test_current_ratio_from_zcfz(self, test_session: AsyncSession, monkeypatch):
+        zcfz = [{"股票代码": "600519", "资产-总资产": 3.0e11, "负债-总负债": 5.0e10,
+                 "股东权益合计": 2.5e11, "CURRENT_RATIO": 509.00}]
+        xjll: list[dict] = []
+        monkeypatch.setattr("screener.ingest.fetch_zcfz_raw", AsyncMock(return_value=zcfz))
+        monkeypatch.setattr("screener.ingest.fetch_xjll_raw", AsyncMock(return_value=xjll))
+
+        await ingest_marketwide_bs_cf(test_session, date="20250930")
+        await test_session.flush()
+
+        rows = (await test_session.execute(
+            select(FinancialMetric).where(
+                FinancialMetric.ticker == "600519",
+                FinancialMetric.metric_name == "current_ratio",
+            ))).scalars().all()
+        assert len(rows) == 1
+        assert rows[0].metric_value == pytest.approx(5.09)

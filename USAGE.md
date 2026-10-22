@@ -576,6 +576,31 @@ GET /api/v1/scheduler/observations      # 最近的观察报告列表
 POST /api/v1/scheduler/observe          # 手动触发一次观察
 ```
 
+### 4.10 智能选股 `/screener`（2026-10-22 v1.5）
+
+功能：预设标准库驱动的全市场选股。两种模式：
+
+**预设模式（推荐，零 LLM 翻译，结果可复现）**：
+1. 打开 `/screener`，触发区切换到「预设模式」
+2. 多选预设（5 套内置：核心资产/高成长/深度价值/质量价值GARP/周期反转，也可自建）
+3. 选组合方式：union（命中任一）/ intersection（全部命中）/ flatten（合并规则）
+4. 触发运行 → 报告中每只推荐股标注命中预设
+
+**自由文本模式（v1）**：维护自然语言选股标准 → LLM 翻译为规则 → 筛选。标准不变时规则缓存复用，零 LLM 调用。
+
+**预设管理**：右侧「预设管理」抽屉——查看内置预设规则明细、新建/编辑/启停自建预设（内置只读）。
+
+**API**：
+```
+GET  /api/v1/screener/metrics              # 16 个标准化指标
+GET  /api/v1/screener/presets              # 预设列表（含内置）
+POST /api/v1/screener/runs                 # Body: {"mode": "presets", "pool": "all", "preset_ids": [...], "combine": "union"}
+GET  /api/v1/screener/runs/{id}            # 运行详情（含逐只判断）
+GET  /api/v1/screener/runs/{id}/report     # Markdown 报告
+```
+
+> 全流程约 2-10 分钟（全市场快照 + 财务补采 + LLM 深判）。报告落 `backend/screener/reports/`。
+
 ---
 
 

@@ -1,11 +1,12 @@
 """财务数据入库管道 — 用本地 akshare 子进程给 screener 初筛供数。
 
-三层：
-- 全市场业绩报表（stock_yjbb_em，一次调用 ~5000 只）→ roe / gross_margin / revenue / net_income
-- 单只资产负债表（stock_balance_sheet_by_report_em）→ total_assets / total_liabilities / debt_to_equity / current_ratio
-- 单只现金流量表（stock_cash_flow_sheet_by_report_em）→ operating_cash_flow
+三层（均为全市场一次调用 ~5000 只）：
+- 业绩报表（stock_yjbb_em）→ roe / gross_margin / revenue / net_income / net_margin
+- 资产负债表（stock_zcfz_em）→ total_assets / total_liabilities / debt_to_equity / current_ratio
+- 现金流量表（stock_xjll_em）→ operating_cash_flow
 
-业绩报表覆盖全市场；bs/cf 逐只拉取较慢，只对初筛候选补采。
+单只接口（stock_balance_sheet_by_report_em / stock_cash_flow_sheet_by_report_em）
+保留作兜底，但主路径不再逐只拉取（400+ 子进程调用会拖垮一轮 run）。
 """
 
 from __future__ import annotations
@@ -67,6 +68,44 @@ YJBB_ROW_MAP: dict[str, str] = {
     "revenue": "营业总收入-营业总收入",
     "net_income": "净利润-净利润",
 }
+
+
+def parse_zcfz_row(row: dict, fiscal_year: int, fiscal_period: str) -> list[FinancialMetricEntry]:
+    """全市场资产负债表行（stock_zcfz_em 列）→ total_assets / total_liabilities / debt_to_equity / current_ratio。
+
+    debt_to_equity = 总负债 / 股东权益合计 × 100（比直接用"资产负债率"更少一层数据源换算）。
+    current_ratio：datacenter CURRENT_RATIO = 流动比率 × 100，除回 100 还原倍数。
+    """
+    entries: list[FinancialMetricEntry] = []
+
+    def _add(metric: str, value: float | None) -> None:
+        if value is not None:
+            entries.append(
+                FinancialMetricEntry(fiscal_year=fiscal_year, fiscal_period=fiscal_period,
+                                     metric_name=metric, metric_value=value)
+            )
+
+    _add("total_assets", _num(row.get("资产-总资产")))
+    _add("total_liabilities", _num(row.get("负债-总负债")))
+    total_liab = _num(row.get("负债-总负债"))
+    total_equity = _num(row.get("股东权益合计"))
+    if total_liab is not None and total_equity:
+        _add("debt_to_equity", total_liab / total_equity * 100)
+    cr = _num(row.get("CURRENT_RATIO"))
+    if cr is not None:
+        _add("current_ratio", cr / 100)
+    return entries
+
+
+def parse_xjll_row(row: dict, fiscal_year: int, fiscal_period: str) -> list[FinancialMetricEntry]:
+    """全市场现金流量表行（stock_xjll_em 列）→ operating_cash_flow。"""
+    v = _num(row.get("经营性现金流-现金流量净额"))
+    if v is None:
+        return []
+    return [
+        FinancialMetricEntry(fiscal_year=fiscal_year, fiscal_period=fiscal_period,
+                             metric_name="operating_cash_flow", metric_value=v)
+    ]
 
 
 def parse_yjbb_rows(rows: list[dict], fiscal_year: int, fiscal_period: str) -> list[FinancialMetricEntry]:
@@ -188,6 +227,36 @@ async def fetch_yjbb_raw(date: str) -> list[dict]:
     return await asyncio.to_thread(_run_child, code, 300)
 
 
+async def fetch_zcfz_raw(date: str) -> list[dict]:
+    """全市场资产负债表原始行（stock_zcfz_em，一次调用覆盖 ~5000 只）。
+
+    含 资产-总资产 / 负债-总负债 / 股东权益合计 / 资产负债率 / CURRENT_RATIO。
+    CURRENT_RATIO = 流动比率 × 100（茅台 509.00 ↔ F10 真实 5.09 交叉验证）。
+    """
+    import asyncio
+
+    code = (
+        _AKSHARE_PROLOGUE
+        + "import akshare as ak, json\n"
+        + f"df = ak.stock_zcfz_em(date={date!r})\n"
+        + 'print("__R__:" + json.dumps(df.to_dict(orient="records"), ensure_ascii=False, default=str))\n'
+    )
+    return await asyncio.to_thread(_run_child, code, 300)
+
+
+async def fetch_xjll_raw(date: str) -> list[dict]:
+    """全市场现金流量表原始行（stock_xjll_em，一次调用覆盖 ~5000 只）。"""
+    import asyncio
+
+    code = (
+        _AKSHARE_PROLOGUE
+        + "import akshare as ak, json\n"
+        + f"df = ak.stock_xjll_em(date={date!r})\n"
+        + 'print("__R__:" + json.dumps(df.to_dict(orient="records"), ensure_ascii=False, default=str))\n'
+    )
+    return await asyncio.to_thread(_run_child, code, 300)
+
+
 def _child_single(ticker: str, fn: str) -> dict:
     """单只报表拉取子进程模板（fn: akshare 函数名）。"""
     sec = f"{'SH' if ticker.startswith(('6', '9')) else 'SZ'}{ticker}"
@@ -262,6 +331,88 @@ async def ingest_single_company(db, ticker: str) -> int:
                 total += await upsert_metrics(db, ticker, entries)
         except Exception as e:  # noqa: BLE001 — bs/cf 隔离
             logger.warning("单只报表拉取失败 %s (%s): %s", ticker, fetch.__name__, e)
+    return total
+
+
+def _latest_report_date(today: date | None = None) -> str:
+    """今天 → 最近一个已披露的季度末 'YYYYMMDD'（季报披露滞后约 1 个月）。"""
+    from datetime import date as _date
+
+    today = today or _date.today()
+    quarter_ends = [(3, 31), (6, 30), (9, 30), (12, 31)]
+    # 披露滞后：季末后 45 天内用上一期
+    from datetime import timedelta
+
+    anchor = today - timedelta(days=45)
+    candidates = [_date(anchor.year, m, d) for m, d in quarter_ends]
+    past = [d for d in candidates if d <= anchor]
+    if not past:
+        past = [_date(anchor.year - 1, 12, 31)]
+    latest = max(past)
+    return f"{latest.year}{latest.month:02d}{latest.day:02d}"
+
+
+async def ingest_marketwide_zcfz(db, date: str) -> int:
+    """全市场资产负债表灌库（total_assets/total_liabilities/debt_to_equity/current_ratio）。"""
+    from core.logging import logger
+
+    raw = await fetch_zcfz_raw(date)
+    ok = 0
+    for row in raw:
+        ticker = str(row.get("股票代码") or "").strip()
+        if len(ticker) != 6 or not ticker.isdigit():
+            continue
+        try:
+            entries = parse_zcfz_row(row, fiscal_year=int(date[:4]), fiscal_period=_fiscal(f"{date[:4]}-{date[4:6]}-{date[6:8]} 00:00:00")[1])
+            if entries:
+                await upsert_metrics(db, ticker, entries)
+                ok += 1
+        except Exception as e:  # noqa: BLE001 — 单行失败不阻塞全市场
+            logger.warning("zcfz 行入库失败 %s: %s", ticker, e)
+    logger.info("全市场资产负债表入库: %d/%d 家", ok, len(raw))
+    return ok
+
+
+async def ingest_marketwide_xjll(db, date: str) -> int:
+    """全市场现金流量表灌库（operating_cash_flow）。"""
+    from core.logging import logger
+
+    raw = await fetch_xjll_raw(date)
+    ok = 0
+    for row in raw:
+        ticker = str(row.get("股票代码") or "").strip()
+        if len(ticker) != 6 or not ticker.isdigit():
+            continue
+        try:
+            entries = parse_xjll_row(row, fiscal_year=int(date[:4]), fiscal_period=_fiscal(f"{date[:4]}-{date[4:6]}-{date[6:8]} 00:00:00")[1])
+            if entries:
+                await upsert_metrics(db, ticker, entries)
+                ok += 1
+        except Exception as e:  # noqa: BLE001 — 单行失败不阻塞全市场
+            logger.warning("xjll 行入库失败 %s: %s", ticker, e)
+    logger.info("全市场现金流量表入库: %d/%d 家", ok, len(raw))
+    return ok
+
+
+async def ingest_marketwide_bs_cf(db, date: str | None = None) -> int:
+    """全市场 bs/cf 灌库（zcfz + xjll 各一次调用，替代逐只补采）。
+
+    zcfz/xjll 相互隔离。date 缺省取最近已披露报告期。返回成功入库的公司数。
+    """
+    date = date or _latest_report_date()
+    total = 0
+    try:
+        total += await ingest_marketwide_zcfz(db, date)
+    except Exception as e:  # noqa: BLE001 — zcfz 挂不阻塞 xjll
+        from core.logging import logger
+
+        logger.warning("全市场资产负债表拉取失败: %s", e)
+    try:
+        total += await ingest_marketwide_xjll(db, date)
+    except Exception as e:  # noqa: BLE001 — xjll 挂不阻塞 zcfz
+        from core.logging import logger
+
+        logger.warning("全市场现金流量表拉取失败: %s", e)
     return total
 
 

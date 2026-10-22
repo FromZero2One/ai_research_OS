@@ -57,6 +57,7 @@ A personal AI-powered investment research assistant. Company → Knowledge → A
 | **AI Center** | Prompt mgmt, LLM orchestration, summarization | DeepSeek V4 Flash (默认) / Ollama / OpenAI 兼容 |
 | **Research Center** | Question → Evidence → Report → Decision → Thesis | LangGraph-ready |
 | **Portfolio Center** | 关注公司（并入公司中心）、持仓、投资日志（后端） | PostgreSQL |
+| **Screener** | 预设标准库选股：16 指标 + 5 内置大师预设 + union/intersection/flatten 组合，零 LLM 翻译（2026-10-22 v1.5） | AKShare + LLM 深判 |
 
 ## Data Flow
 
