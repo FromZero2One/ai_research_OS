@@ -13,18 +13,52 @@ from core.logging import logger
 from market.akshare_executor import run_akshare
 from market.domain import FinancialMetricEntry
 
-# 全市场 A 股实时快照（东方财富）；ticker 经 env 传入为空 — 全市场查询无需参数
+# 全市场 A 股实时快照。
+# 注1：不走 akshare.stock_zh_a_spot_em（东财 push2 2026-10-22 起风控掐无 UA 请求 +
+# 分页限流，59 页必挂）；改用新浪 Market_Center 分页接口（hs_a，含价格/换手率/
+# 总市值），每页独立重试 + 节流，实测稳定。
+# 注2：新浪 mktcap 单位为万元 → ×1e4 换算为元（与东财 f20 对齐）。
 _SPOT_CODE = (
-    "import json, sys\nimport akshare as ak\n"
+    "import os, time, json\n"
+    "os.environ['NO_PROXY'] = '*'\n"
+    "for _k in ('HTTP_PROXY','HTTPS_PROXY','http_proxy','https_proxy','ALL_PROXY','all_proxy'):\n"
+    "    os.environ.pop(_k, None)\n"
+    "import requests\n"
+    "_s = requests.Session()\n"
+    "_s.trust_env = False\n"
+    "_s.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36'\n"
+    "_s.headers['Referer'] = 'https://finance.sina.com.cn'\n"
+    "_URL = 'https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData'\n"
     "try:\n"
-    "    df = ak.stock_zh_a_spot_em()\n"
-    "    if df is None or df.empty:\n"
-    '        print("__R__:[]")\n'
-    "    else:\n"
-    '        cols = {"代码": "ticker", "名称": "name", "最新价": "price",\n'
-    '                "换手率": "turnover", "总市值": "market_cap"}\n'
-    '        out = df[list(cols)].rename(columns=cols).to_dict(orient="records")\n'
-    '        print("__R__:" + json.dumps(out, ensure_ascii=False))\n'
+    "    rows = []\n"
+    "    page = 1\n"
+    "    while True:\n"
+    "        data = None\n"
+    "        for attempt in range(5):\n"
+    "            try:\n"
+    "                r = _s.get(_URL, params={'page': page, 'num': 80, 'sort': 'symbol',\n"
+    "                                         'asc': 1, 'node': 'hs_a'}, timeout=15)\n"
+    "                data = r.json()\n"
+    "                if data is not None:\n"
+    "                    break\n"
+    "            except Exception:\n"
+    "                pass\n"
+    "            time.sleep(2 * (attempt + 1))\n"
+    "        if data is None:\n"
+    "            raise RuntimeError(f'page {page} failed after 5 attempts')\n"
+    "        if not data:\n"
+    "            break\n"
+    "        for it in data:\n"
+    "            mktcap = it.get('mktcap')\n"
+    "            rows.append({'ticker': it.get('code'), 'name': it.get('name'),\n"
+    "                         'price': it.get('trade'),\n"
+    "                         'turnover': it.get('turnoverratio'),\n"
+    "                         'market_cap': (float(mktcap) * 1e4) if mktcap not in (None, '') else None})\n"
+    "        page += 1\n"
+    "        time.sleep(0.3)\n"
+    "    if not rows:\n"
+    "        raise RuntimeError('empty market snapshot')\n"
+    '    print("__R__:" + json.dumps(rows, ensure_ascii=False))\n'
     "except Exception as e:\n"
     '    print("E:" + str(e))\n'
 )
@@ -43,7 +77,7 @@ _SNAPSHOT_FIELDS = frozenset({"price", "turnover", "market_cap"})
 
 async def fetch_market_spot() -> list[dict]:
     """全市场 A 股快照（akshare 子进程，to_thread 防阻塞事件循环）。失败 raise DataSourceError。"""
-    raw = await asyncio.to_thread(run_akshare, _SPOT_CODE, None, 300)
+    raw = await asyncio.to_thread(run_akshare, _SPOT_CODE, None, 560)
     if raw is None:
         raise DataSourceError("akshare", "全市场快照采集失败（子进程无输出）")
     if raw.startswith("E:"):

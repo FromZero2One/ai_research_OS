@@ -69,6 +69,7 @@ def run_akshare(code: str, env_args: dict[str, str] | None = None, timeout: int 
             env=env,
         )
         if result.returncode != 0:
+            logger.warning("  [akshare] 子进程失败 rc=%s stderr_tail=%s", result.returncode, (result.stderr or "")[-300:])
             return None
         return result.stdout
     except Exception:

@@ -143,6 +143,35 @@ def parse_cash_flow_row(row: dict) -> list[FinancialMetricEntry]:
 # ── 拉取层（子进程） ─────────────────────────────────────────────
 
 
+# akshare 子进程公共头 — 2026-10-22 东财风控三连：
+# ① 无浏览器 UA 的请求直接断连 → 打默认 UA
+# ② clash 代理对东财域名断连 → NO_PROXY 直连
+# ③ 连续分页请求会被掐连接 → urllib3 Retry 自动重试兜底
+_AKSHARE_PROLOGUE = (
+    "import os\n"
+    "os.environ['NO_PROXY'] = '*'\n"
+    "for _k in ('HTTP_PROXY','HTTPS_PROXY','http_proxy','https_proxy','ALL_PROXY','all_proxy'):\n"
+    "    os.environ.pop(_k, None)\n"
+    "import socket\n"
+    "_orig_gai = socket.getaddrinfo\n"
+    "socket.getaddrinfo = lambda *a, **k: [r for r in _orig_gai(*a, **k) if r[0] == socket.AF_INET]\n"
+    "import requests\n"
+    "from requests.adapters import HTTPAdapter\n"
+    "from urllib3.util.retry import Retry\n"
+    "_orig_send = HTTPAdapter.send\n"
+    "def _send_with_ua(self, request, *a, **k):\n"
+    "    request.headers.setdefault('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36')\n"
+    "    return _orig_send(self, request, *a, **k)\n"
+    "HTTPAdapter.send = _send_with_ua\n"
+    "_retry = Retry(total=4, backoff_factor=1.5, status_forcelist=[502, 503, 504], allowed_methods=None)\n"
+    "_orig_init = HTTPAdapter.__init__\n"
+    "def _init_with_retry(self, *a, **k):\n"
+    "    k.setdefault('max_retries', _retry)\n"
+    "    return _orig_init(self, *a, **k)\n"
+    "HTTPAdapter.__init__ = _init_with_retry\n"
+)
+
+
 async def fetch_yjbb_raw(date: str) -> list[dict]:
     """全市场业绩报表原始行（akshare 子进程，一次调用覆盖 ~5000 只）。
 
@@ -151,9 +180,10 @@ async def fetch_yjbb_raw(date: str) -> list[dict]:
     import asyncio
 
     code = (
-        "import akshare as ak, json\n"
-        f"df = ak.stock_yjbb_em(date={date!r})\n"
-        'print("__R__:" + json.dumps(df.to_dict(orient="records"), ensure_ascii=False, default=str))\n'
+        _AKSHARE_PROLOGUE
+        + "import akshare as ak, json\n"
+        + f"df = ak.stock_yjbb_em(date={date!r})\n"
+        + 'print("__R__:" + json.dumps(df.to_dict(orient="records"), ensure_ascii=False, default=str))\n'
     )
     return await asyncio.to_thread(_run_child, code, 300)
 
@@ -162,9 +192,10 @@ def _child_single(ticker: str, fn: str) -> dict:
     """单只报表拉取子进程模板（fn: akshare 函数名）。"""
     sec = f"{'SH' if ticker.startswith(('6', '9')) else 'SZ'}{ticker}"
     code = (
-        "import akshare as ak, json\n"
-        f"df = ak.{fn}(symbol={sec!r})\n"
-        'print("__R__:" + json.dumps(df.iloc[0].to_dict(), ensure_ascii=False, default=str))\n'
+        _AKSHARE_PROLOGUE
+        + "import akshare as ak, json\n"
+        + f"df = ak.{fn}(symbol={sec!r})\n"
+        + 'print("__R__:" + json.dumps(df.iloc[0].to_dict(), ensure_ascii=False, default=str))\n'
     )
     out = _run_child(code, 120)
     return out if isinstance(out, dict) else {}
