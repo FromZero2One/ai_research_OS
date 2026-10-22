@@ -600,6 +600,8 @@ GET  /api/v1/screener/runs/{id}/report     # Markdown 报告
 ```
 
 > 全流程约 2-10 分钟（全市场快照 + 财务补采 + LLM 深判）。报告落 `backend/screener/reports/`。
+>
+> ⚠️ **数据时效**：筛选基于最近入库的财务数据（业绩报表/资产负债表/现金流）。数据更新暂无自动调度，长期未更新时会用过期数据筛选——关注报告中的报告期标注，或手动检查 `GET /api/v1/market/freshness/coverage`。
 
 ---
 

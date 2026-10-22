@@ -59,6 +59,8 @@ A personal AI-powered investment research assistant. Company → Knowledge → A
 | **Portfolio Center** | 关注公司（并入公司中心）、持仓、投资日志（后端） | PostgreSQL |
 | **Screener** | 预设标准库选股：16 指标 + 5 内置大师预设 + union/intersection/flatten 组合，零 LLM 翻译（2026-10-22 v1.5） | AKShare + LLM 深判 |
 
+> **Screener 数据管道（2026-10-22）**：全市场快照走新浪源（东财风控应对）；财务三表（业绩/资产负债/现金流）均为市场级一次调用（~5000 只/期），不再逐只拉取。已知缺口见 Roadmap。
+
 ## Data Flow
 
 ```text
@@ -141,6 +143,7 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 | 研究中心 | ~95% | 全链路 + LLM 证据分类（含定量/定性双轨）+ 多周期比对 + 报告可视化 + [ev:id] 引用回溯 + structured_facts 交叉验证 |
 | 投资组合 | ~40% | 自选已并入公司；持仓/日志后端就绪，前端随 V2 |
 | 系统/调度 | ~85% | 调度/观察/持久任务/事件/新鲜度可用 |
+| 智能选股 | ~85% | v1.5 预设库（16 指标 + 5 内置预设 + 组合模式）全链路；缺数据更新调度、预设回测、一次真实端到端验证 |
 
 总体：V1.1 目标基本达成，后端 168 项测试通过（另有 4 项依赖 Ollama embeddings，无 Ollama 环境时不计；test_finalize_session 需补 LLM mock）；ruff/vue-tsc/build 全绿。
 已知缺口：美股真实行情、持仓/日志前端、Market.vue 覆盖网格列数动态化（当前硬编码 5 列）。下一步（证据继承/差异日报）详见 [memory/ai-research-os-session.md](memory/ai-research-os-session.md)。
@@ -187,5 +190,14 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 | ~~覆盖矩阵定性维度~~ | ✅ 2026-10-15 | 矩阵新增定性列：已索引文档含 mda/risk 切片 → ok；仅已索引 → partial；无 → missing；纳入 worst_health |
 | ~~证据继承~~ | ✅ 2026-10-16 | auto-gather 自动带入同公司已完成会话证据（上限 10 条/去重/幂等），标 inherited_from_session_id，前端「📥 历史已核实」徽标可跳原会话 |
 | **差异日报** | 未开始 | 旧晨报已删（2026-10-14），从零构建"只报变化"日报：新公告、财报日历临近、价格异动、证据与旧结论冲突 |
+| ~~预设标准库（Screener v1.5）~~ | ✅ 2026-10-22 | 16 指标 + 5 内置大师预设 + union/intersection/flatten 组合，零 LLM 翻译；全市场 bs/cf 市场级拉取（修复 current_ratio 从未入库的存量 bug）；东财风控应对（快照切新浪源 + akshare 子进程反风控头） |
 
 收尾待办（小项）：Market.vue 覆盖网格列数动态化（当前硬编码 `repeat(5, 90px)`）；test_finalize_session 补 LLM mock（真实 LLM 调用挂起）；qualColor 硬编码色值统一 CSS 变量。
+
+Screener 后续（2026-10-22 排序）：
+
+1. **财务数据更新调度** — `ingest_marketwide_yjbb` / `ingest_marketwide_bs_cf` 已实现但未挂 APScheduler，财务数据会随时间过期；需加每日 job
+2. **全链路真实端到端验证** — 新数据管道（新浪快照 + 市场级补采 + LLM 深判）单测全绿但未真实跑通一次 run（2026-10-22 被东财风控打断）
+3. **预设回测** — 用历史日线验证预设的历史表现（「深度价值过去 5 年年化」），外部 MySQL 日线库（1611 万行）是现成基本盘
+4. **报告数据时效标注** — 报告应标注「财务数据截至 YYYYQn」，避免用过期数据筛选而不自知
+5. **数据源去单点** — 财务/新闻仍依赖东财；外部 MySQL（8.137.104.120，缺财务三表）可升级为首选源，akshare 降为兜底
