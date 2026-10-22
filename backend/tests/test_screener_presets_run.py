@@ -111,6 +111,11 @@ async def test_presets_union_with_financials(test_session: AsyncSession, screene
     """灌入财务数据后 union 初筛：候选带 hits/presets（深判 snapshot 透出）。"""
     from market.models import FinancialMetric
 
+    # union 模式会对池内股票做 bs/cf 补采（真实 akshare 子进程）— 测试中 mock 掉
+    async def _noop_ingest(db, ticker: str) -> int:
+        return 0
+
+    monkeypatch.setattr("screener.ingest.ingest_single_company", _noop_ingest)
     ids, by_tag = await _builtin_ids(test_session, ["cycle"])  # 周期反转只看市值+负债率
     for t in ("600519", "300750"):
         test_session.add(

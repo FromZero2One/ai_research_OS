@@ -6,6 +6,7 @@ import {
   useDeleteScreenerPreset,
   useScreenerMetrics,
   useScreenerPresets,
+  useToggleScreenerPreset,
   useUpdateScreenerPreset,
   type ScreenerPreset,
 } from '@/stores/api'
@@ -83,6 +84,13 @@ function openEdit(p: ScreenerPreset) {
 
 const createPreset = useCreateScreenerPreset()
 const updatePreset = useUpdateScreenerPreset(computed(() => editingId.value || ''))
+// 列表开关用独立 mutation（URL 由被操作的预设决定，不复用编辑抽屉的 editingId）
+const togglePreset = useToggleScreenerPreset()
+async function toggleActive(p: ScreenerPreset) {
+  try {
+    await togglePreset.mutateAsync({ id: p.id, is_active: !p.is_active })
+  } catch (e: any) { ElMessage.error(e.message || '操作失败') }
+}
 
 async function handleSave() {
   const f = form.value
@@ -118,12 +126,6 @@ async function handleDelete(p: ScreenerPreset) {
     await deletePreset.mutateAsync(`/screener/presets/${p.id}`)
     ElMessage.success('已删除')
   } catch (e: any) { ElMessage.error(e.message || '删除失败') }
-}
-
-async function handleToggleActive(p: ScreenerPreset) {
-  try {
-    await updatePreset.mutateAsync({ is_active: !p.is_active })
-  } catch (e: any) { ElMessage.error(e.message || '操作失败') }
 }
 
 function ruleSummary(p: ScreenerPreset): string {
@@ -167,7 +169,8 @@ watch(drawerVisible, (v) => { if (!v) editingId.value = null })
             <el-switch
               :model-value="p.is_active"
               size="small"
-              @change="handleToggleActive(p)"
+              :loading="togglePreset.isPending.value"
+              @change="toggleActive(p)"
             />
             <el-button
               size="small" link type="primary"

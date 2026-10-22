@@ -698,6 +698,14 @@ export function useUpdateScreenerPreset(id: MaybeRefOrGetter<string>) {
 export function useDeleteScreenerPreset() {
   return useDelete(PRESET_KEYS)
 }
+export function useToggleScreenerPreset() {
+  const qc = useQueryClient()
+  return useMutation<ScreenerPreset, Error, { id: string; is_active: boolean }>({
+    mutationFn: ({ id, is_active }) =>
+      fetchApi<ScreenerPreset>(`/screener/presets/${id}`, { method: 'PUT', body: JSON.stringify({ is_active }) }),
+    onSuccess: () => { PRESET_KEYS.forEach((key) => qc.invalidateQueries({ queryKey: key })) },
+  })
+}
 export function useTriggerScreenerRunPresets(invalidateKeys: string[][] = [['screener-runs']]) {
   return useCreate<{ id: string; status: string; mode: string | null; combine: string | null }>(
     '/screener/runs', invalidateKeys,

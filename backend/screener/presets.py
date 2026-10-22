@@ -66,19 +66,22 @@ async def _validate_quant_rules(db: AsyncSession, quant_rules: list) -> None:
     await _validate_metrics_exist(db, quant_rules)
 
 
+def _validate_qualitative(qualitative: list) -> None:
+    if not isinstance(qualitative, list) or any(not isinstance(q, str) for q in qualitative):
+        raise ValueError("qualitative 必须是字符串数组")
+
+
 async def create_preset(db: AsyncSession, data: dict) -> CriteriaPreset:
     """新建用户预设。校验失败 raise ValueError。"""
     quant_rules = data.get("quant_rules")
     await _validate_quant_rules(db, quant_rules)
-    qualitative = data.get("qualitative", [])
-    if not isinstance(qualitative, list) or any(not isinstance(q, str) for q in qualitative):
-        raise ValueError("qualitative 必须是字符串数组")
+    _validate_qualitative(data.get("qualitative", []))
     preset = CriteriaPreset(
         name=data["name"],
         description=data.get("description"),
         style_tag=data.get("style_tag", "custom"),
         quant_rules=quant_rules,
-        qualitative=qualitative,
+        qualitative=data.get("qualitative", []),
         suggested_pool=data.get("suggested_pool", "all"),
         is_builtin=False,
         is_active=True,
@@ -97,6 +100,10 @@ async def update_preset(db: AsyncSession, preset_id: uuid.UUID, data: dict) -> C
         raise BuiltinPresetError("内置预设不可修改，请复制后编辑")
     if "quant_rules" in data:
         await _validate_quant_rules(db, data["quant_rules"])
+    if "qualitative" in data:
+        _validate_qualitative(data["qualitative"])
+    if "name" in data and not str(data["name"]).strip():
+        raise ValueError("预设名称不能为空")
     for field in _UPDATABLE_FIELDS:
         if field in data:
             setattr(preset, field, data[field])

@@ -41,7 +41,9 @@ def compose_rules(presets: list[Any], pool: str, combine: str) -> dict:
         for q in preset.qualitative:
             if q not in seen_qual:
                 seen_qual.add(q)
-                qualitative.append(q)
+                # union 深判 criteria_hits 标注来源预设（spec 组合语义节）
+                label = f"[{preset.name}] {q}" if combine == "union" else q
+                qualitative.append(label)
 
     return {
         "stock_pool": {"type": pool},

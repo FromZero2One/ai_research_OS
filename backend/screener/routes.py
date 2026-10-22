@@ -42,9 +42,9 @@ class PresetUpsert(BaseModel):
 
 
 class TriggerParams(BaseModel):
-    """POST /runs 可选 body — 缺省 = v1 自由文本模式。"""
+    """POST /runs 可选 body — body 缺省或 {} 均为 v1 自由文本模式。"""
 
-    mode: str = "presets"
+    mode: str | None = None
     pool: str = "all"
     preset_ids: list[str] = Field(default_factory=list)
     combine: str = "union"
@@ -121,7 +121,7 @@ async def trigger_run(
     """触发一次智能选股（持久后台任务）。已有进行中的运行 → 409。"""
     try:
         run = await container.screener_service.trigger_run(
-            params.model_dump() if params is not None else None
+            params.model_dump() if params is not None and params.mode is not None else None
         )
     except ValueError as e:
         return JSONResponse(status_code=422, content={"error": str(e)})

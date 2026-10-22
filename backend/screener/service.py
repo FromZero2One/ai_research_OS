@@ -79,9 +79,15 @@ async def trigger_run(db: AsyncSession, params: dict | None = None) -> ScreenerR
             raise ValueError(f"未知组合方式: {combine!r}")
         if not preset_ids:
             raise ValueError("presets 模式必须选择至少一个预设")
+        # 去重保持顺序；非法 UUID 字符串在此转 422 而非 DB DataError 500
+        preset_ids = list(dict.fromkeys(preset_ids))
+        try:
+            parsed_ids = [uuid.UUID(str(i)) for i in preset_ids]
+        except (ValueError, AttributeError) as e:
+            raise ValueError(f"preset_ids 含非法 UUID: {preset_ids}") from e
         rows = (
             await db.execute(
-                select(CriteriaPreset).where(CriteriaPreset.id.in_(preset_ids))
+                select(CriteriaPreset).where(CriteriaPreset.id.in_(parsed_ids))
             )
         ).scalars().all()
         found = {str(r.id) for r in rows}
@@ -95,7 +101,7 @@ async def trigger_run(db: AsyncSession, params: dict | None = None) -> ScreenerR
             criteria_hash=hash_criteria(criteria_text + "|" + "|".join(sorted(found))),
             criteria_text=criteria_text,
             mode="presets",
-            preset_ids=[str(i) for i in preset_ids],
+            preset_ids=[str(i) for i in parsed_ids],
             combine_mode=combine,
             pool_override=pool,
         )
@@ -141,6 +147,9 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
                 )
             ).scalars().all()
             by_id = {str(p.id): p for p in rows}
+            missing = [i for i in run.preset_ids if i not in by_id]
+            if missing:
+                raise ValueError(f"预设已不存在（触发后被删除）: {missing}")
             presets = [by_id[i] for i in run.preset_ids]
             rules = compose_rules(presets, run.pool_override or "all", run.combine_mode or "union")
             rules["preset_ids"] = run.preset_ids
@@ -166,11 +175,22 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
             # union：每个预设独立初筛 → 票数排名（hits ↓ → score ↓ → 市值 ↓）
             from screener.compose import evaluate_quant_rules_by_preset
 
+            need_metrics_union = {r["metric"] for p in presets for r in p.quant_rules}
+            needs_bs_cf_union = bool(need_metrics_union & {"total_assets", "total_liabilities", "debt_to_equity", "current_ratio", "operating_cash_flow"})
+            if needs_bs_cf_union:
+                # 预设依赖 bs/cf 指标：先对股票池补采一轮（与 v1 对候选补采同一策略）
+                from screener.ingest import ingest_single_company
+
+                await db.flush()
+                for cand in pool[:200]:
+                    await ingest_single_company(db, cand["ticker"])
+                financials = await _reload_financials(db)
+
             union_map = evaluate_quant_rules_by_preset(pool, presets, financials)
             spot_by_ticker = {c["ticker"]: c for c in pool}
             ranked = sorted(
                 union_map.values(),
-                key=lambda e: (e["hits"], e["score"], e.get("market_cap") or 0.0),
+                key=lambda e: (e["hits"], e["score"], spot_by_ticker.get(e["ticker"], {}).get("market_cap") or 0.0),
                 reverse=True,
             )
             candidates = [

@@ -107,3 +107,18 @@ async def test_trigger_bad_combine_422(async_client: AsyncClient, test_session: 
         json={"mode": "presets", "pool": "all", "preset_ids": [pid], "combine": "xor"},
     )
     assert resp.status_code == 422
+
+
+async def test_trigger_empty_body_freeform(async_client: AsyncClient):
+    """自由文本模式：body={} 走 v1 criteria.md 流程（不要求 preset_ids）。"""
+    resp = await async_client.post("/api/v1/screener/runs", json={})
+    # 201（正常触发）或 409（已有进行中）均合法；绝不能 422/500
+    assert resp.status_code in {201, 409}
+
+
+async def test_trigger_invalid_uuid_422(async_client: AsyncClient):
+    resp = await async_client.post(
+        "/api/v1/screener/runs",
+        json={"mode": "presets", "pool": "all", "preset_ids": ["not-a-uuid"], "combine": "union"},
+    )
+    assert resp.status_code == 422

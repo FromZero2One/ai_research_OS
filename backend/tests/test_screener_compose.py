@@ -49,13 +49,13 @@ def test_intersection_concat_all():
 
 
 def test_union_qualitative_dedupe_preserve_order():
-    """union：定性条目去重拼接、保持首次出现顺序。"""
+    """union：定性条目去重拼接、保持首次出现顺序，并带来源预设前缀。"""
     p1 = _preset("P1", [_rule("roe", ">", 10)], qualitative=["护城河", "现金充裕"])
     p2 = _preset("P2", [_rule("roe", ">", 15)], qualitative=["现金充裕", "周期底部"])
     rules = compose_rules([p1, p2], pool="all", combine="union")
 
     assert rules["combine"] == "union"
-    assert rules["qualitative_criteria"] == ["护城河", "现金充裕", "周期底部"]
+    assert rules["qualitative_criteria"] == ["[P1] 护城河", "[P1] 现金充裕", "[P2] 周期底部"]
 
 
 def test_pool_param_overrides_suggested_pool():
