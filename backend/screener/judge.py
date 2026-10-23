@@ -71,6 +71,10 @@ def build_judge_context(
         f"行情快照: 现价 {candidate.get('price')}, 换手率 {candidate.get('turnover')}, "
         f"总市值 {candidate.get('market_cap')}, 初筛得分 {candidate.get('score')}",
     ]
+    # union 初筛命中的预设（LLM 聚焦定性判断 + 复核异常，而非重新验证数字）
+    preset_names = candidate.get("presets")
+    if preset_names:
+        lines.append(f"命中预设: {'、'.join(preset_names)}（命中 {candidate.get('hits', len(preset_names))} 套）")
     if financials:
         parts = [f"{_METRIC_CN.get(k, k)}={v}" for k, v in financials.items() if v is not None]
         if parts:
