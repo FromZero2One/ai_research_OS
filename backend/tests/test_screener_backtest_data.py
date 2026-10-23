@@ -81,6 +81,24 @@ class TestFetchDailyFromMysql:
         assert dates_519 == [dt.date(2021, 1, 4), dt.date(2021, 1, 5)]
         assert out["600519"][0]["close"] == 1806.75
 
+    async def test_fetches_per_ticker(self, monkeypatch):
+        """逐只拉取：每只票一次查询，结果合并。"""
+        from core.config import settings
+        import screener.backtest_data as bd
+
+        monkeypatch.setattr(settings, "BACKTEST_MYSQL_URL", "mysql+pymysql://u:p@fakehost:3306/akshare")
+        calls: list[list[str]] = []
+
+        def _fake_sync(url, tickers, start, end):
+            calls.append(list(tickers))
+            return [("600519", dt.date(2021, 1, 4), 1.0, 2.0, 3.0, 0.5, 10.0)] if tickers == ["600519"] else []
+
+        monkeypatch.setattr(bd, "_fetch_daily_sync", _fake_sync)
+        out = await fetch_daily_from_mysql(["600519", "300750", "000001"], dt.date(2021, 1, 1), dt.date(2021, 1, 31))
+        assert calls == [["600519"], ["300750"], ["000001"]]
+        assert out["600519"][0]["close"] == 2.0
+        assert "300750" not in out
+
     async def test_empty_result(self, monkeypatch):
         from core.config import settings
 

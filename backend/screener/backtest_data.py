@@ -89,25 +89,57 @@ async def fetch_daily_from_mysql(
 ) -> dict[str, list[dict]]:
     """外部 MySQL 前复权日线 → {ticker: [{date, open, close, high, low, volume}]}。
 
+    逐只拉取（单票一次查询，~1200 行/只），内存占用恒定小。
     同票同日重复行去重；date 升序。BACKTEST_MYSQL_URL 为空 → raise RuntimeError。
     """
     from core.config import settings
 
     if not settings.BACKTEST_MYSQL_URL:
         raise RuntimeError("BACKTEST_MYSQL_URL 未配置，无法拉取历史日线")
-    rows = await asyncio.to_thread(
-        _fetch_daily_sync, settings.BACKTEST_MYSQL_URL, tickers, start, end
-    )
     out: dict[str, dict[dt.date, dict]] = {}
-    for symbol, date, open_, close, high, low, volume in rows:
-        out.setdefault(symbol, {})[date] = {
-            "date": date, "open": open_, "close": close,
-            "high": high, "low": low, "volume": volume,
-        }
+    for idx, ticker in enumerate(tickers, 1):
+        rows = await asyncio.to_thread(
+            _fetch_daily_sync, settings.BACKTEST_MYSQL_URL, [ticker], start, end
+        )
+        for symbol, date, open_, close, high, low, volume in rows:
+            out.setdefault(symbol, {})[date] = {
+                "date": date, "open": open_, "close": close,
+                "high": high, "low": low, "volume": volume,
+            }
+        if idx % 50 == 0 or idx == len(tickers):
+            logger.info("回测日线逐只拉取 %d/%d", idx, len(tickers))
     return {
         sym: [bars[d] for d in sorted(bars)]
         for sym, bars in out.items()
     }
+
+
+async def fetch_all_tickers(start: dt.date, end: dt.date) -> list[str]:
+    """外部库区间内 distinct symbol（不依赖本地 Company 表，含已退市票）。"""
+    from core.config import settings
+
+    if not settings.BACKTEST_MYSQL_URL:
+        raise RuntimeError("BACKTEST_MYSQL_URL 未配置，无法拉取历史日线")
+
+    def _query(url: str) -> list[str]:
+        import pymysql
+
+        conn = pymysql.connect(
+            host=_parse_host(url), user=_parse_user(url), password=_parse_password(url),
+            database=_parse_db(url), port=_parse_port(url), connect_timeout=10,
+        )
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT DISTINCT symbol FROM akshare.stock_history_daily_info_entity "
+                    "WHERE date BETWEEN %s AND %s AND adjust = 'qfq'",
+                    (start, end),
+                )
+                return [r[0] for r in cur.fetchall()]
+        finally:
+            conn.close()
+
+    return await asyncio.to_thread(_query, settings.BACKTEST_MYSQL_URL)
 
 
 async def sync_daily_to_pg(db: AsyncSession, daily: dict[str, list[dict]]) -> int:
