@@ -75,8 +75,55 @@ _OPS = {
 _SNAPSHOT_FIELDS = frozenset({"price", "turnover", "market_cap"})
 
 
-async def fetch_market_spot() -> list[dict]:
-    """全市场 A 股快照（akshare 子进程，to_thread 防阻塞事件循环）。失败 raise DataSourceError。"""
+async def fetch_market_spot(force_refresh: bool = False) -> list[dict]:
+    """全市场 A 股快照（带交易日缓存）。
+
+    同一交易日第二次调用直接复用缓存（新浪分页 ~60 页节流需 20-30s），
+    force_refresh=True 跳过读缓存仍回写。缓存故障/损坏静默降级为直接拉取。
+    """
+    cache = _get_cache()
+    key = _spot_cache_key()
+    if not force_refresh:
+        try:
+            raw = await cache.get(key)
+            if raw:
+                rows = json.loads(raw)
+                if isinstance(rows, list) and rows:
+                    logger.info("全市场快照命中缓存: %d 只", len(rows))
+                    return rows
+        except Exception as e:  # noqa: BLE001 — 缓存故障不阻塞拉取
+            logger.warning("快照缓存读取失败，回源: %s", e)
+
+    out = await _fetch_market_spot_raw()
+
+    try:
+        await cache.set(key, json.dumps(out, ensure_ascii=False), ttl=_SPOT_CACHE_TTL)
+    except Exception as e:  # noqa: BLE001 — 缓存故障不阻塞返回
+        logger.warning("快照缓存写入失败: %s", e)
+    return out
+
+
+# 快照缓存 TTL：24h（跨交易日后 key 里的日期变化，天然取新数据）
+_SPOT_CACHE_TTL = 24 * 3600
+_SPOT_CACHE_PREFIX = "screener:spot"
+
+
+def _spot_cache_key() -> str:
+    """按交易日分 key：当天收盘数据当天内复用，次日自动失效。"""
+    from datetime import date
+
+    return f"{_SPOT_CACHE_PREFIX}:{date.today().isoformat()}"
+
+
+def _get_cache():
+    """Redis 缓存（懒加载，失败由调用方兜底）。"""
+    from core.adapters.cache import create_cache
+
+    return create_cache()
+
+
+async def _fetch_market_spot_raw() -> list[dict]:
+    """真实拉取：akshare 子进程 + 解析清洗（无缓存逻辑，纯函数化便于测试）。"""
     raw = await asyncio.to_thread(run_akshare, _SPOT_CODE, None, 560)
     if raw is None:
         raise DataSourceError("akshare", "全市场快照采集失败（子进程无输出）")
