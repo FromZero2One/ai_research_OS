@@ -52,6 +52,7 @@ def build_report(
     criteria_text: str,
     excluded_missing_data: list[dict],
     financial_asof: str | None = None,
+    spot_taken_at: str | None = None,
 ) -> str:
     """生成选股报告 Markdown。"""
     recommended = [j for j in judgements if j.get("status") == "ok" and j.get("recommend") is True]
@@ -69,6 +70,8 @@ def build_report(
     )
     if financial_asof:
         lines.append(f"- 财务数据截至：{financial_asof}")
+    if spot_taken_at:
+        lines.append(f"- 快照时间：{spot_taken_at}（新浪源，缓存命中时为缓存采集时间）")
     lines.append("")
     lines.append("## 推荐列表")
     lines.append("")

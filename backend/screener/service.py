@@ -283,6 +283,7 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
 
         # ② 确定性初筛：全市场快照 → 股票池过滤 → 量化规则 → 排名截断
         spot = await screening.fetch_market_spot()
+        spot_taken_at = _now()[:19].replace("T", " ")
         from company.models import Company
 
         watched = set(
@@ -352,6 +353,7 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
              "result_count": sum(1 for j in judgements if j.get("recommend") is True)},
             judgements, run.criteria_text, excluded_missing,
             financial_asof=_financial_asof(financials),
+            spot_taken_at=spot_taken_at,
         )
         path = report_path_for(str(run.id))
         path.parent.mkdir(parents=True, exist_ok=True)
