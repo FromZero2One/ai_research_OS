@@ -48,7 +48,7 @@ LLM 只在深判参与，筛选执行确定性。迁移 `b5d2f8a3c6e1` → `c8e1
 用历史数据验证预设的历史表现（`POST /screener/backtests`，body: `preset_id` + `years` 1-10；`GET /screener/backtests/{id}` 查结果）。
 
 - **状态机**：`pending → running → completed/failed`（`screener.backtest_runs` 表），经持久任务 `screener_backtest` 后台执行，同时刻至多一个进行中（409）
-- **数据**：日线走外部 MySQL 前复权库（`BACKTEST_MYSQL_URL`，仅存 .env），同票同日重复行去重后灌 `market.stock_prices`（(ticker,date) 唯一约束，幂等）；历史财务缺失报告期按需经 `ingest_marketwide_yjbb` 补拉（SAVEPOINT 单期隔离）；票池优先本地活跃公司，为空时取外部库区间 distinct symbol（含退市票，缓解幸存者偏差）
+- **数据**：日线走外部 MySQL 前复权库（`BACKTEST_MYSQL_URL`，仅存 .env），**逐只「边拉边灌」**——单票一次查询（~1200 行）立即落库 commit，本地行数即进度、≥200 根视为完整可断点续传、单票网络错误重试 3 次；同票同日重复行去重、(ticker,date) 唯一约束幂等；历史财务缺失报告期按需经 `ingest_marketwide_yjbb` 补拉（SAVEPOINT 单期隔离）；票池优先本地活跃公司，为空时取外部库区间 distinct symbol（含退市票，缓解幸存者偏差）
 - **口径**（`screener/backtest.py` 纯函数）：调仓日 = 各披露截止日（Q1 4-30 / Q2 8-31 / Q3 10-31 / 年报次年 4-30）后首个交易日；**4 月调仓统一用上一年年报**，无未来函数；收益一律前复权 close；停牌（卖出价缺失）记 0 并标注；近似市值 = 调仓日收盘价 × 当前总股本；未计交易费用
 - **产出**：result JSON `{summary: {total_return, cagr, max_drawdown, win_rate, ...}, yearly: [...]}` + Markdown 报告落 `screener/reports/`（含免责声明）
 - 已知近似：外部库无历史股本 → 市值为近似值；财务可见性按披露截止日近似（实际披露有早有晚）；无费用建模。报告内均已声明。
