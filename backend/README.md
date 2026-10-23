@@ -43,6 +43,16 @@ Company → Market + Document → Knowledge(RAG) → AI → Research → Portfol
 
 LLM 只在深判参与，筛选执行确定性。迁移 `b5d2f8a3c6e1` → `c8e1b7d4f2a9`，schema `screener`。
 
+### 预设回测（2026-10-23 MVP）
+
+用历史数据验证预设的历史表现（`POST /screener/backtests`，body: `preset_id` + `years` 1-10；`GET /screener/backtests/{id}` 查结果）。
+
+- **状态机**：`pending → running → completed/failed`（`screener.backtest_runs` 表），经持久任务 `screener_backtest` 后台执行，同时刻至多一个进行中（409）
+- **数据**：日线走外部 MySQL 前复权库（`BACKTEST_MYSQL_URL`，仅存 .env），同票同日重复行去重后灌 `market.stock_prices`（(ticker,date) 唯一约束，幂等）；历史财务缺失报告期按需经 `ingest_marketwide_yjbb` 补拉（SAVEPOINT 单期隔离）；票池优先本地活跃公司，为空时取外部库区间 distinct symbol（含退市票，缓解幸存者偏差）
+- **口径**（`screener/backtest.py` 纯函数）：调仓日 = 各披露截止日（Q1 4-30 / Q2 8-31 / Q3 10-31 / 年报次年 4-30）后首个交易日；**4 月调仓统一用上一年年报**，无未来函数；收益一律前复权 close；停牌（卖出价缺失）记 0 并标注；近似市值 = 调仓日收盘价 × 当前总股本；未计交易费用
+- **产出**：result JSON `{summary: {total_return, cagr, max_drawdown, win_rate, ...}, yearly: [...]}` + Markdown 报告落 `screener/reports/`（含免责声明）
+- 已知近似：外部库无历史股本 → 市值为近似值；财务可见性按披露截止日近似（实际披露有早有晚）；无费用建模。报告内均已声明。
+
 **数据采集（2026-10-22 东财风控后）**：全市场快照走新浪 `Market_Center` 分页接口；财务三表均为市场级一次调用——业绩报表 `stock_yjbb_em`（含 eps/营收同比/净利同比）、资产负债表 `stock_zcfz_em`、现金流量表 `stock_xjll_em`，全部经 `_AKSHARE_PROLOGUE` 反风控头（浏览器 UA + 直连 + IPv4 + urllib3 重试）。流动/速动比率、资产/存货/应收周转率、eps 与成长率另走东财 F10 主要指标 `RPT_F10_FINANCE_MAINFINADATA`（`LD`/`SD`/`TOAZZL`/`CHZZL`/`YSZKZZL`），分页 500/页、只保留 A 股前缀。`stock_zcfz_em` 原始表没有 `CURRENT_RATIO` 列，旧实现的 `CURRENT_RATIO÷100` 不会生效；单只报表接口仅作兜底保留。
 
 ### 数据分工原则（2026-10-14 定稿）
