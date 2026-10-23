@@ -581,3 +581,61 @@ async def upsert_metrics(db, ticker: str, entries: list) -> int:
             )
         )
     return len(unique)
+
+
+async def upsert_metrics_batch(db, data: dict[str, list]) -> int:
+    """多 ticker 批量灌库：按 (ticker, year, period) 分组各一条 DELETE，
+    然后一次 bulk insert（逐 ticker delete+insert 在全市场 5000 只时是上万次往返）。
+
+    data 形如 {ticker: [FinancialMetricEntry, ...]}，entries 可含多个报告期。
+    返回实际写入行数。空数据 no-op。
+    """
+    from collections import defaultdict
+    from datetime import datetime
+
+    from sqlalchemy import delete
+
+    from market.models import FinancialMetric
+
+    if not data:
+        return 0
+
+    # 去重：(ticker, year, period, metric) 只留最后一条
+    unique: dict[tuple, FinancialMetricEntry] = {}
+    for ticker, entries in data.items():
+        ticker = str(ticker).strip()
+        if not ticker:
+            continue
+        for e in entries:
+            unique[(ticker, e.fiscal_year, e.fiscal_period, e.metric_name)] = e
+    if not unique:
+        return 0
+
+    # 按 (ticker, year, period) 分组删除旧行
+    groups: dict[tuple, set[str]] = defaultdict(set)
+    for (ticker, year, period, metric) in unique:
+        groups[(ticker, year, period)].add(metric)
+    for (ticker, year, period), metrics in groups.items():
+        await db.execute(
+            delete(FinancialMetric).where(
+                FinancialMetric.ticker == ticker,
+                FinancialMetric.fiscal_year == year,
+                FinancialMetric.fiscal_period == period,
+                FinancialMetric.metric_name.in_(metrics),
+            )
+        )
+
+    now = datetime.utcnow()
+    db.add_all(
+        FinancialMetric(
+            ticker=ticker,
+            fiscal_year=e.fiscal_year,
+            fiscal_period=e.fiscal_period,
+            metric_name=e.metric_name,
+            metric_value=e.metric_value,
+            metric_unit=_UNIT_MAP.get(e.metric_name),
+            reported_at=now,
+        )
+        for (ticker, _y, _p, _m), e in unique.items()
+    )
+    return len(unique)
