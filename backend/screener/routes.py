@@ -13,8 +13,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.container import Container
 from core.database import get_container, get_db
 from core.exceptions import NotFoundError
+from core.event_service import EventLogger
 from screener.criteria import read_criteria, write_criteria
-from screener.models import CriteriaPreset, ScreenerJudgement, ScreenerRule, ScreenerRun
+from screener.models import (
+    CriteriaPreset,
+    ScreenerBacktestRun,
+    ScreenerJudgement,
+    ScreenerRule,
+    ScreenerRun,
+)
 from screener.presets import (
     BuiltinPresetError,
     create_preset,
@@ -48,6 +55,13 @@ class TriggerParams(BaseModel):
     pool: str = "all"
     preset_ids: list[str] = Field(default_factory=list)
     combine: str = "union"
+
+
+class BacktestParams(BaseModel):
+    """POST /backtests body。"""
+
+    preset_id: uuid.UUID
+    years: int = Field(default=5, ge=1, le=10)
 
 
 def _preset_json(p: CriteriaPreset) -> dict:
@@ -130,6 +144,54 @@ async def trigger_run(
     return {
         "id": str(run.id), "status": run.status, "criteria_hash": run.criteria_hash,
         "mode": run.mode, "combine": run.combine_mode,
+    }
+
+
+@router.post("/backtests", status_code=201)
+async def trigger_backtest(data: BacktestParams, db: AsyncSession = Depends(get_db)):
+    """触发一次预设历史回测（持久后台任务）。预设不存在 → 422；已有进行中 → 409。"""
+    preset = (
+        await db.execute(select(CriteriaPreset).where(CriteriaPreset.id == data.preset_id))
+    ).scalar_one_or_none()
+    if preset is None:
+        return JSONResponse(status_code=422, content={"error": f"预设不存在: {data.preset_id}"})
+    active = (
+        await db.execute(
+            select(ScreenerBacktestRun).where(
+                ScreenerBacktestRun.status.in_(["pending", "running"])
+            ).limit(1)
+        )
+    ).scalar_one_or_none()
+    if active:
+        return JSONResponse(status_code=409, content={"error": "已有回测任务进行中，请等待完成后再触发"})
+
+    run = ScreenerBacktestRun(preset_id=data.preset_id, years=data.years, status="pending")
+    db.add(run)
+    await db.flush()
+
+    from core.task_manager import create_task
+
+    await create_task("screener_backtest", f"backtest:{run.id}", {"run_id": str(run.id)}, db=db)
+    await EventLogger(db).record(
+        source="screener", event_type="backtest.triggered",
+        entity_type="backtest_run", entity_id=str(run.id),
+        summary=f"触发回测：{preset.name} {data.years}年",
+    )
+    return {"id": str(run.id), "status": run.status}
+
+
+@router.get("/backtests/{run_id}")
+async def get_backtest(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """回测详情（含 result JSON 与报告路径）。"""
+    run = (
+        await db.execute(select(ScreenerBacktestRun).where(ScreenerBacktestRun.id == run_id))
+    ).scalar_one_or_none()
+    if run is None:
+        raise NotFoundError("ScreenerBacktestRun", str(run_id))
+    return {
+        "id": str(run.id), "preset_id": str(run.preset_id), "years": run.years,
+        "status": run.status, "error": run.error, "result": run.result,
+        "report_path": run.report_path,
     }
 
 
