@@ -137,3 +137,64 @@ class TestJudgeCandidates:
         assert by_ticker["600519"]["status"] == "ok"
         assert by_ticker["300750"]["status"] == "failed"
         assert "timed out" in by_ticker["300750"]["error"]
+
+    async def test_runs_concurrently(self):
+        """多只候选并发深判：总耗时 ≈ 最慢单只，而非串行累加。"""
+        import asyncio
+        import time
+
+        slow_cand = {**CAND, "ticker": "600519"}
+        fast_cand = {**CAND, "ticker": "300750", "name": "宁德时代"}
+
+        class SlowLLM(FakeLLM):
+            async def generate(self, messages: Any, **kwargs: Any) -> LLMResponse:
+                self.calls += 1
+                await asyncio.sleep(0.3)
+                return LLMResponse(content=_json_text(VALID_JUDGE), model="fake", usage=None)
+
+        start = time.monotonic()
+        results = await judge_candidates(SlowLLM([]), [slow_cand, fast_cand], "标准文本", knowledge=None)
+        elapsed = time.monotonic() - start
+        assert all(r["status"] == "ok" for r in results)
+        # 串行至少 0.6s；并发应 ≈ 0.3s，留余量 0.55s 判定
+        assert elapsed < 0.55, f"深判疑似串行执行，耗时 {elapsed:.2f}s"
+
+    async def test_concurrency_bounded(self):
+        """并发有上限（Semaphore）：同时在途的 LLM 调用数不超过 max_concurrency。"""
+        import asyncio
+
+        cands = [{**CAND, "ticker": f"60{i:04d}", "name": f"股票{i}"} for i in range(10)]
+
+        class TrackingLLM(FakeLLM):
+            def __init__(self):
+                super().__init__([])
+                self.in_flight = 0
+                self.max_in_flight = 0
+
+            async def generate(self, messages: Any, **kwargs: Any) -> LLMResponse:
+                self.calls += 1
+                self.in_flight += 1
+                self.max_in_flight = max(self.max_in_flight, self.in_flight)
+                try:
+                    await asyncio.sleep(0.05)
+                    return LLMResponse(content=_json_text(VALID_JUDGE), model="fake", usage=None)
+                finally:
+                    self.in_flight -= 1
+
+        llm = TrackingLLM()
+        results = await judge_candidates(llm, cands, "标准文本", knowledge=None, max_concurrency=3)
+        assert len(results) == 10
+        assert all(r["status"] == "ok" for r in results)
+        assert llm.max_in_flight <= 3, f"并发超限：峰值 {llm.max_in_flight}"
+
+    async def test_results_preserve_input_order(self):
+        """并发后结果顺序与输入顺序一致（报告/排名依赖顺序稳定性）。"""
+        cands = [{**CAND, "ticker": f"60{i:04d}", "name": f"股票{i}"} for i in range(5)]
+
+        class IdentityLLM(FakeLLM):
+            async def generate(self, messages: Any, **kwargs: Any) -> LLMResponse:
+                self.calls += 1
+                return LLMResponse(content=_json_text(VALID_JUDGE), model="fake", usage=None)
+
+        results = await judge_candidates(IdentityLLM([]), cands, "标准文本", knowledge=None)
+        assert [r["ticker"] for r in results] == [c["ticker"] for c in cands]

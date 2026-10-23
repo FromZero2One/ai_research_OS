@@ -6,6 +6,7 @@ LLM 只能依据提供的上下文判断，不得编造数字。
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 from core.interfaces import LLM, LLMMessage, LLMResponse
@@ -137,6 +138,10 @@ async def judge_one(
     raise ValueError(last_error)
 
 
+# 深判默认并发数：单用户 DeepSeek 云端，5 路并发不触发限流
+_DEFAULT_MAX_CONCURRENCY = 5
+
+
 async def judge_candidates(
     llm: LLM,
     candidates: list[dict],
@@ -144,71 +149,84 @@ async def judge_candidates(
     knowledge=None,
     qualitative: list[str] | None = None,
     financials_by_ticker: dict[str, list] | None = None,
+    max_concurrency: int = _DEFAULT_MAX_CONCURRENCY,
 ) -> list[dict]:
-    """逐只深判；单只 ValueError → 该只 status=failed，循环继续。
+    """并发深判；单只失败 → 该只 status=failed，其余不受影响。
 
     qualitative 为结构化规则里的定性条目；未提供时退回用标准原文整段判断。
     financials_by_ticker 提供候选的最新财务指标（进入深判上下文）。
+    max_concurrency 限制同时在途的 LLM 调用数（Semaphore）。
+    结果顺序与输入顺序一致（asyncio.gather 保序）。
     """
     criteria = qualitative or [criteria_text]
+    semaphore = asyncio.Semaphore(max_concurrency)
 
-    results: list[dict] = []
-    for cand in candidates:
-        # 最新一期财务指标 → 简化 dict（metric → value）
-        fin: dict[str, float] | None = None
-        if financials_by_ticker:
-            entries = financials_by_ticker.get(cand["ticker"]) or []
-            best: dict[str, tuple] = {}
-            for e in entries:
-                if e.metric_value is None:
-                    continue
-                key = (e.fiscal_year, e.fiscal_period)
-                if e.metric_name not in best or key > best[e.metric_name][0]:
-                    best[e.metric_name] = (key, e.metric_value)
-            fin = {k: v[1] for k, v in best.items()} if best else None
-        try:
-            judgement = await judge_one(llm, cand, criteria or [criteria_text], knowledge=knowledge, financials=fin)
-            results.append(
-                {
-                    "ticker": cand["ticker"],
-                    "name": cand["name"],
-                    "recommend": judgement["recommend"],
-                    "reasons": judgement.get("reasons", []),
-                    "criteria_hits": judgement.get("criteria_hits", []),
-                    "confidence": judgement.get("confidence"),
-                    "snapshot": {k: cand.get(k) for k in ("price", "turnover", "market_cap", "score", "hits", "presets") if cand.get(k) is not None},
-                    "status": "ok",
-                    "error": None,
-                }
+    async def _judge_with_limits(cand: dict) -> dict:
+        async with semaphore:
+            return await _judge_single(
+                llm, cand, criteria, criteria_text, knowledge, financials_by_ticker
             )
-        except ValueError as e:
-            logger.warning("深判失败 %s: %s", cand["ticker"], e)
-            results.append(
-                {
-                    "ticker": cand["ticker"],
-                    "name": cand["name"],
-                    "recommend": None,
-                    "reasons": [],
-                    "criteria_hits": [],
-                    "confidence": None,
-                    "snapshot": {k: cand.get(k) for k in ("price", "turnover", "market_cap", "score", "hits", "presets") if cand.get(k) is not None},
-                    "status": "failed",
-                    "error": str(e),
-                }
-            )
-        except Exception as e:  # noqa: BLE001 — 网络超时等传输故障同样只隔离单只
-            logger.warning("深判异常 %s: %s", cand["ticker"], e)
-            results.append(
-                {
-                    "ticker": cand["ticker"],
-                    "name": cand["name"],
-                    "recommend": None,
-                    "reasons": [],
-                    "criteria_hits": [],
-                    "confidence": None,
-                    "snapshot": {k: cand.get(k) for k in ("price", "turnover", "market_cap", "score", "hits", "presets") if cand.get(k) is not None},
-                    "status": "failed",
-                    "error": f"LLM 调用异常: {e}",
-                }
-            )
-    return results
+
+    return list(await asyncio.gather(*(_judge_with_limits(c) for c in candidates)))
+
+
+def _snapshot_fields(cand: dict) -> dict:
+    """深判结果透传的行情/初筛快照字段。"""
+    return {k: cand.get(k) for k in ("price", "turnover", "market_cap", "score", "hits", "presets") if cand.get(k) is not None}
+
+
+def _failed_judgement(cand: dict, error: str) -> dict:
+    return {
+        "ticker": cand["ticker"],
+        "name": cand["name"],
+        "recommend": None,
+        "reasons": [],
+        "criteria_hits": [],
+        "confidence": None,
+        "snapshot": _snapshot_fields(cand),
+        "status": "failed",
+        "error": error,
+    }
+
+
+async def _judge_single(
+    llm: LLM,
+    cand: dict,
+    criteria: list[str],
+    criteria_text: str,
+    knowledge=None,
+    financials_by_ticker: dict[str, list] | None = None,
+) -> dict:
+    """单只候选深判（含失败隔离），返回一条结果 dict。"""
+    # 最新一期财务指标 → 简化 dict（metric → value）
+    fin: dict[str, float] | None = None
+    if financials_by_ticker:
+        entries = financials_by_ticker.get(cand["ticker"]) or []
+        best: dict[str, tuple] = {}
+        for e in entries:
+            if e.metric_value is None:
+                continue
+            key = (e.fiscal_year, e.fiscal_period)
+            if e.metric_name not in best or key > best[e.metric_name][0]:
+                best[e.metric_name] = (key, e.metric_value)
+        fin = {k: v[1] for k, v in best.items()} if best else None
+    try:
+        judgement = await judge_one(llm, cand, criteria or [criteria_text], knowledge=knowledge, financials=fin)
+        return {
+            "ticker": cand["ticker"],
+            "name": cand["name"],
+            "recommend": judgement["recommend"],
+            "reasons": judgement.get("reasons", []),
+            "criteria_hits": judgement.get("criteria_hits", []),
+            "confidence": judgement.get("confidence"),
+            "snapshot": _snapshot_fields(cand),
+            "status": "ok",
+            "error": None,
+        }
+    except ValueError as e:
+        logger.warning("深判失败 %s: %s", cand["ticker"], e)
+        return _failed_judgement(cand, str(e))
+    except Exception as e:  # noqa: BLE001 — 网络超时等传输故障同样只隔离单只
+        logger.warning("深判异常 %s: %s", cand["ticker"], e)
+        return _failed_judgement(cand, f"LLM 调用异常: {e}")
+
