@@ -29,12 +29,28 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-async def _reload_financials(db: AsyncSession) -> dict[str, list]:
-    """加载全库财务指标 → {ticker: [FinancialMetricEntry]}（初筛求值用）。"""
+async def _reload_financials(
+    db: AsyncSession,
+    metrics: set[str] | None = None,
+    year: int | None = None,
+    period: str | None = None,
+) -> dict[str, list]:
+    """加载财务指标 → {ticker: [FinancialMetricEntry]}（初筛求值用）。
+
+    传 metrics/year/period 时在 SQL 层过滤（全市场多期数据全量加载会
+    随财报季无限增长，内存和查询时间都不可持续）；不传保持旧行为全量加载。
+    """
     from market.domain import FinancialMetricEntry
     from market.models import FinancialMetric
 
-    rows = (await db.execute(select(FinancialMetric))).scalars().all()
+    stmt = select(FinancialMetric)
+    if metrics:
+        stmt = stmt.where(FinancialMetric.metric_name.in_(metrics))
+    if year is not None:
+        stmt = stmt.where(FinancialMetric.fiscal_year == year)
+    if period is not None:
+        stmt = stmt.where(FinancialMetric.fiscal_period == period)
+    rows = (await db.execute(stmt)).scalars().all()
     financials: dict[str, list] = {}
     for m in rows:
         financials.setdefault(m.ticker, []).append(
@@ -276,16 +292,18 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
         )
         pool = filter_pool(spot, rules.get("stock_pool", {"type": "all"}), watched)
 
-        financials = await _reload_financials(db)
-
         # 先补齐所需财务指标，再做确定性初筛：缺数据会让规则直接排除候选，
         # 因此不能等 passed 为空后再补采。
         if run.mode == "presets":
             needed_metrics = {r["metric"] for p in presets for r in p.quant_rules}
         else:
             needed_metrics = {r["metric"] for r in rules.get("quant_rules", [])}
-        if await _ensure_market_data(db, needed_metrics):
-            financials = await _reload_financials(db)
+        await _ensure_market_data(db, needed_metrics)
+        # 按「所需指标 × 最新报告期」过滤加载（全市场多期数据全量加载不可持续）
+        _date, _year, _period = _latest_fiscal()
+        financials = await _reload_financials(
+            db, metrics=needed_metrics, year=_year, period=_period
+        )
 
         if run.mode == "presets" and run.combine_mode == "union":
             # union：每个预设独立初筛 → 票数排名（hits ↓ → score ↓ → 市值 ↓）
