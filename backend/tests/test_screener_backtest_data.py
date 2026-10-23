@@ -51,6 +51,10 @@ class FakeConn:
         pass
 
 
+async def _noop_sleep(seconds: float) -> None:
+    return None
+
+
 SPOT_ROWS = [
     # symbol, date, open, close, high, low, volume — 含一条重复行
     ("600519", dt.date(2021, 1, 4), 1800.0, 1806.75, 1810.0, 1795.0, 406318.0),
@@ -81,7 +85,7 @@ class TestFetchDailyFromMysql:
         assert dates_519 == [dt.date(2021, 1, 4), dt.date(2021, 1, 5)]
         assert out["600519"][0]["close"] == 1806.75
 
-    async def test_fetches_per_ticker(self, monkeypatch):
+    async def test_retry_on_transient_failure(self, monkeypatch):
         """逐只拉取：每只票一次查询，结果合并。"""
         from core.config import settings
         import screener.backtest_data as bd
@@ -98,6 +102,26 @@ class TestFetchDailyFromMysql:
         assert calls == [["600519"], ["300750"], ["000001"]]
         assert out["600519"][0]["close"] == 2.0
         assert "300750" not in out
+
+    async def test_retry_on_transient_failure(self, monkeypatch):
+        """网络抖动重试：前两次抛错、第三次成功 → 最终拿到数据。"""
+        from core.config import settings
+        import screener.backtest_data as bd
+
+        monkeypatch.setattr(settings, "BACKTEST_MYSQL_URL", "mysql+pymysql://u:p@fakehost:3306/akshare")
+        calls = {"n": 0}
+
+        def _flaky(url, tickers, start, end):
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise RuntimeError("(2003, timed out)")
+            return [("600519", dt.date(2021, 1, 4), 1.0, 2.0, 3.0, 0.5, 10.0)]
+
+        monkeypatch.setattr(bd, "_fetch_daily_sync", _flaky)
+        monkeypatch.setattr(bd.asyncio, "sleep", _noop_sleep)
+        out = await fetch_daily_from_mysql(["600519"], dt.date(2021, 1, 1), dt.date(2021, 1, 31))
+        assert calls["n"] == 3
+        assert out["600519"][0]["close"] == 2.0
 
     async def test_empty_result(self, monkeypatch):
         from core.config import settings

@@ -98,9 +98,20 @@ async def fetch_daily_from_mysql(
         raise RuntimeError("BACKTEST_MYSQL_URL 未配置，无法拉取历史日线")
     out: dict[str, dict[dt.date, dict]] = {}
     for idx, ticker in enumerate(tickers, 1):
-        rows = await asyncio.to_thread(
-            _fetch_daily_sync, settings.BACKTEST_MYSQL_URL, [ticker], start, end
-        )
+        rows: list[tuple] = []
+        for attempt in range(3):
+            try:
+                rows = await asyncio.to_thread(
+                    _fetch_daily_sync, settings.BACKTEST_MYSQL_URL, [ticker], start, end
+                )
+                break
+            except Exception as e:  # noqa: BLE001 — 网络抖动重试（逐只拉取下单次失败不应毁掉整个 run）
+                if attempt == 2:
+                    raise
+                logger.warning(
+                    "回测日线拉取重试 %d/3 %s: %s", attempt + 1, ticker, str(e)[:120]
+                )
+                await asyncio.sleep(2 * (attempt + 1))
         for symbol, date, open_, close, high, low, volume in rows:
             out.setdefault(symbol, {})[date] = {
                 "date": date, "open": open_, "close": close,
