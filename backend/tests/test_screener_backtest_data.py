@@ -73,22 +73,13 @@ def _patch_pymysql(monkeypatch, rows: list[tuple]) -> FakeCursor:
 
 
 class TestFetchDailyFromMysql:
-    async def test_dedupes_and_sorts(self, monkeypatch):
-        """同票同日重复行去重；按 (symbol, date) 升序。"""
+    async def test_fetch_one_sync_one(self, test_session: AsyncSession, monkeypatch):
+        """逐只拉取+立即落库：每只票一次查询，拉一只灌一只，返回落库票数。"""
         from core.config import settings
+        from sqlalchemy import select
 
-        monkeypatch.setattr(settings, "BACKTEST_MYSQL_URL", "mysql+pymysql://u:p@fakehost:3306/akshare")
-        _patch_pymysql(monkeypatch, SPOT_ROWS)
-        out = await fetch_daily_from_mysql(["600519", "300750"], dt.date(2021, 1, 1), dt.date(2021, 1, 31))
-        assert set(out.keys()) == {"600519", "300750"}
-        dates_519 = [r["date"] for r in out["600519"]]
-        assert dates_519 == [dt.date(2021, 1, 4), dt.date(2021, 1, 5)]
-        assert out["600519"][0]["close"] == 1806.75
-
-    async def test_retry_on_transient_failure(self, monkeypatch):
-        """逐只拉取：每只票一次查询，结果合并。"""
-        from core.config import settings
         import screener.backtest_data as bd
+        from market.models import StockPrice
 
         monkeypatch.setattr(settings, "BACKTEST_MYSQL_URL", "mysql+pymysql://u:p@fakehost:3306/akshare")
         calls: list[list[str]] = []
@@ -98,12 +89,41 @@ class TestFetchDailyFromMysql:
             return [("600519", dt.date(2021, 1, 4), 1.0, 2.0, 3.0, 0.5, 10.0)] if tickers == ["600519"] else []
 
         monkeypatch.setattr(bd, "_fetch_daily_sync", _fake_sync)
-        out = await fetch_daily_from_mysql(["600519", "300750", "000001"], dt.date(2021, 1, 1), dt.date(2021, 1, 31))
+        n = await fetch_daily_from_mysql(
+            test_session, ["600519", "300750", "000001"], dt.date(2021, 1, 1), dt.date(2021, 1, 31)
+        )
         assert calls == [["600519"], ["300750"], ["000001"]]
-        assert out["600519"][0]["close"] == 2.0
-        assert "300750" not in out
+        assert n == 1
+        rows = (await test_session.execute(select(StockPrice).where(StockPrice.ticker == "600519"))).scalars().all()
+        assert len(rows) == 1 and rows[0].close == 2.0
 
-    async def test_retry_on_transient_failure(self, monkeypatch):
+    async def test_resumes_skipping_synced_tickers(self, test_session: AsyncSession, monkeypatch):
+        """断点续传：本地已有完整数据（≥200 根）的票不再拉取。"""
+        from core.config import settings
+        import screener.backtest_data as bd
+        from market.models import StockPrice
+
+        start = dt.date(2021, 1, 1)
+        end = dt.date(2021, 12, 31)
+        monkeypatch.setattr(settings, "BACKTEST_MYSQL_URL", "mysql+pymysql://u:p@fakehost:3306/akshare")
+        # 预置 600519 窗口内 210 个不同交易日（视为完整）
+        test_session.add_all(
+            StockPrice(ticker="600519", date=start + dt.timedelta(days=i), open=1, close=1, high=1, low=1, volume=1)
+            for i in range(210)
+        )
+        await test_session.flush()
+        calls: list[list[str]] = []
+
+        def _fake_sync(url, tickers, start, end):
+            calls.append(list(tickers))
+            return []
+
+        monkeypatch.setattr(bd, "_fetch_daily_sync", _fake_sync)
+        n = await fetch_daily_from_mysql(test_session, ["600519", "300750"], start, end)
+        assert calls == [["300750"]]  # 600519 被跳过
+        assert n == 0
+
+    async def test_retry_on_transient_failure(self, test_session: AsyncSession, monkeypatch):
         """网络抖动重试：前两次抛错、第三次成功 → 最终拿到数据。"""
         from core.config import settings
         import screener.backtest_data as bd
@@ -119,17 +139,17 @@ class TestFetchDailyFromMysql:
 
         monkeypatch.setattr(bd, "_fetch_daily_sync", _flaky)
         monkeypatch.setattr(bd.asyncio, "sleep", _noop_sleep)
-        out = await fetch_daily_from_mysql(["600519"], dt.date(2021, 1, 1), dt.date(2021, 1, 31))
+        n = await fetch_daily_from_mysql(test_session, ["600519"], dt.date(2021, 1, 1), dt.date(2021, 1, 31))
         assert calls["n"] == 3
-        assert out["600519"][0]["close"] == 2.0
+        assert n == 1
 
-    async def test_empty_result(self, monkeypatch):
+    async def test_empty_result(self, test_session: AsyncSession, monkeypatch):
         from core.config import settings
 
         monkeypatch.setattr(settings, "BACKTEST_MYSQL_URL", "mysql+pymysql://u:p@fakehost:3306/akshare")
         _patch_pymysql(monkeypatch, [])
-        out = await fetch_daily_from_mysql(["600519"], dt.date(2021, 1, 1), dt.date(2021, 1, 31))
-        assert out == {}
+        n = await fetch_daily_from_mysql(test_session, ["600519"], dt.date(2021, 1, 1), dt.date(2021, 1, 31))
+        assert n == 0
 
 
 class TestSyncDailyToPg:

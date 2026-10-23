@@ -146,20 +146,22 @@ async def run_backtest(db: AsyncSession, run_id) -> ScreenerBacktestRun:
         start = end.replace(year=end.year - run.years)
 
         # ① 调仓日序列（需要先有日历 → 先拉全市场日线）
-        #    MVP：拉区间内全部本地已知活跃票；日历从日线推导
+        #    票池：本地活跃公司；本地为空 → 外部库区间内 distinct symbol（含退市票）
         from company.models import Company
 
         tickers = set(
             (await db.execute(select(Company.ticker).where(Company.is_active.is_(True))))
             .scalars().all()
         )
-        daily = await fetch_daily_from_mysql(sorted(tickers), start, end)
-        if not daily:
+        if not tickers:
+            tickers = set(await backtest_data.fetch_all_tickers(start, end))
+            logger.info("本地无活跃公司，票池来自外部库 distinct symbol：%d 只", len(tickers))
+        # 逐只拉取并立即落库（拉一只灌一只，本地库行数即进度，中断可续）
+        synced_tickers = await fetch_daily_from_mysql(db, sorted(tickers), start, end)
+        if synced_tickers == 0 and not await _price_dates_from_pg(db, start, end):
             raise ValueError("外部日线数据为空（BACKTEST_MYSQL_URL 或外部库不可用）")
-
-        synced = await backtest_data.sync_daily_to_pg(db, daily)
         await db.flush()
-        logger.info("回测日线灌库 %d 行", synced)
+        logger.info("回测日线本次落库 %d 只", synced_tickers)
 
         price_dates = await _price_dates_from_pg(db, start, end)
         if not price_dates:
@@ -172,15 +174,11 @@ async def run_backtest(db: AsyncSession, run_id) -> ScreenerBacktestRun:
         financials_by_period = await _load_financials_by_period(db, periods)
 
         # ③ 近似市值用的当前总股本
-        all_tickers = list(daily.keys())
+        all_tickers = sorted(tickers)
         shares = await _fetch_total_shares(db, all_tickers)
 
         # ④ 逐调仓期：选股 → 买入/卖出结算 → 期收益
         periods_result: list[dict] = []
-        universe_by_date = {
-            d: {t: [b for b in bars if b["date"] <= d] for t, bars in daily.items()}
-            for d in rebalance_dates
-        }
         for i, rdate in enumerate(rebalance_dates):
             fp = backtest.pick_financial_period(rdate)
             fin = financials_by_period.get(fp, {})

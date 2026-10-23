@@ -85,19 +85,38 @@ def _parse_port(url: str) -> int:
 
 
 async def fetch_daily_from_mysql(
-    tickers: list[str], start: dt.date, end: dt.date
-) -> dict[str, list[dict]]:
-    """外部 MySQL 前复权日线 → {ticker: [{date, open, close, high, low, volume}]}。
+    db: AsyncSession, tickers: list[str], start: dt.date, end: dt.date
+) -> int:
+    """外部 MySQL 前复权日线 → 逐只拉取并立即落库（拉一只灌一只）。
 
-    逐只拉取（单票一次查询，~1200 行/只），内存占用恒定小。
-    同票同日重复行去重；date 升序。BACKTEST_MYSQL_URL 为空 → raise RuntimeError。
+    内存占用恒定（单票 ~1200 行）；本地表行数即真实进度，中断可续
+    （已落库的票跳过）。同票同日重复行去重；date 升序。
+    返回本次新落库的票数。BACKTEST_MYSQL_URL 为空 → raise RuntimeError。
     """
     from core.config import settings
 
     if not settings.BACKTEST_MYSQL_URL:
         raise RuntimeError("BACKTEST_MYSQL_URL 未配置，无法拉取历史日线")
-    out: dict[str, dict[dt.date, dict]] = {}
-    for idx, ticker in enumerate(tickers, 1):
+
+    # 断点续传：本地已有 5 年数据的票跳过
+    from market.models import StockPrice
+    from sqlalchemy import func, select
+
+    done = set(
+        (
+            await db.execute(
+                select(StockPrice.ticker)
+                .where(StockPrice.date >= start, StockPrice.date <= end)
+                .group_by(StockPrice.ticker)
+                .having(func.count() >= 200)  # 5 年 ~1200 交易日；<200 视为不完整重拉
+            )
+        ).scalars().all()
+    )
+    pending = [t for t in tickers if t not in done]
+    logger.info("回测日线：共 %d 只，本地已有 %d 只，待拉取 %d 只", len(tickers), len(done), len(pending))
+
+    synced = 0
+    for idx, ticker in enumerate(pending, 1):
         rows: list[tuple] = []
         for attempt in range(3):
             try:
@@ -112,17 +131,19 @@ async def fetch_daily_from_mysql(
                     "回测日线拉取重试 %d/3 %s: %s", attempt + 1, ticker, str(e)[:120]
                 )
                 await asyncio.sleep(2 * (attempt + 1))
-        for symbol, date, open_, close, high, low, volume in rows:
-            out.setdefault(symbol, {})[date] = {
-                "date": date, "open": open_, "close": close,
-                "high": high, "low": low, "volume": volume,
-            }
-        if idx % 50 == 0 or idx == len(tickers):
-            logger.info("回测日线逐只拉取 %d/%d", idx, len(tickers))
-    return {
-        sym: [bars[d] for d in sorted(bars)]
-        for sym, bars in out.items()
-    }
+        if rows:
+            bars: dict[dt.date, dict] = {}
+            for symbol, date, open_, close, high, low, volume in rows:
+                bars[date] = {
+                    "date": date, "open": open_, "close": close,
+                    "high": high, "low": low, "volume": volume,
+                }
+            await sync_daily_to_pg(db, {ticker: [bars[d] for d in sorted(bars)]})
+            synced += 1
+            await db.commit()  # 每只票立即提交：本地库即进度，崩溃不丢已完成部分
+        if idx % 50 == 0 or idx == len(pending):
+            logger.info("回测日线逐只拉取 %d/%d（累计落库 %d 只）", idx, len(pending), synced)
+    return synced
 
 
 async def fetch_all_tickers(start: dt.date, end: dt.date) -> list[str]:
