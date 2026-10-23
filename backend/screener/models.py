@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Float, ForeignKey, Index, String, Text, text
+from sqlalchemy import Float, ForeignKey, Index, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -105,3 +105,22 @@ class ScreenerRule(Base, UUIDMixin, TimestampMixin):
     doc_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     rules: Mapped[dict] = mapped_column(JSONB, nullable=False)
     criteria_text: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class ScreenerBacktestRun(Base, UUIDMixin, TimestampMixin):
+    """一次预设历史回测（状态机 pending → running → completed/failed）。
+
+    result 存 {"summary": {...}, "yearly": [...]}；报告落 screener/reports/。
+    """
+
+    __tablename__ = "backtest_runs"
+    __table_args__ = {"schema": "screener"}
+
+    preset_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    years: Mapped[int] = mapped_column(nullable=False, default=5)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    report_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    started_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    finished_at: Mapped[str | None] = mapped_column(String(64), nullable=True)

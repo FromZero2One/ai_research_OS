@@ -93,6 +93,9 @@ class Settings(BaseSettings):
     # NewsNow MCP server script (tsx) + upstream base URL.
     NEWSNOW_MCP_SERVER_PATH: str = "/home/wsm/codes/newsnow/tools/mcp-server.ts"
     NEWSNOW_BASE_URL: str = "https://newsnow.busiyi.world"
+    # Backtest: external read-only MySQL for historical qfq daily bars
+    # (mysql+pymysql://user:pass@host:3306/db). Empty disables the source.
+    BACKTEST_MYSQL_URL: str = ""
 
     # --- Scheduling ---
     SCHEDULER_ENABLED: bool = True

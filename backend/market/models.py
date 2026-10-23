@@ -23,8 +23,11 @@ class StockPrice(Base, UUIDMixin, TimestampMixin):
     volume: Mapped[float | None] = mapped_column(Float, nullable=True)
     adjusted_close: Mapped[float | None] = mapped_column(Float, nullable=True)
 
-    # Composite unique: one row per ticker per date
-    __table_args__: tuple[dict[str, str], ...] = ({"schema": "market"},)
+    # Composite unique: one row per ticker per date (幂等灌库前提)
+    __table_args__: tuple[dict[str, str], ...] = (
+        UniqueConstraint("ticker", "date", name="uq_stock_prices_ticker_date"),
+        {"schema": "market"},
+    )
 
 
 class FinancialMetricName(StrEnum):
