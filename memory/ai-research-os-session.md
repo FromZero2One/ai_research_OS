@@ -11,6 +11,7 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-10-24（回测风险指标）**: `compute_nav_and_stats` 新增基准 CAGR、年化超额、年化波动、Sharpe、Sortino、Calmar（季度收益年化 ×√4，无风险利率 `BACKTEST_RISK_FREE_RATE` 默认 2%）；回测报告展示全部指标；screener + financial_sync 277 passed。样例报告：CAGR 25.78%、基准年化 1.74%、超额 +24.03%、Sharpe 1.08、Sortino 2.29、Calmar 2.58。
 - **2026-10-24（组合构建）**: 新增 `screener/portfolio.py` 纯函数（equal/score/confidence 加权，单票/行业上限，冲突时保留现金，不做杠杆）；API `POST /screener/runs/{id}/portfolio`；前端历史运行表新增「组合」按钮与参数面板、持仓表。screener + financial_sync 275 passed。实跑核心资产 13 推荐：等权 7.69%/只，电子行业触及 35% 上限，保留 3.5% 现金。
 - **2026-10-24（行业专属指标）**: 指标库 33→42；银行侧净息差、不良贷款、贷款总额、不良率、拨备率、一级资本充足率；保险侧净投资收益率、已赚保费、偿付能力充足率；新增「银行价值」「保险价值」预设（共 8 套）；SW 一级行业把保险与券商同归“非银金融”，服务层用 F10 贷款/保费字段区分 `financial_type`，银行/保险预设只筛对应子行业；迁移 `c7d8e9f0a1b2`；screener + financial_sync 268 passed。实跑：银行预设 8 家全部银行；保险预设 5 家全部险企。
 - **2026-10-24（因子深度）**: 指标库 24→33；新增 F10 直接指标 ROIC、利息保障倍数、现金比率、FCFF、现金流/营业利润、实际税率、有息负债率，以及派生 PEG、FCF 收益率；核心资产/GARP 加 `roic>10`，深度价值加 `fcf_yield>0`，高成长加 `peg<2`；F10 2026Q2 重灌 5,739 家（ROIC 5,635、FCFF 5,635、利息保障 5,367）；回测历史财务补拉加入 F10 主要指标；迁移 `b6c7d8e9f0a1`；screener + financial_sync 261 passed。实跑：核心资产 13 候选；临时 `fcf_yield>3 & peg<1.5` 预设选出 50 只。

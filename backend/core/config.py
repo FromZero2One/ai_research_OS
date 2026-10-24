@@ -99,6 +99,7 @@ class Settings(BaseSettings):
     BACKTEST_COMMISSION_RATE: float = 0.0003  # 单边佣金 万三
     BACKTEST_STAMP_DUTY_RATE: float = 0.0005  # 卖出印花税 0.05%
     BACKTEST_SLIPPAGE_RATE: float = 0.001  # 单边滑点 0.1%
+    BACKTEST_RISK_FREE_RATE: float = 0.02  # 年化无风险利率（Sharpe/Sortino）
 
     # --- Scheduling ---
     # Screener 股票池卫生（ST/停牌之外的最低交易门槛）

@@ -121,3 +121,25 @@ class TestNavAndStats:
         # 年度胜率 = 2021 超额 +5%、2022 超额 -5%、2023 超额 +21% → 2/3
         assert stats["win_rate"] == pytest.approx(2 / 3)
         assert len(stats["yearly"]) == 3
+
+    def test_risk_adjusted_metrics(self):
+        periods = [
+            self._period(2021, 0.10, 0.05),
+            self._period(2022, -0.10, -0.05),
+            self._period(2023, 0.21, 0.00),
+            self._period(2024, 0.05, 0.02),
+        ]
+        stats = compute_nav_and_stats(periods, risk_free_rate=0.02)
+        assert stats["annual_volatility"] > 0
+        assert stats["calmar"] == pytest.approx(stats["cagr"] / abs(stats["max_drawdown"]))
+        assert stats["bench_cagr"] != 0
+        assert stats["excess_cagr"] == pytest.approx(stats["cagr"] - stats["bench_cagr"])
+        assert isinstance(stats["sharpe"], float)
+        assert isinstance(stats["sortino"], float)
+
+    def test_zero_volatility_risk_metrics(self):
+        periods = [self._period(2021, 0.0, 0.0), self._period(2022, 0.0, 0.0)]
+        stats = compute_nav_and_stats(periods)
+        assert stats["sharpe"] == 0.0
+        assert stats["sortino"] == 0.0
+        assert stats["calmar"] == 0.0

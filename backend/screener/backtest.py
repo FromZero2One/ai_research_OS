@@ -118,10 +118,13 @@ def compute_holding_returns(
     return out
 
 
-def compute_nav_and_stats(periods: list[dict]) -> dict:
+def compute_nav_and_stats(
+    periods: list[dict], risk_free_rate: float = 0.0
+) -> dict:
     """调仓期收益序列 → 汇总指标 + 逐年明细。
 
     periods 每项含 year/rebalance_date/return/bench/holdings。
+    风险指标按季度调仓年化（×√4）；risk_free_rate 为年化无风险利率。
     """
     nav = 1.0
     bench_nav = 1.0
@@ -149,12 +152,39 @@ def compute_nav_and_stats(periods: list[dict]) -> dict:
     bench_total = bench_nav - 1.0
     # CAGR：每期约一个季度 → 年化 = nav^(4/n) - 1
     cagr = nav ** (4.0 / n) - 1.0 if n > 0 and nav > 0 else 0.0
+    bench_cagr = bench_nav ** (4.0 / n) - 1.0 if n > 0 and bench_nav > 0 else 0.0
     wins = sum(1 for y in yearly if y["excess"] > 0)
+
+    import math
+    import statistics
+
+    returns = [float(p["return"]) for p in periods]
+    period_rf = (1.0 + risk_free_rate) ** 0.25 - 1.0 if risk_free_rate > -1 else 0.0
+    mean_excess = (
+        statistics.fmean(returns) - period_rf if returns else 0.0
+    )
+    stdev = statistics.pstdev(returns) if len(returns) > 1 else 0.0
+    annual_vol = stdev * math.sqrt(4)
+    sharpe = mean_excess / stdev * math.sqrt(4) if stdev > 0 else 0.0
+
+    downside = [min(r - period_rf, 0.0) for r in returns]
+    downside_dev = (
+        math.sqrt(statistics.fmean([d * d for d in downside])) if downside else 0.0
+    )
+    sortino = mean_excess / downside_dev * math.sqrt(4) if downside_dev > 0 else 0.0
+    calmar = cagr / abs(max_dd) if max_dd < 0 else 0.0
+
     return {
         "total_return": total_return,
         "bench_total_return": bench_total,
         "cagr": cagr,
+        "bench_cagr": bench_cagr,
+        "excess_cagr": cagr - bench_cagr,
         "max_drawdown": max_dd,
+        "annual_volatility": annual_vol,
+        "sharpe": sharpe,
+        "sortino": sortino,
+        "calmar": calmar,
         "win_rate": wins / n if n else 0.0,
         "periods_count": n,
         "yearly": yearly,

@@ -145,7 +145,7 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 | 系统/调度 | ~85% | 调度/观察/持久任务/事件/新鲜度可用 |
 | 智能选股 | ~95% | 42 指标（TTM 估值 + 现金流质量 + 因子深度 + 银行/保险专属）+ 8 内置预设；股票池卫生 + 行业隔离/相对排名；深判知识库/证据守卫 + 三态结论 + 评测器；预设回测；定时筛选 + 变化日报 + 推荐后表现跟踪 + 组合构建；财务数据工作日定时更新 |
 
-总体：V1.1 目标基本达成，后端 **391 passed / 2 failed / 2 skipped**（2 项失败为既有 research 证据继承依赖本地 LLM 结构化输出，与选股改动无关）；screener + financial_sync 专项 **275 passed**；前端 vue-tsc/build 通过。改动文件 ruff 通过（仓库仍保留历史 E501 债务）。
+总体：V1.1 目标基本达成，后端 **391 passed / 2 failed / 2 skipped**（2 项失败为既有 research 证据继承依赖本地 LLM 结构化输出，与选股改动无关）；screener + financial_sync 专项 **277 passed**；前端 vue-tsc/build 通过。改动文件 ruff 通过（仓库仍保留历史 E501 债务）。
 已知缺口：美股真实行情、持仓/日志前端、Market.vue 覆盖网格列数动态化（当前硬编码 5 列）。下一步（证据继承/差异日报）详见 [memory/ai-research-os-session.md](memory/ai-research-os-session.md)。
 
 ## API (when backend is running)
@@ -190,7 +190,7 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 | ~~覆盖矩阵定性维度~~ | ✅ 2026-10-15 | 矩阵新增定性列：已索引文档含 mda/risk 切片 → ok；仅已索引 → partial；无 → missing；纳入 worst_health |
 | ~~证据继承~~ | ✅ 2026-10-16 | auto-gather 自动带入同公司已完成会话证据（上限 10 条/去重/幂等），标 inherited_from_session_id，前端「📥 历史已核实」徽标可跳原会话 |
 | **差异日报** | 未开始 | 旧晨报已删（2026-10-14），从零构建"只报变化"日报：新公告、财报日历临近、价格异动、证据与旧结论冲突 |
-| ~~预设标准库（Screener v1.5）~~ | ✅ 2026-10-24 | 42 指标（TTM 估值 + 现金流质量 + 因子深度 + 银行/保险专属）+ 8 内置预设（含银行/保险价值）+ 组合模式；股票池卫生；申万行业分类与金融行业隔离；TTM 与因子指标历史期回补 |
+| ~~预设标准库（Screener v1.5）~~ | ✅ 2026-10-24 | 42 指标（TTM 估值 + 现金流质量 + 因子深度 + 银行/保险专属）+ 8 内置预设（含银行/保险价值）+ 组合模式；股票池卫生；申万行业分类与金融行业隔离；回测风险指标（Sharpe/Sortino/Calmar/年化超额） |
 
 收尾待办（小项）：Market.vue 覆盖网格列数动态化（当前硬编码 `repeat(5, 90px)`）；test_finalize_session 补 LLM mock（真实 LLM 调用挂起）；qualColor 硬编码色值统一 CSS 变量。
 

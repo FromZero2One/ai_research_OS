@@ -291,7 +291,9 @@ async def run_backtest(db: AsyncSession, run_id) -> ScreenerBacktestRun:
             })
 
         # ⑤ 汇总 + 落库（设计约定形状：{"summary": {...}, "yearly": [...]})
-        stats = backtest.compute_nav_and_stats(periods_result)
+        stats = backtest.compute_nav_and_stats(
+            periods_result, risk_free_rate=settings.BACKTEST_RISK_FREE_RATE
+        )
         result = {
             "summary": {k: v for k, v in stats.items() if k != "yearly"},
             "yearly": stats["yearly"],
