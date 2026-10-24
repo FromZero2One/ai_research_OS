@@ -69,6 +69,8 @@ LLM 只在深判参与，筛选执行确定性。迁移 `b5d2f8a3c6e1` → `c8e1
 
 API：`GET /api/v1/screener/runs/{run_id}/diff` 返回变化日报 Markdown 与 `has_previous`；前端历史运行表新增「日报」按钮。手动触发调度：`POST /api/v1/scheduler/run/screener_schedule`。
 
+**Webhook 通知（2026-10-24）**：配置 `SCREENER_WEBHOOK_URL` 后，定时任务在变化日报生成后推送摘要（新推荐/掉出推荐/新进候选/移出候选 + 股票名单 + 日报路径）。`SCREENER_WEBHOOK_FORMAT` 支持 `wecom` / `feishu` / `dingtalk` / `generic`（默认通用 JSON，群机器人直接选前者）。`SCREENER_WEBHOOK_NOTIFY_ON=changes`（默认）仅在有变化时发送，`always` 每轮都发；业务错误码（如企微 `errcode!=0`）按失败记录，通知失败不会中断定时任务。发送结果在调度返回的 `notification` 字段中可见。
+
 ### 三态结论与置信度（2026-10-24）
 
 `ScreenerJudgement.verdict` 区分四种结论：`recommend` / `reject` / `insufficient` / `failed`。证据守卫降级、资料不足或命中“数据不足”原因时记为 `insufficient`；显式不满足标准记为 `reject`。报告拆分为「未通过标准（未推荐）」与「数据不足（未推荐）」两个分区，API 同步透出 `verdict`。
@@ -203,6 +205,9 @@ PYTHONPATH=. python scripts/seed_data.py
 | | `FINANCIAL_DATA_SCHEDULE` | `15 3 * * 1-5` | — |
 | | `SCREENER_SCHEDULE` | `30 16 * * 1-5` | — |
 | | `SCREENER_SCHEDULE_PRESETS` | `core`（逗号分隔 style_tag） | — |
+| | `SCREENER_WEBHOOK_URL` | 空（禁用） | 企微/飞书/钉钉群机器人 URL |
+| | `SCREENER_WEBHOOK_FORMAT` | `generic`（另支持 wecom/feishu/dingtalk） | — |
+| | `SCREENER_WEBHOOK_NOTIFY_ON` | `changes`（或 `always`） | — |
 | 回测 | `BACKTEST_COMMISSION_RATE` | 0.0003（单边万三） | — |
 | | `BACKTEST_STAMP_DUTY_RATE` | 0.0005（卖出） | — |
 | | `BACKTEST_SLIPPAGE_RATE` | 0.001（单边千一） | — |
@@ -243,4 +248,4 @@ APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工�
 ```bash
 make test        # pytest，专用 airesearch_test 库 + 隔离 Qdrant 集合
 ```
-当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **281 passed**。
+当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **287 passed**。

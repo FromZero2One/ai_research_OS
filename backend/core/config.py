@@ -113,6 +113,11 @@ class Settings(BaseSettings):
     FINANCIAL_DATA_SCHEDULE: str = "15 3 * * 1-5"  # Weekdays 3:15am (market-wide financials)
     SCREENER_SCHEDULE: str = "30 16 * * 1-5"  # Weekdays 4:30pm after close
     SCREENER_SCHEDULE_PRESETS: str = "core"  # comma-separated style tags
+    # 定时选股变化日报 Webhook（企业微信/飞书/钉钉群机器人）
+    SCREENER_WEBHOOK_URL: str = ""  # 为空则禁用
+    SCREENER_WEBHOOK_FORMAT: str = "generic"  # generic | wecom | feishu | dingtalk
+    SCREENER_WEBHOOK_TIMEOUT: float = 10.0
+    SCREENER_WEBHOOK_NOTIFY_ON: str = "changes"  # changes | always
     REPORT_SCHEDULE: str = "0 6 * * 1-5"  # Weekdays 6am
     OBSERVATION_SCHEDULE: str = "30 5 * * 1-5"  # Weekdays 5:30am (before brief)
     EVENT_LOG_CLEANUP_SCHEDULE: str = "0 3 * * 1"  # Weekly Monday 3am

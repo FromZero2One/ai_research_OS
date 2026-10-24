@@ -20,7 +20,7 @@ _ACTIVE = ("pending", "screening", "judging")
 
 async def _run_one(db, preset, tag: str) -> dict:
     from screener.diff import diff_path_for
-    from screener.diff_service import build_run_diff
+    from screener.diff_service import build_run_diff_data
     from screener.models import ScreenerRun
     from screener.service import run_screener, trigger_run
 
@@ -53,7 +53,7 @@ async def _run_one(db, preset, tag: str) -> dict:
             "error": done.error,
         }
 
-    markdown, has_previous = await build_run_diff(db, done.id)
+    markdown, has_previous, diff = await build_run_diff_data(db, done.id)
     path = diff_path_for(str(done.id))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(markdown, encoding="utf-8")
@@ -68,6 +68,29 @@ async def _run_one(db, preset, tag: str) -> dict:
         ),
     )
     await db.commit()
+
+    from screener.notify import format_diff_text, send_screener_webhook, should_notify
+
+    notification = {"enabled": False, "sent": False}
+    if should_notify(diff, has_previous):
+        text = format_diff_text(
+            preset.name,
+            {
+                "id": str(done.id),
+                "created_at": done.created_at,
+                "candidate_count": done.candidate_count,
+                "result_count": done.result_count,
+            },
+            diff or {},
+            str(path),
+        )
+        notification = await send_screener_webhook(
+            text,
+            run_id=str(done.id),
+            preset=preset.name,
+            counts=(diff or {}).get("counts") or {},
+        )
+
     return {
         "status": "completed",
         "run_id": str(done.id),
@@ -75,6 +98,7 @@ async def _run_one(db, preset, tag: str) -> dict:
         "result_count": done.result_count,
         "diff_path": str(path),
         "has_previous": has_previous,
+        "notification": notification,
     }
 
 

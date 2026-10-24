@@ -68,6 +68,14 @@ async def build_run_diff(
     db: AsyncSession, run_id: uuid.UUID | str
 ) -> tuple[str, bool]:
     """返回 (Markdown, 是否存在上一轮基线)。运行不存在/未完成时给出说明文本。"""
+    markdown, has_previous, _ = await build_run_diff_data(db, run_id)
+    return markdown, has_previous
+
+
+async def build_run_diff_data(
+    db: AsyncSession, run_id: uuid.UUID | str
+) -> tuple[str, bool, dict | None]:
+    """返回 (Markdown, 是否存在上一轮基线, 变化详情)。无基线/未完成时详情为 None。"""
     run = (
         await db.execute(select(ScreenerRun).where(ScreenerRun.id == uuid.UUID(str(run_id))))
     ).scalar_one_or_none()
@@ -82,11 +90,12 @@ async def build_run_diff(
                 f"当前运行状态为 {run.status}，完成后再生成变化日报。",
             ),
             False,
+            None,
         )
 
     previous = await _previous_run(db, run)
     if previous is None:
-        return build_diff_markdown(current, None, None), False
+        return build_diff_markdown(current, None, None), False, None
 
     judgements = (
         await db.execute(
@@ -99,4 +108,4 @@ async def build_run_diff(
     previous_js = [_judgement_dict(j) for j in judgements if j.run_id == previous.id]
 
     diff = compute_diff(current_js, previous_js)
-    return build_diff_markdown(current, _run_dict(previous), diff), True
+    return build_diff_markdown(current, _run_dict(previous), diff), True, diff
