@@ -135,23 +135,25 @@ def build_report(
     if not recommended:
         lines.append("本次无推荐 — 初筛候选均未通过定性判断。")
     elif preset_mode:
-        lines.append("| 代码 | 名称 | 现价 | 总市值 | 置信度 | 命中预设 |")
-        lines.append("|---|---|---|---|---|---|")
+        lines.append("| 代码 | 名称 | 行业 | 现价 | 总市值 | 置信度 | 命中预设 |")
+        lines.append("|---|---|---|---|---|---|---|")
         for j in recommended:
             snap = j.get("snapshot") or {}
             lines.append(
-                f"| {j['ticker']} | {j['name']} | {_fmt_price(snap.get('price'))} | "
+                f"| {j['ticker']} | {j['name']} | {snap.get('industry') or '-'} | "
+                f"{_fmt_price(snap.get('price'))} | "
                 f"{_fmt_money(snap.get('market_cap'))} | {_fmt_conf(j.get('confidence'))} | "
                 f"{_preset_label(snap)} |"
             )
         lines.append("")
     else:
-        lines.append("| 代码 | 名称 | 现价 | 总市值 | 置信度 |")
-        lines.append("|---|---|---|---|---|")
+        lines.append("| 代码 | 名称 | 行业 | 现价 | 总市值 | 置信度 |")
+        lines.append("|---|---|---|---|---|---|")
         for j in recommended:
             snap = j.get("snapshot") or {}
             lines.append(
-                f"| {j['ticker']} | {j['name']} | {_fmt_price(snap.get('price'))} | "
+                f"| {j['ticker']} | {j['name']} | {snap.get('industry') or '-'} | "
+                f"{_fmt_price(snap.get('price'))} | "
                 f"{_fmt_money(snap.get('market_cap'))} | {_fmt_conf(j.get('confidence'))} |"
             )
         lines.append("")
@@ -161,6 +163,8 @@ def build_report(
         lines.append(f"### {j['name']}（{j['ticker']}）")
         lines.append("")
         snap = j.get("snapshot") or {}
+        if snap.get("industry"):
+            lines.append(f"- 行业：{snap['industry']}")
         if preset_mode and snap.get("presets"):
             lines.append(f"- 命中：{_preset_label(snap)}")
         for reason in j.get("reasons") or []:

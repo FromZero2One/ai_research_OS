@@ -45,14 +45,28 @@ async def test_criteria_preset_defaults(test_session: AsyncSession):
 
 
 async def test_builtin_preset_seeds_exist(test_session: AsyncSession):
-    """迁移种子：内置五套预设（core/growth/value/garp/cycle），quant_rules 非空。"""
+    """迁移种子：内置六套预设（五套通用 + 金融行业专属）。"""
     rows = (
         await test_session.execute(select(CriteriaPreset).where(CriteriaPreset.is_builtin.is_(True)))
     ).scalars().all()
     tags = {r.style_tag for r in rows}
-    assert tags == {"core", "growth", "value", "garp", "cycle"}
+    assert tags == {"core", "growth", "value", "garp", "cycle", "financial"}
     for r in rows:
         assert len(r.quant_rules) >= 2, f"{r.style_tag} quant_rules 为空"
+
+
+async def test_financial_preset_uses_financial_metrics(test_session: AsyncSession):
+    row = (
+        await test_session.execute(
+            select(CriteriaPreset).where(
+                CriteriaPreset.is_builtin.is_(True),
+                CriteriaPreset.style_tag == "financial",
+            )
+        )
+    ).scalar_one()
+    metrics = {rule["metric"] for rule in row.quant_rules}
+    assert {"pb", "pe", "roe", "market_cap"} <= metrics
+    assert "current_ratio" not in metrics
 
 
 async def test_metric_def_seeds_exist(test_session: AsyncSession):

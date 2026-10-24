@@ -35,6 +35,18 @@ class TestPresetHitsInContext:
         assert "600519" in ctx
 
 
+class TestIndustryContext:
+    def test_includes_industry_and_financial_note(self):
+        cand = {**CAND, "industry": "银行", "sector": "financial"}
+        ctx = build_judge_context(cand, [])
+        assert "行业: 银行" in ctx
+        assert "金融行业" in ctx
+
+    def test_unknown_industry(self):
+        ctx = build_judge_context(CAND, [])
+        assert "行业: 未知" in ctx
+
+
 class TestContextFormatting:
     def test_money_metrics_have_units(self):
         """大额金额转成亿元，避免 LLM 对原始元值做单位换算（曾把 83.77 亿读成 837 亿）。"""

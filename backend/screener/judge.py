@@ -214,8 +214,15 @@ def build_judge_context(
     price = _as_float(candidate.get("price"))
     turnover = _as_float(candidate.get("turnover"))
     market_cap = _as_float(candidate.get("market_cap"))
+    industry = candidate.get("industry")
+    sector = candidate.get("sector")
     lines = [
         f"股票: {candidate.get('name')}（{candidate.get('ticker')}）",
+        f"行业: {industry or '未知'}"
+        + (
+            "（金融行业：流动比率、毛利率、周转率等指标口径不适用）"
+            if sector == "financial" else ""
+        ),
         f"行情快照: 现价 {_fmt_money(price) if price is not None else '-'}, "
         f"换手率 {f'{turnover:.2f}%' if turnover is not None else '-'}, "
         f"总市值 {_fmt_money(market_cap) if market_cap is not None else '-'}, "
@@ -345,8 +352,15 @@ async def judge_candidates(
 
 
 def _snapshot_fields(cand: dict) -> dict:
-    """深判结果透传的行情/初筛快照字段。"""
-    return {k: cand.get(k) for k in ("price", "turnover", "market_cap", "score", "hits", "presets") if cand.get(k) is not None}
+    """深判结果透传的行情/初筛/行业快照字段。"""
+    return {
+        k: cand.get(k)
+        for k in (
+            "price", "turnover", "market_cap", "score", "hits", "presets",
+            "industry", "sector",
+        )
+        if cand.get(k) is not None
+    }
 
 
 def _failed_judgement(cand: dict, error: str) -> dict:

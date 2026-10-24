@@ -164,3 +164,18 @@ class ValuationHistory(Base, UUIDMixin, TimestampMixin):
     pe_ttm: Mapped[float | None] = mapped_column(Float, nullable=True)
     pb: Mapped[float | None] = mapped_column(Float, nullable=True)
     total_mv: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class StockIndustry(Base, UUIDMixin, TimestampMixin):
+    """个股行业分类（新浪行业节点），供选股报告/深判上下文使用。"""
+
+    __tablename__ = "stock_industry"
+    __table_args__ = (
+        UniqueConstraint("ticker", name="uq_stock_industry_ticker"),
+        {"schema": "market"},
+    )
+
+    ticker: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    industry_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    industry_name: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    source: Mapped[str] = mapped_column(String(16), nullable=False, default="sina")

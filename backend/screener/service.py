@@ -72,7 +72,10 @@ async def _reload_financials(
 
 
 _SNAPSHOT_METRICS = frozenset({"price", "turnover", "market_cap"})
-_JUDGE_SNAPSHOT_FIELDS = ("price", "turnover", "market_cap", "score", "hits", "presets")
+_JUDGE_SNAPSHOT_FIELDS = (
+    "price", "turnover", "market_cap", "score", "hits", "presets",
+    "industry", "sector",
+)
 
 
 def _create_knowledge(db: AsyncSession):
@@ -85,6 +88,25 @@ def _create_knowledge(db: AsyncSession):
     except Exception as e:  # noqa: BLE001 — 知识库不可用不应阻断选股
         logger.warning("深判知识库初始化失败，按无资料处理: %s", e)
         return None
+
+
+async def _attach_industries(db: AsyncSession, candidates: list[dict]) -> None:
+    """给候选补上行业/金融属性（来源 market.stock_industry；缺失时为 None）。"""
+    if not candidates:
+        return
+    from market.models import StockIndustry
+    from screener.industry import sector_of
+
+    rows = (
+        await db.execute(
+            select(StockIndustry.ticker, StockIndustry.industry_name)
+        )
+    ).all()
+    mapping = {ticker: name for ticker, name in rows}
+    for cand in candidates:
+        name = mapping.get(cand["ticker"])
+        cand["industry"] = name
+        cand["sector"] = sector_of(name)
 
 
 def _auto_pass_judgement(candidate: dict) -> dict:
@@ -360,6 +382,7 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
             watched,
             excluded_out=pool_stats,
         )
+        await _attach_industries(db, pool)
 
         # 先补齐所需财务指标，再做确定性初筛：缺数据会让规则直接排除候选，
         # 因此不能等 passed 为空后再补采。
@@ -406,8 +429,14 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
                 for e in ranked[: rules.get("candidate_limit", 50)]
             ]
         else:
+            eval_pool = pool
+            scope = rules.get("sector_scope", "all") if run.mode == "presets" else "all"
+            if scope == "financial":
+                eval_pool = [c for c in pool if c.get("sector") == "financial"]
+            elif scope == "industrial":
+                eval_pool = [c for c in pool if c.get("sector") != "financial"]
             passed, excluded_missing = screening.evaluate_quant_rules(
-                pool, rules.get("quant_rules", []), financials
+                eval_pool, rules.get("quant_rules", []), financials
             )
             candidates = screening.rank_candidates(
                 passed, limit=rules.get("candidate_limit", 50)

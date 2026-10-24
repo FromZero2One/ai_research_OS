@@ -7,10 +7,10 @@ from types import SimpleNamespace
 from screener.compose import compose_rules, evaluate_quant_rules_by_preset
 
 
-def _preset(name, quant_rules, qualitative=None, suggested_pool="all"):
+def _preset(name, quant_rules, qualitative=None, suggested_pool="all", style_tag="core"):
     return SimpleNamespace(
         name=name, quant_rules=quant_rules, qualitative=qualitative or [],
-        suggested_pool=suggested_pool,
+        suggested_pool=suggested_pool, style_tag=style_tag,
     )
 
 
@@ -106,6 +106,29 @@ def test_union_eval_collects_excluded_missing_only_unmatched():
     assert excluded == [
         {"ticker": "CCC", "name": "丙", "missing": ["roe"], "presets": ["P1"]}
     ]
+
+
+def test_sector_scope_from_presets():
+    industrial = _preset("核心", [_rule("market_cap", ">", 1e9)], style_tag="core")
+    financial = _preset("金融", [_rule("pb", "<", 1.5)], style_tag="financial")
+    assert compose_rules([industrial], "all", "union")["sector_scope"] == "industrial"
+    assert compose_rules([financial], "all", "union")["sector_scope"] == "financial"
+    assert compose_rules([industrial, financial], "all", "union")["sector_scope"] == "all"
+
+
+def test_union_eval_sector_isolation():
+    """金融预设只看金融股；工业预设排除金融股（unknown 保留）。"""
+    industrial = _preset("工业", [_rule("market_cap", ">", 1e9)], style_tag="core")
+    financial = _preset("金融", [_rule("market_cap", ">", 1e9)], style_tag="financial")
+    candidates = [
+        {"ticker": "BANK", "name": "银行", "sector": "financial", "market_cap": 1e10},
+        {"ticker": "IND", "name": "工业", "sector": "industrial", "market_cap": 1e10},
+        {"ticker": "UNK", "name": "未知", "sector": "unknown", "market_cap": 1e10},
+    ]
+    fin = evaluate_quant_rules_by_preset(candidates, [financial], {})
+    ind = evaluate_quant_rules_by_preset(candidates, [industrial], {})
+    assert set(fin) == {"BANK"}
+    assert set(ind) == {"IND", "UNK"}
 
 
 def test_union_eval_financial_metric_rules():

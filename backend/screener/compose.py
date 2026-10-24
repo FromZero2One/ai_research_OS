@@ -12,6 +12,16 @@ from typing import Any
 from screener.screening import evaluate_quant_rules
 
 
+def _sector_scope(presets: list[Any]) -> str:
+    """全金融预设 → financial；混合 → all；否则 industrial（排除金融股）。"""
+    tags = {getattr(p, "style_tag", None) for p in presets}
+    if tags == {"financial"}:
+        return "financial"
+    if "financial" in tags:
+        return "all"
+    return "industrial"
+
+
 def compose_rules(presets: list[Any], pool: str, combine: str) -> dict:
     """把 1-N 个预设组装成与 v1 rules 同形状的 dict。
 
@@ -52,6 +62,7 @@ def compose_rules(presets: list[Any], pool: str, combine: str) -> dict:
         "candidate_limit": 50,
         "combine": combine,
         "preset_names": [p.name for p in presets],
+        "sector_scope": _sector_scope(presets),
     }
 
 
@@ -73,8 +84,13 @@ def evaluate_quant_rules_by_preset(
     result: dict[str, dict] = {}
     excluded_map: dict[str, dict] = {}
     for preset in presets:
+        # 金融预设只看金融股；工业预设排除金融股（行业指标口径不可比）
+        if getattr(preset, "style_tag", None) == "financial":
+            applicable = [c for c in candidates if c.get("sector") == "financial"]
+        else:
+            applicable = [c for c in candidates if c.get("sector") != "financial"]
         passed, excluded = evaluate_quant_rules(
-            candidates, preset.quant_rules, financials_by_ticker
+            applicable, preset.quant_rules, financials_by_ticker
         )
         for cand in passed:
             entry = result.setdefault(

@@ -44,7 +44,7 @@ async def test_presets_list_contains_builtins(async_client: AsyncClient):
     resp = await async_client.get("/api/v1/screener/presets")
     assert resp.status_code == 200
     tags = {p["style_tag"] for p in resp.json()["presets"] if p["is_builtin"]}
-    assert tags == {"core", "growth", "value", "garp", "cycle"}
+    assert tags == {"core", "growth", "value", "garp", "cycle", "financial"}
 
 
 async def test_preset_create_and_delete(async_client: AsyncClient):

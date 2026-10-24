@@ -25,7 +25,7 @@ J = {
     "reasons": ["ROE 高"],
     "criteria_hits": [{"criterion": "盈利具有持续性", "hit": True, "evidence": "ROE 30.2"}],
     "confidence": 0.9,
-    "snapshot": {"price": 1500.0, "market_cap": 1.88e12},
+    "snapshot": {"price": 1500.0, "market_cap": 1.88e12, "industry": "酿酒行业"},
     "status": "ok",
 }
 
@@ -38,7 +38,7 @@ J_UNION = {
 def test_v1_report_unchanged():
     """mode=None（v1）报告：无预设列、无预设标注。"""
     report = build_report(RUN_V1, [J], RUN_V1["criteria_text"], [])
-    assert "| 代码 | 名称 | 现价 | 总市值 | 置信度 |" in report
+    assert "| 代码 | 名称 | 行业 | 现价 | 总市值 | 置信度 |" in report
     assert "命中预设" not in report
     assert "命中：" not in report
 
@@ -46,8 +46,9 @@ def test_v1_report_unchanged():
 def test_union_report_annotates_presets():
     """union 模式：推荐表加"命中预设"列，候选注明命中组合。"""
     report = build_report(RUN_PRESETS, [J_UNION], RUN_PRESETS["criteria_text"], [])
-    assert "| 代码 | 名称 | 现价 | 总市值 | 置信度 | 命中预设 |" in report
+    assert "| 代码 | 名称 | 行业 | 现价 | 总市值 | 置信度 | 命中预设 |" in report
     assert "核心资产 + 质量价值 GARP" in report
+    assert "酿酒行业" in report
 
 
 def test_union_report_single_preset():

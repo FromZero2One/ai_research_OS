@@ -48,7 +48,7 @@ BUILTIN_METRICS: list[dict] = [
     },
 ]
 
-# ── 内置五套预设（spec「内置五套预设」一节逐字落地）──────────────────────
+# ── 内置预设（五套通用 + 金融行业专属）────────────────────────────────
 _EX = "exclude"  # 缺数据 → 排除（保守默认）
 
 BUILTIN_PRESETS: list[dict] = [
@@ -120,6 +120,22 @@ BUILTIN_PRESETS: list[dict] = [
             {"metric": "pb", "op": "<", "value": 2.5, "missing_data_policy": _EX},
         ],
         "qualitative": ["处于周期底部", "行业龙头且成本低", "无产能过剩包袱"],
+        "suggested_pool": "all",
+    },
+    {
+        "name": "金融价值",
+        "description": (
+            "银行/保险/券商专属：低 PB、低 PE、盈利稳定的金融龙头"
+            "（不使用流动比率/毛利率等工业口径）"
+        ),
+        "style_tag": "financial",
+        "quant_rules": [
+            {"metric": "pb", "op": "<", "value": 1.5, "missing_data_policy": _EX},
+            {"metric": "pe", "op": "<", "value": 10, "missing_data_policy": _EX},
+            {"metric": "roe", "op": ">", "value": 8, "missing_data_policy": _EX},
+            {"metric": "market_cap", "op": ">", "value": 1e10, "missing_data_policy": _EX},
+        ],
+        "qualitative": ["资产质量稳健", "拨备/资本充足", "无重大监管处罚"],
         "suggested_pool": "all",
     },
 ]
