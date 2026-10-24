@@ -133,7 +133,7 @@ _METRIC_CN = {
     "revenue_growth": "营收同比", "net_income_growth": "净利同比",
     "total_assets": "总资产", "total_liabilities": "总负债", "eps": "每股收益",
     "cfo_to_ni": "现金流/净利润", "cfo_to_revenue": "现金流/营收",
-    "accrual_ratio": "应计比率",
+    "accrual_ratio": "应计比率", "pe": "PE", "pb": "PB", "ps": "PS",
 }
 
 _MONEY_METRICS = frozenset({
@@ -226,11 +226,25 @@ def build_judge_context(
             "（金融行业：流动比率、毛利率、周转率等指标口径不适用）"
             if sector == "financial" else ""
         ),
+    ]
+    percentiles = candidate.get("industry_percentiles") or {}
+    if percentiles:
+        parts = [
+            f"{_METRIC_CN.get(k, k)} {float(v) * 100:.0f}%"
+            for k, v in percentiles.items()
+            if v is not None
+        ]
+        if parts:
+            lines.append(
+                "行业相对分位: " + "、".join(parts)
+                + "（1.0=行业最好；PE/PB 分位已反转）"
+            )
+    lines.extend([
         f"行情快照: 现价 {_fmt_money(price) if price is not None else '-'}, "
         f"换手率 {f'{turnover:.2f}%' if turnover is not None else '-'}, "
         f"总市值 {_fmt_money(market_cap) if market_cap is not None else '-'}, "
         f"初筛得分 {candidate.get('score')}",
-    ]
+    ])
     # union 初筛命中的预设（LLM 聚焦定性判断 + 复核异常，而非重新验证数字）
     preset_names = candidate.get("presets")
     if preset_names:
@@ -360,7 +374,7 @@ def _snapshot_fields(cand: dict) -> dict:
         k: cand.get(k)
         for k in (
             "price", "turnover", "market_cap", "score", "hits", "presets",
-            "industry", "sector",
+            "industry", "sector", "industry_percentiles", "industry_score",
         )
         if cand.get(k) is not None
     }

@@ -165,6 +165,20 @@ def build_report(
         snap = j.get("snapshot") or {}
         if snap.get("industry"):
             lines.append(f"- 行业：{snap['industry']}")
+        percentiles = snap.get("industry_percentiles") or {}
+        if percentiles:
+            labels = {
+                "roe": "ROE", "revenue_growth": "营收增长",
+                "net_income_growth": "净利增长", "cfo_to_ni": "现金流/净利",
+                "pe": "PE", "pb": "PB",
+            }
+            parts = [
+                f"{labels.get(k, k)} {float(v) * 100:.0f}%"
+                for k, v in percentiles.items()
+                if v is not None
+            ]
+            if parts:
+                lines.append("- 行业分位：" + "、".join(parts))
         if preset_mode and snap.get("presets"):
             lines.append(f"- 命中：{_preset_label(snap)}")
         for reason in j.get("reasons") or []:

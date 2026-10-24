@@ -25,7 +25,10 @@ J = {
     "reasons": ["ROE 高"],
     "criteria_hits": [{"criterion": "盈利具有持续性", "hit": True, "evidence": "ROE 30.2"}],
     "confidence": 0.9,
-    "snapshot": {"price": 1500.0, "market_cap": 1.88e12, "industry": "酿酒行业"},
+    "snapshot": {
+        "price": 1500.0, "market_cap": 1.88e12, "industry": "酿酒行业",
+        "industry_percentiles": {"roe": 0.9, "pe": 0.2},
+    },
     "status": "ok",
 }
 
@@ -49,6 +52,7 @@ def test_union_report_annotates_presets():
     assert "| 代码 | 名称 | 行业 | 现价 | 总市值 | 置信度 | 命中预设 |" in report
     assert "核心资产 + 质量价值 GARP" in report
     assert "酿酒行业" in report
+    assert "行业分位" in report and "ROE 90%" in report
 
 
 def test_union_report_single_preset():

@@ -13,10 +13,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.adapters.llm import create_llm
+from core.config import settings
 from core.event_service import EventLogger
 from core.logging import logger
 from screener import screening
 from screener.criteria import read_criteria
+from screener.industry_ranking import compute_industry_percentiles
 from screener.judge import judge_candidates
 from screener.models import ScreenerJudgement, ScreenerRun
 from screener.pool import filter_pool
@@ -72,9 +74,12 @@ async def _reload_financials(
 
 
 _SNAPSHOT_METRICS = frozenset({"price", "turnover", "market_cap"})
+_RANKING_METRICS = frozenset(
+    {"roe", "revenue_growth", "net_income_growth", "cfo_to_ni", "pe", "pb"}
+)
 _JUDGE_SNAPSHOT_FIELDS = (
     "price", "turnover", "market_cap", "score", "hits", "presets",
-    "industry", "sector",
+    "industry", "sector", "industry_percentiles", "industry_score",
 )
 
 
@@ -396,21 +401,29 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
             needed_metrics = {r["metric"] for p in presets for r in p.quant_rules}
         else:
             needed_metrics = {r["metric"] for r in rules.get("quant_rules", [])}
-        # pe/pb/ps 是派生指标：补采/预检/加载都要换成底层财务指标
-        data_metrics = required_data_metrics(needed_metrics)
-        await _ensure_market_data(db, data_metrics)
+        # pe/pb/ps 是派生指标：补采/预检/加载都要换成底层财务指标。
+        # 额外加载行业排名指标（roe/成长/现金流/估值），但不因它们缺失而阻断 run。
+        check_metrics = required_data_metrics(needed_metrics)
+        load_metrics = required_data_metrics(needed_metrics | _RANKING_METRICS)
+        await _ensure_market_data(db, load_metrics)
         # 按「所需指标 × 最新报告期」过滤加载（全市场多期数据全量加载不可持续）
         _date, _year, _period = _latest_fiscal()
         financials = await _reload_financials(
-            db, metrics=data_metrics, year=_year, period=_period
+            db, metrics=load_metrics, year=_year, period=_period
         )
-        unavailable = metrics_without_any_data(data_metrics, financials)
+        unavailable = metrics_without_any_data(check_metrics, financials)
         if unavailable:
             raise ValueError(
                 "以下指标在最新报告期没有任何数据，无法执行筛选："
                 + "、".join(unavailable)
                 + "。请修改选股标准（改用可用指标或定性标准）后重试。"
             )
+
+        industry_rank = compute_industry_percentiles(pool, financials)
+        for cand in pool:
+            info = industry_rank.get(cand["ticker"], {})
+            cand["industry_percentiles"] = info.get("industry_percentiles") or {}
+            cand["industry_score"] = float(info.get("industry_score") or 0.5)
 
         excluded_missing: list[dict] = []
         if run.mode == "presets" and run.combine_mode == "union":
@@ -426,14 +439,20 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
                 key=lambda e: (
                     e["hits"],
                     e["score"],
+                    spot_by_ticker.get(e["ticker"], {}).get("industry_score") or 0.0,
                     spot_by_ticker.get(e["ticker"], {}).get("market_cap") or 0.0,
                 ),
                 reverse=True,
             )
-            candidates = [
+            combined = [
                 {**spot_by_ticker[e["ticker"]], **e}
-                for e in ranked[: rules.get("candidate_limit", 50)]
+                for e in ranked
             ]
+            candidates = screening.cap_by_industry(
+                combined,
+                settings.SCREENER_MAX_PER_INDUSTRY,
+                rules.get("candidate_limit", 50),
+            )
         else:
             eval_pool = pool
             scope = rules.get("sector_scope", "all") if run.mode == "presets" else "all"
@@ -444,8 +463,11 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
             passed, excluded_missing = screening.evaluate_quant_rules(
                 eval_pool, rules.get("quant_rules", []), financials
             )
-            candidates = screening.rank_candidates(
-                passed, limit=rules.get("candidate_limit", 50)
+            ranked = screening.rank_candidates(passed, limit=len(passed))
+            candidates = screening.cap_by_industry(
+                ranked,
+                settings.SCREENER_MAX_PER_INDUSTRY,
+                rules.get("candidate_limit", 50),
             )
         run.candidate_count = len(candidates)
         run.status = "judging"

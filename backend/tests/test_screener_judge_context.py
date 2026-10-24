@@ -46,6 +46,16 @@ class TestIndustryContext:
         ctx = build_judge_context(CAND, [])
         assert "行业: 未知" in ctx
 
+    def test_includes_industry_percentiles(self):
+        cand = {
+            **CAND, "industry": "银行",
+            "industry_percentiles": {"roe": 0.9, "pe": 0.2},
+        }
+        ctx = build_judge_context(cand, [])
+        assert "行业相对分位" in ctx
+        assert "ROE 90%" in ctx
+        assert "PE 20%" in ctx
+
 
 class TestContextFormatting:
     def test_money_metrics_have_units(self):

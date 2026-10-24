@@ -104,6 +104,7 @@ class Settings(BaseSettings):
     # Screener 股票池卫生（ST/停牌之外的最低交易门槛）
     SCREENER_MIN_TURNOVER: float = 0.05  # 换手率下限（%）
     SCREENER_MIN_MARKET_CAP: float = 1e9  # 总市值下限（元，10亿）
+    SCREENER_MAX_PER_INDUSTRY: int = 8  # 单次候选每个行业上限
 
     SCHEDULER_ENABLED: bool = True
     MARKET_DATA_SCHEDULE: str = "0 2 * * 1-5"  # Weekdays 2am

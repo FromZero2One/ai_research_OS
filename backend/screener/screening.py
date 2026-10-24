@@ -245,6 +245,33 @@ def score_candidate(hit: int, applicable: int) -> float:
 
 
 def rank_candidates(passed: list[dict], limit: int = 50) -> list[dict]:
-    """按 score 降序、同分按 market_cap 降序，截断到 limit。"""
-    ranked = sorted(passed, key=lambda c: (c.get("score", 0.0), c.get("market_cap") or 0.0), reverse=True)
+    """按 score ↓、行业分位得分 ↓、market_cap ↓ 排名，截断到 limit。"""
+    ranked = sorted(
+        passed,
+        key=lambda c: (
+            c.get("score", 0.0),
+            c.get("industry_score") or 0.0,
+            c.get("market_cap") or 0.0,
+        ),
+        reverse=True,
+    )
     return ranked[:limit]
+
+
+def cap_by_industry(
+    candidates: list[dict], max_per_industry: int, limit: int | None = None
+) -> list[dict]:
+    """行业集中度上限：按现有顺序保留，每个行业最多 N 只，再截断。"""
+    if max_per_industry <= 0:
+        return candidates[:limit] if limit else candidates
+    counts: dict[str, int] = {}
+    out: list[dict] = []
+    for cand in candidates:
+        industry = cand.get("industry") or "未知"
+        if counts.get(industry, 0) >= max_per_industry:
+            continue
+        counts[industry] = counts.get(industry, 0) + 1
+        out.append(cand)
+        if limit and len(out) >= limit:
+            break
+    return out

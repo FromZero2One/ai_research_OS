@@ -11,6 +11,7 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-10-24（行业相对排名）**: 新增 `screener/industry_ranking.py`：候选在行业内计算 ROE/营收增长/净利增长/现金流质量/PE/PB 分位（金融行业用 PE/PB/ROE），综合 `industry_score`；排序改为 得分 → 行业分位 → 市值；新增 `cap_by_industry` 单行业上限（`SCREENER_MAX_PER_INDUSTRY`，默认 8）；报告/深判上下文展示行业分位。screener + financial_sync 251 passed。实跑核心资产 13 候选，电子 5/医药 3/有色 2/其他 3，行业分位正常写入报告。
 - **2026-10-24（推荐后表现跟踪）**: 新增 `screener/performance.py` 纯函数（1/3/6/12 月 + 当前收益）与 `performance_service.py`（T+1 收盘买入、等权汇总平均收益/胜率/样本数）；API `GET /screener/runs/{id}/performance`；前端历史运行表新增「表现」按钮与汇总/个股表；日线覆盖不足标记 `no_entry_price`。screener + financial_sync 245 passed。实跑 2026-10-22 运行：21 推荐，当前仅 4 只有本地日线（采集进行中），收益 0（10/23 为最新交易日）。
 - **2026-10-24（回测 PIT + 交易费用）**: `market.financial_metrics` 新增 `announcement_date`（迁移 `f4a5b6c7d8e9`），yjbb 解析“最新公告日期”；历史 2025Q1–2026Q2 公告日覆盖 46,443/46,448（99.99%，回补脚本 `scripts/backfill_announcement_dates.py`）；回测 `_load_financials_by_period` 按公告日 ≤ 调仓日过滤（缺失公告日回退旧口径）；`compute_holding_returns` 支持 `cost_buy/cost_sell`，服务层计佣金万三 + 卖出印花税 0.05% + 单边滑点 0.1%；成交量为 0 视为停牌不可交易；回测免责声明更新；screener + financial_sync 241 passed。
 - **2026-10-24（选股 P2：定时筛选 + 变化日报）**: 新增 `core/screener_schedule.py`，`SCREENER_SCHEDULE`（工作日 16:30）按 `SCREENER_SCHEDULE_PRESETS`（默认 core）运行预设，已有进行中 run 时跳过；每轮与同口径上一轮 completed run 对比（presets 用 mode/combine/preset_ids，freeform 用 criteria_hash），只输出新推荐/掉出推荐/新进候选/移出候选，Markdown 落 `screener/reports/*-diff-*.md` 并写 `screener.diff` 事件；API `GET /screener/runs/{id}/diff`；前端历史表新增「日报」按钮；手动触发 `POST /scheduler/run/screener_schedule`。screener + financial_sync 237 passed。实跑：core 13 候选，对比 17:52 基线无变化。
@@ -40,7 +41,7 @@ metadata:
 | AI 中心 | ~75% | 模板/摘要/提取/Token 用量统计；AI 工作流已移除（单用户用不上） |
 | 研究中心 | ~92% | 全链路 + plan_type 四模板 + LLM 证据分类 + 多周期/同业比对 + 报告可视化 |
 | 投资组合 | ~40% | 自选已并入公司；持仓/日志仅后端，前端待做 |
-| 智能选股 | ~95% | 24 指标（TTM 估值 + 现金流质量）+ 6 内置预设；股票池卫生 + 行业隔离；深判知识库/证据守卫；预设回测；定时筛选 + 变化日报 + 推荐后表现跟踪；财务数据工作日定时更新（2026-10-24） |
+| 智能选股 | ~95% | 24 指标（TTM 估值 + 现金流质量）+ 6 内置预设；股票池卫生 + 行业隔离/相对排名；深判知识库/证据守卫；预设回测；定时筛选 + 变化日报 + 推荐后表现跟踪；财务数据工作日定时更新（2026-10-24） |
 | 系统/调度 | ~85% | 调度/观察/任务/事件/新鲜度/覆盖矩阵/Token 用量卡片 |
 
 总体：V1.1 达成，V2 按分析师优先级推进中（见下）。
