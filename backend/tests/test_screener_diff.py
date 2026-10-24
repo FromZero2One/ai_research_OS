@@ -92,3 +92,55 @@ async def test_build_run_diff_uses_previous_same_preset(test_session: AsyncSessi
     assert has_previous is True
     assert "新推荐" in markdown and "掉出推荐" in markdown
     assert "C" in markdown and "B" in markdown
+
+
+def _rule(roe: float) -> dict:
+    return {
+        "stock_pool": {"type": "all"},
+        "quant_rules": [
+            {"metric": "roe", "op": ">", "value": roe, "missing_data_policy": "exclude"}
+        ],
+        "qualitative_criteria": [],
+    }
+
+
+def _run(rules: dict, when: int, hash_: str = "h1") -> ScreenerRun:
+    return ScreenerRun(
+        criteria_hash=hash_,
+        criteria_text="预设组合",
+        rules=rules,
+        mode="presets",
+        preset_ids=["p1"],
+        combine_mode="union",
+        status="completed",
+        candidate_count=1,
+        result_count=1,
+        created_at=datetime(2026, 10, 24, when, 0, tzinfo=UTC),
+    )
+
+
+async def test_preset_rule_change_invalidates_baseline(test_session: AsyncSession):
+    """preset_ids 相同但规则被编辑 → 不把旧规则运行当基线。"""
+    previous = _run(_rule(15.0), 8)
+    current = _run(_rule(20.0), 9)
+    test_session.add_all([previous, current])
+    await test_session.flush()
+
+    markdown, has_previous = await build_run_diff(test_session, current.id)
+    assert has_previous is False
+    assert "规则已变更" in markdown
+    assert "首次运行" not in markdown
+
+
+async def test_previous_run_uses_latest_matching_rules(test_session: AsyncSession):
+    """跳过错口径的中间运行，选择更早但规则一致的一轮作为基线。"""
+    old_match = _run(_rule(20.0), 7)
+    middle_changed = _run(_rule(15.0), 8)
+    current = _run(_rule(20.0), 9)
+    test_session.add_all([old_match, middle_changed, current])
+    await test_session.flush()
+
+    markdown, has_previous = await build_run_diff(test_session, current.id)
+    assert has_previous is True
+    assert "对比基线" in markdown
+    assert old_match.id.hex[:8] in markdown
