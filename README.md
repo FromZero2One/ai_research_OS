@@ -57,7 +57,7 @@ A personal AI-powered investment research assistant. Company → Knowledge → A
 | **AI Center** | Prompt mgmt, LLM orchestration, summarization | DeepSeek V4 Flash (默认) / Ollama / OpenAI 兼容 |
 | **Research Center** | Question → Evidence → Report → Decision → Thesis | LangGraph-ready |
 | **Portfolio Center** | 关注公司（并入公司中心）、持仓、投资日志（后端） | PostgreSQL |
-| **Screener** | 预设标准库选股：21 指标（含 PE/PB/PS 派生估值）+ 6 内置预设（含金融行业专属）+ 股票池卫生 + 行业隔离 + 组合模式，零 LLM 翻译（2026-10-24） | AKShare + LLM 深判 |
+| **Screener** | 预设标准库选股：24 指标（PE/PB/PS + 现金流质量/应计比率，TTM 口径）+ 6 内置预设（含金融行业专属）+ 股票池卫生 + 行业隔离 + 组合模式，零 LLM 翻译（2026-10-24） | AKShare + LLM 深判 |
 
 > **Screener 数据管道（2026-10-22）**：全市场快照走新浪源（东财风控应对）；财务三表（业绩/资产负债/现金流）均为市场级一次调用（~5000 只/期），不再逐只拉取；流动/速动/周转/成长率走东财 F10 主要指标（`RPT_F10_FINANCE_MAINFINADATA`）分页补采。已知缺口见 Roadmap。
 
@@ -143,7 +143,7 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 | 研究中心 | ~95% | 全链路 + LLM 证据分类（含定量/定性双轨）+ 多周期比对 + 报告可视化 + [ev:id] 引用回溯 + structured_facts 交叉验证 |
 | 投资组合 | ~40% | 自选已并入公司；持仓/日志后端就绪，前端随 V2 |
 | 系统/调度 | ~85% | 调度/观察/持久任务/事件/新鲜度可用 |
-| 智能选股 | ~95% | 21 指标（含 PE/PB/PS）+ 6 内置预设；股票池卫生（ST/停牌/流动性/小市值）+ 申万行业分类与金融行业隔离；深判接入知识库与证据守卫；预设回测 MVP；财务数据工作日定时更新 |
+| 智能选股 | ~95% | 24 指标（PE/PB/PS + TTM 现金流质量）+ 6 内置预设；股票池卫生 + 申万行业分类与金融行业隔离；深判接入知识库与证据守卫；预设回测 MVP；财务数据工作日定时更新 |
 
 总体：V1.1 目标基本达成，后端 **391 passed / 2 failed / 2 skipped**（2 项失败为既有 research 证据继承依赖本地 LLM 结构化输出，与选股改动无关）；screener + financial_sync 专项 **214 passed**；前端 vue-tsc/build 通过。改动文件 ruff 通过（仓库仍保留历史 E501 债务）。
 已知缺口：美股真实行情、持仓/日志前端、Market.vue 覆盖网格列数动态化（当前硬编码 5 列）。下一步（证据继承/差异日报）详见 [memory/ai-research-os-session.md](memory/ai-research-os-session.md)。
@@ -190,7 +190,7 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 | ~~覆盖矩阵定性维度~~ | ✅ 2026-10-15 | 矩阵新增定性列：已索引文档含 mda/risk 切片 → ok；仅已索引 → partial；无 → missing；纳入 worst_health |
 | ~~证据继承~~ | ✅ 2026-10-16 | auto-gather 自动带入同公司已完成会话证据（上限 10 条/去重/幂等），标 inherited_from_session_id，前端「📥 历史已核实」徽标可跳原会话 |
 | **差异日报** | 未开始 | 旧晨报已删（2026-10-14），从零构建"只报变化"日报：新公告、财报日历临近、价格异动、证据与旧结论冲突 |
-| ~~预设标准库（Screener v1.5）~~ | ✅ 2026-10-24 | 21 指标（含 PE/PB/PS 派生估值）+ 6 内置预设（新增金融价值）+ union/intersection/flatten 组合；股票池卫生过滤；申万行业分类与金融行业隔离；全市场 bs/cf 市场级拉取；东财风控应对 |
+| ~~预设标准库（Screener v1.5）~~ | ✅ 2026-10-24 | 24 指标（PE/PB/PS + TTM 现金流质量）+ 6 内置预设（新增金融价值）+ 组合模式；股票池卫生；申万行业分类与金融行业隔离；TTM（2025Q2/Q4 等历史期回补）；全市场 bs/cf 市场级拉取 |
 
 收尾待办（小项）：Market.vue 覆盖网格列数动态化（当前硬编码 `repeat(5, 90px)`）；test_finalize_session 补 LLM mock（真实 LLM 调用挂起）；qualColor 硬编码色值统一 CSS 变量。
 

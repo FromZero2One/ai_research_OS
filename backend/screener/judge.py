@@ -132,6 +132,8 @@ _METRIC_CN = {
     "operating_cash_flow": "经营现金流", "revenue": "营业总收入", "net_income": "净利润",
     "revenue_growth": "营收同比", "net_income_growth": "净利同比",
     "total_assets": "总资产", "total_liabilities": "总负债", "eps": "每股收益",
+    "cfo_to_ni": "现金流/净利润", "cfo_to_revenue": "现金流/营收",
+    "accrual_ratio": "应计比率",
 }
 
 _MONEY_METRICS = frozenset({
@@ -141,10 +143,11 @@ _MONEY_METRICS = frozenset({
 _PERCENT_METRICS = frozenset({
     "roe", "gross_margin", "net_margin", "debt_to_equity",
     "revenue_growth", "net_income_growth", "turnover",
+    "cfo_to_revenue", "accrual_ratio",
 })
 _RATIO_METRICS = frozenset({
     "current_ratio", "quick_ratio", "asset_turnover",
-    "inventory_turnover", "receivables_turnover",
+    "inventory_turnover", "receivables_turnover", "cfo_to_ni",
 })
 # 比率类指标的常见区间；越界提示 LLM 标注异常，避免把一次性损益当成经营信号
 _ANOMALY_BOUNDS = {"net_margin": (-100.0, 100.0), "gross_margin": (-100.0, 100.0), "roe": (-100.0, 100.0)}

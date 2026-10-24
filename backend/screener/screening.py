@@ -12,7 +12,12 @@ from core.exceptions import DataSourceError
 from core.logging import logger
 from market.akshare_executor import run_akshare
 from market.domain import FinancialMetricEntry
-from screener.valuation import VALUATION_METRICS, derive_valuation
+from screener.valuation import (
+    QUALITY_METRICS,
+    VALUATION_METRICS,
+    derive_quality,
+    derive_valuation,
+)
 
 # 全市场 A 股实时快照。
 # 注1：不走 akshare.stock_zh_a_spot_em（东财 push2 2026-10-22 起风控掐无 UA 请求 +
@@ -180,6 +185,8 @@ def _rule_hit(rule: dict, candidate: dict, fin_entries: list[FinancialMetricEntr
         value = candidate.get(metric)
     elif metric in VALUATION_METRICS:
         value = derive_valuation(candidate, fin_entries).get(metric)
+    elif metric in QUALITY_METRICS:
+        value = derive_quality(fin_entries).get(metric)
     else:
         value = _metric_value(fin_entries, metric)
     if value is None:

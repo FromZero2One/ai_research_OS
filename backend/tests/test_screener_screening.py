@@ -144,6 +144,23 @@ class TestValuationRules:
         assert [c["ticker"] for c in excluded] == ["CCC"]
         assert excluded[0]["missing"] == ["pe"]
 
+    def test_quality_rule(self):
+        financials = {
+            "AAA": [
+                _entry(2026, "Q2", "operating_cash_flow", 1.2e9),
+                _entry(2026, "Q2", "net_income", 5e8),
+                _entry(2026, "Q2", "revenue", 2e9),
+                _entry(2026, "Q2", "total_assets", 8e9),
+            ],
+        }
+        candidates = [_c("AAA", market_cap=1e10), _c("BBB", market_cap=1e10)]
+        rule = {"metric": "cfo_to_ni", "op": ">", "value": 2.0, "missing_data_policy": "exclude"}
+        passed, excluded = evaluate_quant_rules(candidates, [rule], financials)
+
+        assert [c["ticker"] for c in passed] == ["AAA"]  # 年化后 1.2/0.5 = 2.4
+        assert [c["ticker"] for c in excluded] == ["BBB"]
+        assert excluded[0]["missing"] == ["cfo_to_ni"]
+
     def test_pb_rule(self):
         financials = {
             "AAA": [

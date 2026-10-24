@@ -11,6 +11,7 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-10-24（选股 P1：TTM + 盈利质量）**: `valuation.py` 新增 `ttm_value`（上年年报 + 本期累计 − 上年同期；历史期缺失回退单期年化），PE/PS 改用 TTM；新增 `cfo_to_ni`（TTM 现金流/净利润）、`cfo_to_revenue`、`accrual_ratio`（应计比率）三个质量指标；指标库 21→24；核心资产/GARP 加 `cfo_to_ni>0.8`、深度价值 `>0.7`、高成长 `>0.5`；回补 2025Q1–Q4 财务（`scripts/backfill_financial_periods.py`）；迁移 `e3f4a5b6c7d8`；screener 232 passed。实跑：核心资产候选 18→13；临时质量预设 `cfo_to_ni>1.2 & pe<20` 选出 50 只；茅台 cfo_to_ni 1.46、应计 -12.2%。
 - **2026-10-24（选股 P0：股票池卫生 + 行业隔离）**: ①`pool.py` 入口统一过滤 ST/*ST/退市、停牌/无行情、换手率<0.05%、市值<10亿，报告新增「股票池卫生过滤」统计（实跑排除 ST 196 只、停牌 3 只）；②新增 `market.stock_industry` 表（迁移 `c1d2e3f4a5b6`），申万一级 31 行业为主 + 新浪补缺，共 5,663 只（主板 2111/2111），候选携带 industry/sector，报告/深判上下文展示行业；③行业隔离：工业预设自动排除金融股，新增内置「金融价值」预设（pb<1.5、pe<10、roe>8、市值>100亿，迁移 `d2e3f4a5b6c7`），金融预设只选银行/非银金融；④screener 测试 226 passed。实跑：核心资产 18 候选全部 industrial；金融临时预设 50 候选全部银行/非银金融。
 - **2026-10-24（Screener 优化 5 阶段）**: ①深判 `max_tokens` 1024→2560（截断重试 3584+压缩提示），上下文金额统一亿/万、比率带单位，净利润/ROE/毛利率越界加异常提示，报告市值/价格格式化；②freeform 指标白名单对齐真实入库指标（移除 gross_profit/operating_profit/rd_expense/total_equity），无数据指标自动降级为定性条目，所需指标全市场零覆盖时 run 显式失败；新增 `value_unit`（元/万/亿/%/倍）服务端换算，修掉“100亿→100”单位错误；③深判接入 KnowledgeService 检索（hybrid、无 reranker），新增确定性证据守卫：无资料时文档类命中降级、财务类要求 evidence 含数字、有资料必须引用 `[n]`，任一条降级即 recommend=False 且置信度≤0.4；无定性标准时跳过 LLM（auto-pass）；④状态分阶段提交（screening/judging/completed 可见）、前端自动接管进行中 run、union 收集缺失数据名单、预设报告补个股理由、标准条目前缀归一化去重；触发后立即提交 run 行（修 POST→GET 404 竞态）；⑤新增 PE/PB/PS 派生估值（市值/年化净利、市值/净资产、市值/年化营收）与内置预设估值条件（深度价值 pe<25/pb<3，GARP pe<40，周期反转 pb<2.5）；`core/financial_sync.py` 挂工作日 3:15 财务数据刷新。迁移 head `b7c8d9e0f1a2`；全量 391 passed / 2 failed / 2 skipped（失败为既有 research 证据继承依赖本地 LLM 结构化输出问题），screener + financial_sync 专项 214 passed，前端 build 绿。A股主板行情采集累计 259/2111 只（1,822,820 行），按 10 只/批后台续采。**注意**：知识库当前 0 文档，含定性标准的四套预设会稳定 0 推荐（数据不足），核心资产/纯量化预设正常。
 - **2026-10-23（Screener 预设回测 MVP + A股主板数据采集）**: `POST /screener/backtests`（preset_id + years 1-10，409 防并发）+ `GET /screener/backtests/{id}`。数据层 `backtest_data.py`：外部 MySQL 前复权日线（`BACKTEST_MYSQL_URL` 仅存 .env；同票同日重复行去重；本地 `market.stock_prices` 加 (ticker,date) 唯一约束、幂等灌库）+ 历史财务缺失期按需补拉（SAVEPOINT 隔离）+ 沪深300 基准。核心 `backtest.py` 纯函数：调仓日 = 披露截止日后首个交易日、**4 月调仓统一用上一年年报**（无未来函数）、停牌收益 0 标注、净值/CAGR/最大回撤/年度胜率。编排 `backtest_service.py`（状态机 pending→running→completed/failed，持久任务 `screener_backtest`）+ `backtest_report.py`（Markdown 报告含免责声明：未计费用、近似市值、幸存者偏差）。result 形状 `{summary, yearly}`。迁移 `f7a9c3e1b5d2` + `a1b2c3d4e5f6`。票池本地空时取外部库 distinct symbol（含退市票）。**日线拉取为逐只「边拉边灌」模式**（单票一次查询 ~1200 行、立即落库 commit，本地表行数即真实进度；≥200 根视为完整可断点续传；单票瞬时网络错误重试 3 次退避；全市场 ~18 分钟）。测试：models 2/2 + data 7/7 + core 12/12 通过，api 2/3（1 个待查）、回归 screener_api 5/5；端到端真实冒烟完成度 ~4%（5273 只拉取正常，整体验证待后续重跑）。
@@ -36,7 +37,7 @@ metadata:
 | AI 中心 | ~75% | 模板/摘要/提取/Token 用量统计；AI 工作流已移除（单用户用不上） |
 | 研究中心 | ~92% | 全链路 + plan_type 四模板 + LLM 证据分类 + 多周期/同业比对 + 报告可视化 |
 | 投资组合 | ~40% | 自选已并入公司；持仓/日志仅后端，前端待做 |
-| 智能选股 | ~95% | 21 指标（含 PE/PB/PS）+ 6 内置预设；股票池卫生 + 申万行业分类 + 金融行业隔离；深判接入知识库与证据守卫；预设回测 MVP；财务数据工作日定时更新（2026-10-24） |
+| 智能选股 | ~95% | 24 指标（PE/PB/PS + TTM 现金流质量）+ 6 内置预设；股票池卫生 + 申万行业分类 + 金融行业隔离；深判接入知识库与证据守卫；预设回测 MVP；财务数据工作日定时更新（2026-10-24） |
 | 系统/调度 | ~85% | 调度/观察/任务/事件/新鲜度/覆盖矩阵/Token 用量卡片 |
 
 总体：V1.1 达成，V2 按分析师优先级推进中（见下）。
@@ -90,7 +91,7 @@ metadata:
 - LLM：DeepSeek 云端（.env OPENAI_* 已配，key 已 gitignore）；light tier 同走云端；本机无 ollama
 - Embedding 仍指向本机 Ollama（未安装）→ 文档上传/知识检索的稠密向量不可用，BM25 兜底；pytest 有 5 项因此失败
 - akshare 走独立 `akshare_mcp` venv 子进程（`AKSHARE_MCP_DIR` 指向旧机器路径，**本机需改 .env 并确认 venv 存在**，否则 A 股采集失败但不崩）
-- 迁移 head：`d2e3f4a5b6c7`（行业表 + 金融价值预设）
+- 迁移 head：`e3f4a5b6c7d8`（TTM 现金流质量指标 + 预设质量门槛）
 - pytest 需先起 docker postgres；测试库 airesearch_test 由 conftest 用 create_all 重建（**改模型后旧测试库不会自动加列，需 DROP DATABASE airesearch_test 重建**）；`tests/test_session` fixture 为服务级测试专用（勿用 managed_session，会写进开发库）
 
 ## 相关文档

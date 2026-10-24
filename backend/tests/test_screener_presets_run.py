@@ -90,9 +90,10 @@ async def test_presets_mode_end_to_end(test_session: AsyncSession, screener_env,
         for metric, value in (
             ("roe", 20.0),
             ("net_margin", 30.0),
-            ("operating_cash_flow", 1e9),
+            # cfo_to_ni > 0.8：5e10 / 5e10 = 1.0
+            ("operating_cash_flow", 5e10),
             ("debt_to_equity", 30.0),
-            # GARP 新增 pe<40：两票 PE 分别约 18.8 / 8.8
+            # GARP pe<40：两票 PE 分别约 18.8 / 8.8
             ("net_income", 5e10),
         ):
             test_session.add(
@@ -169,8 +170,9 @@ async def test_quant_only_preset_skips_llm(
         for metric, value in (
             ("roe", 20.0),
             ("net_margin", 30.0),
-            ("operating_cash_flow", 1e9),
+            ("operating_cash_flow", 5e10),
             ("debt_to_equity", 30.0),
+            ("net_income", 5e10),
         ):
             test_session.add(
                 FinancialMetric(

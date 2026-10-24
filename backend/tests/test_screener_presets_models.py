@@ -92,12 +92,15 @@ async def test_metric_def_seeds_exist(test_session: AsyncSession):
         "pe": "derived",
         "pb": "derived",
         "ps": "derived",
+        "cfo_to_ni": "derived",
+        "cfo_to_revenue": "derived",
+        "accrual_ratio": "derived",
     }
     for key, source in expected_sources.items():
         assert key in by_key, f"缺少指标种子: {key}"
         assert by_key[key].data_source == source, f"{key} data_source 应为 {source}"
-    # 原 16 条 + 2 条成长指标 + 3 条估值指标
-    assert len(rows) >= 21
+    # 原 16 条 + 2 成长 + 3 估值 + 3 盈利质量
+    assert len(rows) >= 24
 
 
 async def test_value_preset_has_valuation_rules(test_session: AsyncSession):

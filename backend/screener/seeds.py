@@ -46,6 +46,21 @@ BUILTIN_METRICS: list[dict] = [
         "key": "ps", "name_cn": "市销率(年化,倍)", "category": "valuation",
         "data_source": "derived", "description": "总市值 / 年化营业收入",
     },
+    # 盈利质量（TTM 派生）
+    {
+        "key": "cfo_to_ni", "name_cn": "现金流/净利润(倍)", "category": "quality",
+        "data_source": "derived",
+        "description": "TTM 经营现金流 / TTM 净利润（>1 表示利润含金量高）",
+    },
+    {
+        "key": "cfo_to_revenue", "name_cn": "现金流/营收(%)", "category": "quality",
+        "data_source": "derived", "description": "TTM 经营现金流 / TTM 营业收入 × 100",
+    },
+    {
+        "key": "accrual_ratio", "name_cn": "应计比率(%)", "category": "quality",
+        "data_source": "derived",
+        "description": "(TTM 净利润 - TTM 经营现金流) / 最新总资产 × 100（越低越好）",
+    },
 ]
 
 # ── 内置预设（五套通用 + 金融行业专属）────────────────────────────────
@@ -59,7 +74,7 @@ BUILTIN_PRESETS: list[dict] = [
         "quant_rules": [
             {"metric": "roe", "op": ">", "value": 15, "missing_data_policy": _EX},
             {"metric": "net_margin", "op": ">", "value": 10, "missing_data_policy": _EX},
-            {"metric": "operating_cash_flow", "op": ">", "value": 0, "missing_data_policy": _EX},
+            {"metric": "cfo_to_ni", "op": ">", "value": 0.8, "missing_data_policy": _EX},
             {"metric": "debt_to_equity", "op": "<", "value": 50, "missing_data_policy": _EX},
             {"metric": "market_cap", "op": ">", "value": 3e10, "missing_data_policy": _EX},
         ],
@@ -75,6 +90,7 @@ BUILTIN_PRESETS: list[dict] = [
             {"metric": "net_income_growth", "op": ">", "value": 20, "missing_data_policy": _EX},
             {"metric": "roe", "op": ">", "value": 12, "missing_data_policy": _EX},
             {"metric": "net_margin", "op": ">", "value": 8, "missing_data_policy": _EX},
+            {"metric": "cfo_to_ni", "op": ">", "value": 0.5, "missing_data_policy": _EX},
             {"metric": "market_cap", "op": ">", "value": 1e10, "missing_data_policy": _EX},
         ],
         "qualitative": ["所处行业渗透率持续提升", "增长由主营业务驱动", "细分行业排名前二"],
@@ -87,7 +103,7 @@ BUILTIN_PRESETS: list[dict] = [
         "quant_rules": [
             {"metric": "debt_to_equity", "op": "<", "value": 40, "missing_data_policy": _EX},
             {"metric": "current_ratio", "op": ">", "value": 2, "missing_data_policy": _EX},
-            {"metric": "operating_cash_flow", "op": ">", "value": 0, "missing_data_policy": _EX},
+            {"metric": "cfo_to_ni", "op": ">", "value": 0.7, "missing_data_policy": _EX},
             {"metric": "pe", "op": "<", "value": 25, "missing_data_policy": _EX},
             {"metric": "pb", "op": "<", "value": 3, "missing_data_policy": _EX},
             {"metric": "market_cap", "op": ">", "value": 5e9, "missing_data_policy": _EX},
@@ -103,7 +119,7 @@ BUILTIN_PRESETS: list[dict] = [
             {"metric": "roe", "op": ">", "value": 15, "missing_data_policy": _EX},
             {"metric": "net_margin", "op": ">", "value": 12, "missing_data_policy": _EX},
             {"metric": "debt_to_equity", "op": "<", "value": 55, "missing_data_policy": _EX},
-            {"metric": "operating_cash_flow", "op": ">", "value": 0, "missing_data_policy": _EX},
+            {"metric": "cfo_to_ni", "op": ">", "value": 0.8, "missing_data_policy": _EX},
             {"metric": "pe", "op": "<", "value": 40, "missing_data_policy": _EX},
             {"metric": "market_cap", "op": ">", "value": 2e10, "missing_data_policy": _EX},
         ],
