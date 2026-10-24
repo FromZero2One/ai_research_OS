@@ -28,6 +28,7 @@ Thumbs.db
 
 # Local run logs
 backend/*.out
+frontend/*.out
 
 # 工具产物（编辑器备份 / gstack / 图表导出）
 *~

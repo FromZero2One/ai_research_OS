@@ -127,6 +127,7 @@ PYTHONPATH=. python scripts/seed_data.py
 - 异常统一走 `core/exceptions.py` → `api/app.py` 集中 handler，返回结构化 JSON：404 / 422 / 409 / 401 / 403 / 502 / 500
 - 接口速查：直接看各模块 `routes.py`，或根目录 `USAGE.md`「功能模块详解」
 - 比率层端点：`GET /api/v1/market/ratios/{ticker}`（财务比率）、`GET /api/v1/market/ratios/{ticker}/valuation-percentile`（PE/PB 历史分位）
+- 时间戳：数据库/API 统一使用 UTC（ISO 8601 带 `+00:00`）；前端展示转浏览器本地时区，报告内时间标注本地偏移
 
 ## 配置与环境变量
 

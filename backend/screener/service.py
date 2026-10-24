@@ -27,7 +27,13 @@ from screener.valuation import required_data_metrics
 
 
 def _now() -> str:
+    """数据库时间统一存 UTC（与前端/接口约定一致）。"""
     return datetime.now(UTC).isoformat()
+
+
+def _local_now_text() -> str:
+    """报告/展示用本地时间（带 +0800 偏移，避免和 UTC 混淆）。"""
+    return datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %z")
 
 
 async def _reload_financials(
@@ -339,7 +345,7 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
 
         # ② 确定性初筛：全市场快照 → 股票池过滤 → 量化规则 → 排名截断
         spot = await screening.fetch_market_spot()
-        spot_taken_at = _now()[:19].replace("T", " ")
+        spot_taken_at = _local_now_text()
         from company.models import Company
 
         watched = set(

@@ -167,6 +167,16 @@ function presetParams() {
 
 const triggerPresets = useTriggerScreenerRunPresets()
 
+function formatLocalTime(iso?: string | null): string {
+  if (!iso) return '-'
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  })
+}
+
 const statusLabel: Record<string, { label: string; type: string }> = {
   pending: { label: '排队中', type: 'info' },
   screening: { label: '初筛中', type: 'warning' },
@@ -301,7 +311,7 @@ function viewReport(run: ScreenerRunSummary) {
           <template #header><span>历史运行</span></template>
           <el-table :data="runsData?.runs || []" size="small" @row-click="viewReport">
             <el-table-column label="时间" width="160">
-              <template #default="{ row }">{{ row.created_at?.replace('T', ' ').slice(0, 16) }}</template>
+              <template #default="{ row }">{{ formatLocalTime(row.created_at) }}</template>
             </el-table-column>
             <el-table-column label="状态" width="90">
               <template #default="{ row }">
