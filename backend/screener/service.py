@@ -481,6 +481,7 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
             cand["industry_score"] = float(info.get("industry_score") or 0.5)
 
         excluded_missing: list[dict] = []
+        near_misses: list[dict] = []
         if run.mode == "presets" and run.combine_mode == "union":
             # union：每个预设独立初筛 → 票数排名（hits ↓ → score ↓ → 市值 ↓）
             from screener.compose import evaluate_quant_rules_by_preset
@@ -508,6 +509,15 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
                 settings.SCREENER_MAX_PER_INDUSTRY,
                 rules.get("candidate_limit", 50),
             )
+            from screener.compose import evaluate_near_misses_by_preset
+
+            near_misses = evaluate_near_misses_by_preset(
+                pool,
+                presets,
+                financials,
+                exclude=set(union_map),
+                limit=10,
+            )
         else:
             eval_pool = pool
             scope = rules.get("sector_scope", "all") if run.mode == "presets" else "all"
@@ -523,6 +533,12 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
                 ranked,
                 settings.SCREENER_MAX_PER_INDUSTRY,
                 rules.get("candidate_limit", 50),
+            )
+            near_misses = screening.evaluate_near_misses(
+                eval_pool,
+                rules.get("quant_rules", []),
+                financials,
+                limit=10,
             )
         run.candidate_count = len(candidates)
         await _check_cancelled(run.id)
@@ -572,6 +588,7 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
              "result_count": sum(1 for j in judgements if j.get("recommend") is True),
              "preset_names": rules.get("preset_names", [])},
             judgements, run.criteria_text, excluded_missing,
+            near_misses=near_misses,
             financial_asof=_financial_asof(financials),
             spot_taken_at=spot_taken_at,
             pool_stats=pool_stats,

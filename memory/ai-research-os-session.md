@@ -11,6 +11,7 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-10-24（近似命中）**: 报告新增「附：近似命中（仅差 1 条规则）」：`screening.evaluate_near_misses` 找出恰好失败 1 条规则且无缺失数据的票（按市值降序前 10），union 模式经 `compose.evaluate_near_misses_by_preset` 逐预设判断去重并标注预设；不影响候选池/推荐。`_rule_hit` 重构出 `_rule_value` 复用指标取值。测试补近似命中与报告分区。
 - **2026-10-24（运行取消）**: 新增 `POST /screener/runs/{id}/cancel` + `screener/cancel.py` 进程内取消事件；状态机新增 `cancelling`/`cancelled`。worker 在行情拉取后、财务补采后、进入深判前、每只深判开始前、报告生成前检查取消；`judge_candidates(should_stop=...)` 取消剩余 asyncio 任务。排队中的 run 启动时直接收尾；已结束 run 取消返回 409、重复取消幂等。前端历史运行表新增「取消」按钮，状态映射补 cancelling/cancelled。screener + financial_sync 292 passed。
 - **2026-10-24（变化日报 Webhook）**: 新增 `screener/notify.py`：定时选股变化日报生成后推送群机器人摘要（企微/飞书/钉钉/通用 JSON），配置 `SCREENER_WEBHOOK_URL`/`SCREENER_WEBHOOK_FORMAT`/`SCREENER_WEBHOOK_NOTIFY_ON`（changes|always）；业务错误码与网络异常只记日志、不阻断调度。`build_run_diff_data` 额外返回变化详情供通知使用，原 `build_run_diff` 签名不变。screener + financial_sync 287 passed。
 - **2026-10-24（选股 → 研究中心交接）**: 新增 `screener/handoff.py`：`POST /screener/runs/{run_id}/to-research` 把该轮推荐股（按置信度排序，默认 5 只，可传 `tickers`/`limit`）创建为研究中心会话（`auto_plan=False`，tag `["screener", run_id]`，metadata 记录 `screener_run_id`/`screener_ticker`，已创建过则跳过）；前端历史运行表新增「送入」按钮。顺带修复 `ResearchSession.tags` 类型不一致（模型注解/响应 schema 原为 dict，实际 service 存 list[str]，导致有 tags 的会话详情 500），统一为 `list[str]`（JSONB 列不变，无需迁移）。screener + financial_sync 281 passed；research 22 passed / 2 既有失败（证据继承依赖本地 LLM）。

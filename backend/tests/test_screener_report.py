@@ -65,6 +65,22 @@ class TestBuildReport:
         assert "行业格局稳定" in report
         assert "无重大违规" in report  # 原文中的条目逐条出现
 
+    def test_near_miss_section(self):
+        near = [
+            {
+                "ticker": "600036", "name": "招商银行", "industry": "银行",
+                "failed_rule": {"metric": "roe", "op": ">", "threshold": 15.0, "value": 14.2},
+                "preset": "核心资产",
+            }
+        ]
+        report = build_report(
+            RUN, JUDGEMENTS, RUN["criteria_text"], [], near_misses=near
+        )
+        assert "近似命中" in report
+        assert "招商银行" in report
+        assert "14.20" in report and "15.00" in report
+        assert "预设：核心资产" in report
+
     def test_missing_data_section(self):
         report = build_report(RUN, JUDGEMENTS, RUN["criteria_text"], EXCLUDED_MISSING)
         assert "数据缺失" in report

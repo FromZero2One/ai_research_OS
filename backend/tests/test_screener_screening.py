@@ -8,6 +8,7 @@ import pytest
 
 from market.domain import FinancialMetricEntry
 from screener.screening import (
+    evaluate_near_misses,
     evaluate_quant_rules,
     fetch_market_spot,
     rank_candidates,
@@ -36,6 +37,29 @@ class TestEvaluateQuantRules:
         assert [c["ticker"] for c in passed] == ["600519"]
         # 净资产收益率不命中且策略 exclude → 进 excluded（缺数据）
         assert [c["ticker"] for c in excluded] == ["300750"]
+
+    def test_near_miss_exactly_one_failed_rule(self):
+        """只差一条规则且无缺失数据 → 近似命中；失败两条/缺数据不列。"""
+        fin = {
+            "PASS": [_entry(2024, "Annual", "roe", 30.0)],
+            "ROE_FAIL": [_entry(2024, "Annual", "roe", 10.0)],
+            "PRICE_FAIL": [_entry(2024, "Annual", "roe", 30.0)],
+            "TWO_FAIL": [_entry(2024, "Annual", "roe", 10.0)],
+        }
+        candidates = [
+            _c("PASS", price=10.0, market_cap=500),
+            _c("ROE_FAIL", price=10.0, market_cap=300),
+            _c("PRICE_FAIL", price=25.0, market_cap=200),
+            _c("TWO_FAIL", price=25.0, market_cap=900),
+            _c("NO_DATA", price=10.0, market_cap=800),
+        ]
+        near = evaluate_near_misses(
+            candidates, [RULE_ROE, RULE_PRICE], fin, limit=10
+        )
+        assert [c["ticker"] for c in near] == ["ROE_FAIL", "PRICE_FAIL"]
+        assert near[0]["failed_rule"]["metric"] == "roe"
+        assert near[0]["failed_rule"]["value"] == 10.0
+        assert near[1]["failed_rule"]["metric"] == "price"
 
     def test_missing_data_exclude_even_with_other_hits(self):
         """exclude 策略的规则缺数据 → 即使命中其他规则也必须排除。"""

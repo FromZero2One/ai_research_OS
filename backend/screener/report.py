@@ -105,6 +105,7 @@ def build_report(
     judgements: list[dict],
     criteria_text: str,
     excluded_missing_data: list[dict],
+    near_misses: list[dict] | None = None,
     financial_asof: str | None = None,
     spot_taken_at: str | None = None,
     pool_stats: dict[str, int] | None = None,
@@ -298,6 +299,28 @@ def build_report(
         lines.append("")
         for j in failed:
             lines.append(f"- {j['name']}（{j['ticker']}）：{j.get('error', '未知原因')}")
+        lines.append("")
+
+    if near_misses:
+        from screener.seeds import BUILTIN_METRICS
+
+        labels = {m["key"]: m["name_cn"] for m in BUILTIN_METRICS}
+        lines.append("## 附：近似命中（仅差 1 条规则）")
+        lines.append("")
+        lines.append("以下股票未进入候选池，但仅有一条量化规则未满足，可供人工复核：")
+        lines.append("")
+        for c in near_misses:
+            rule = c.get("failed_rule") or {}
+            metric = labels.get(rule.get("metric"), rule.get("metric", "-"))
+            value = rule.get("value")
+            big = isinstance(value, (int, float)) and abs(value) >= 1e4
+            shown = _fmt_money(value) if big else _fmt_price(value)
+            extra = f"，预设：{c['preset']}" if c.get("preset") else ""
+            lines.append(
+                f"- {c.get('name', '')}（{c['ticker']}）：{metric} "
+                f"{shown} 未满足 {rule.get('op', '')} {_fmt_price(rule.get('threshold'))}"
+                f"（行业：{c.get('industry') or '-'}{extra}）"
+            )
         lines.append("")
 
     lines.append("## 附：因数据缺失被排除")

@@ -177,8 +177,10 @@ def _metric_value(entries: list[FinancialMetricEntry], metric: str) -> float | N
     return best.metric_value if best else None
 
 
-def _rule_hit(rule: dict, candidate: dict, fin_entries: list[FinancialMetricEntry]) -> bool | None:
-    """单条规则求值：True=命中，False=不命中，None=数据缺失。
+def _rule_value(
+    rule: dict, candidate: dict, fin_entries: list[FinancialMetricEntry]
+) -> float | None:
+    """取规则对应的指标值；数据缺失 → None。
 
     估值指标（pe/pb/ps）由快照市值 + 最新财务数据即时派生，不落库。
     """
@@ -195,7 +197,15 @@ def _rule_hit(rule: dict, candidate: dict, fin_entries: list[FinancialMetricEntr
         value = _metric_value(fin_entries, metric)
     if value is None:
         return None
-    return _OPS[rule["op"]](float(value), float(rule["value"]))
+    return float(value)
+
+
+def _rule_hit(rule: dict, candidate: dict, fin_entries: list[FinancialMetricEntry]) -> bool | None:
+    """单条规则求值：True=命中，False=不命中，None=数据缺失。"""
+    value = _rule_value(rule, candidate, fin_entries)
+    if value is None:
+        return None
+    return _OPS[rule["op"]](value, float(rule["value"]))
 
 
 def evaluate_quant_rules(
@@ -239,6 +249,55 @@ def evaluate_quant_rules(
             continue
         passed.append({**cand, "score": score_candidate(hits, len(rules))})
     return passed, excluded
+
+
+def evaluate_near_misses(
+    candidates: list[dict],
+    rules: list[dict],
+    financials_by_ticker: dict[str, list[FinancialMetricEntry]],
+    limit: int = 10,
+) -> list[dict]:
+    """近似命中：恰好失败 1 条规则、且无缺失数据的候选（按市值降序，最多 limit）。
+
+    缺数据不视为“差一点”（无法判断），失败 2 条以上也不列，避免报告噪声。
+    返回项附 `failed_rule`（metric/op/threshold/value）与 score=(n-1)/n。
+    """
+    if not rules:
+        return []
+    out: list[dict] = []
+    for cand in candidates:
+        fin_entries = financials_by_ticker.get(cand["ticker"], [])
+        failures: list[dict] = []
+        unavailable = False
+        for rule in rules:
+            value = _rule_value(rule, cand, fin_entries)
+            if value is None:
+                if rule.get("missing_data_policy", "exclude") == "include":
+                    continue
+                unavailable = True
+                break
+            if not _OPS[rule["op"]](value, float(rule["value"])):
+                failures.append(
+                    {
+                        "metric": rule["metric"],
+                        "op": rule["op"],
+                        "threshold": float(rule["value"]),
+                        "value": round(value, 4),
+                    }
+                )
+                if len(failures) > 1:
+                    break
+        if unavailable or len(failures) != 1:
+            continue
+        out.append(
+            {
+                **cand,
+                "score": score_candidate(len(rules) - 1, len(rules)),
+                "failed_rule": failures[0],
+            }
+        )
+    out.sort(key=lambda c: c.get("market_cap") or 0.0, reverse=True)
+    return out[:limit]
 
 
 def score_candidate(hit: int, applicable: int) -> float:
