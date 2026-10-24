@@ -88,20 +88,34 @@ async def _previous_run(
 
 
 async def build_run_diff(
-    db: AsyncSession, run_id: uuid.UUID | str
+    db: AsyncSession,
+    run_id: uuid.UUID | str,
+    base_run_id: uuid.UUID | str | None = None,
 ) -> tuple[str, bool]:
-    """返回 (Markdown, 是否存在上一轮基线)。运行不存在/未完成时给出说明文本。"""
-    markdown, has_previous, _ = await build_run_diff_data(db, run_id)
+    """返回 (Markdown, 是否存在基线)。运行不存在/未完成时给出说明文本。"""
+    markdown, has_previous, _ = await build_run_diff_data(db, run_id, base_run_id)
     return markdown, has_previous
 
 
-async def build_run_diff_data(
-    db: AsyncSession, run_id: uuid.UUID | str
-) -> tuple[str, bool, dict | None]:
-    """返回 (Markdown, 是否存在上一轮基线, 变化详情)。无基线/未完成时详情为 None。"""
-    run = (
-        await db.execute(select(ScreenerRun).where(ScreenerRun.id == uuid.UUID(str(run_id))))
+async def _load_run(db: AsyncSession, run_id: uuid.UUID | str) -> ScreenerRun | None:
+    return (
+        await db.execute(
+            select(ScreenerRun).where(ScreenerRun.id == uuid.UUID(str(run_id)))
+        )
     ).scalar_one_or_none()
+
+
+async def build_run_diff_data(
+    db: AsyncSession,
+    run_id: uuid.UUID | str,
+    base_run_id: uuid.UUID | str | None = None,
+) -> tuple[str, bool, dict | None]:
+    """返回 (Markdown, 是否存在基线, 变化详情)。
+
+    base_run_id 缺省 → 自动找同口径上一轮；显式指定 → 与任意一轮对比。
+    无基线/未完成时详情为 None。
+    """
+    run = await _load_run(db, run_id)
     if run is None:
         raise ValueError(f"运行不存在: {run_id}")
 
@@ -116,7 +130,26 @@ async def build_run_diff_data(
             None,
         )
 
-    previous, rules_changed = await _previous_run(db, run)
+    rules_changed = False
+    if base_run_id is not None:
+        previous = await _load_run(db, base_run_id)
+        if previous is None:
+            raise ValueError(f"基线运行不存在: {base_run_id}")
+        if previous.id == run.id:
+            from screener.errors import ScreenerDiffError
+
+            raise ScreenerDiffError("基线运行不能是当前运行")
+        if previous.status != "completed":
+            return (
+                build_diff_markdown(current, None, None).replace(
+                    "首次运行，暂无历史基线，下一轮开始可生成变化。",
+                    f"所选基线运行状态为 {previous.status}，完成后再对比。",
+                ),
+                False,
+                None,
+            )
+    else:
+        previous, rules_changed = await _previous_run(db, run)
     if previous is None:
         markdown = build_diff_markdown(current, None, None)
         if rules_changed:

@@ -483,15 +483,26 @@ async def get_report(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/runs/{run_id}/diff")
-async def get_diff(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    """变化日报：与同口径上一轮运行对比。"""
+async def get_diff(
+    run_id: uuid.UUID,
+    base_run_id: uuid.UUID | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """变化日报：默认对比同口径上一轮；base_run_id 可指定任意基线。"""
     from screener.diff_service import build_run_diff
+    from screener.errors import ScreenerDiffError
 
     try:
-        markdown, has_previous = await build_run_diff(db, run_id)
+        markdown, has_previous = await build_run_diff(db, run_id, base_run_id)
+    except ScreenerDiffError as e:
+        return JSONResponse(status_code=422, content={"error": str(e)})
     except ValueError as e:
         raise NotFoundError("ScreenerRun", str(run_id)) from e
-    return {"diff": markdown, "has_previous": has_previous}
+    return {
+        "diff": markdown,
+        "has_previous": has_previous,
+        "base_run_id": str(base_run_id) if base_run_id else None,
+    }
 
 
 @router.get("/runs/{run_id}/performance")

@@ -165,6 +165,23 @@ class TestExportAndSchedule:
         assert text.startswith("代码,名称,结论,推荐")
         assert "300750" in text and "宁德时代" in text
 
+    def test_diff_with_explicit_base(self, client: TestClient, screener_env):
+        first = _run_screener_run(client, client.post("/api/v1/screener/runs").json())
+        second = _run_screener_run(client, client.post("/api/v1/screener/runs").json())
+        resp = client.get(
+            f"/api/v1/screener/runs/{second['id']}/diff",
+            params={"base_run_id": first["id"]},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["has_previous"] is True
+        assert resp.json()["base_run_id"] == first["id"]
+        # 基线与当前相同 → 422
+        bad = client.get(
+            f"/api/v1/screener/runs/{second['id']}/diff",
+            params={"base_run_id": second["id"]},
+        )
+        assert bad.status_code == 422
+
     def test_schedule_status(self, client: TestClient):
         resp = client.get("/api/v1/screener/schedule")
         assert resp.status_code == 200

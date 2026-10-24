@@ -597,6 +597,7 @@ GET  /api/v1/screener/presets              # 预设列表（含内置）
 POST /api/v1/screener/runs                 # Body: {"mode": "presets", "pool": "all", "preset_ids": [...], "combine": "union"}
 GET  /api/v1/screener/runs/{id}            # 运行详情（含逐只判断）
 GET  /api/v1/screener/runs/{id}/report     # Markdown 报告
+GET  /api/v1/screener/runs/{id}/diff       # 变化日报（可加 ?base_run_id=... 指定任意基线）
 POST /api/v1/screener/runs/{id}/cancel      # 取消进行中的筛选（阶段边界/逐只深判前生效）
 GET  /api/v1/screener/runs/{id}/export      # 导出该轮判断为 CSV
 GET  /api/v1/screener/schedule              # 定时快照（cron/预设/下次运行/Webhook 状态）

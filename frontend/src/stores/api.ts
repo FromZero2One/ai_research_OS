@@ -690,10 +690,18 @@ export function useScreenerRunReport(id: MaybeRefOrGetter<string | null>) {
     computed(() => (toValue(id) ? `/screener/runs/${toValue(id)}/report` : '')),
   )
 }
-export function useScreenerRunDiff(id: MaybeRefOrGetter<string | null>) {
-  return useGet<{ diff: string; has_previous: boolean }>(
-    computed(() => ['screener-diff', toValue(id) ?? '']),
-    computed(() => (toValue(id) ? `/screener/runs/${toValue(id)}/diff` : '')),
+export function useScreenerRunDiff(
+  id: MaybeRefOrGetter<string | null>,
+  baseId?: MaybeRefOrGetter<string | null>,
+) {
+  return useGet<{ diff: string; has_previous: boolean; base_run_id: string | null }>(
+    computed(() => ['screener-diff', toValue(id) ?? '', toValue(baseId ?? null) ?? '']),
+    computed(() => {
+      const runId = toValue(id)
+      if (!runId) return ''
+      const base = toValue(baseId ?? null)
+      return `/screener/runs/${runId}/diff${base ? `?base_run_id=${base}` : ''}`
+    }),
   )
 }
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from screener.diff import build_diff_markdown, compute_diff
@@ -130,6 +131,47 @@ async def test_preset_rule_change_invalidates_baseline(test_session: AsyncSessio
     assert has_previous is False
     assert "规则已变更" in markdown
     assert "首次运行" not in markdown
+
+
+async def test_explicit_base_run_allows_any_previous(test_session: AsyncSession):
+    """显式指定基线时不要求规则指纹一致（用户主动对比任意两轮）。"""
+    base = _run(_rule(15.0), 8)
+    current = _run(_rule(20.0), 9)
+    test_session.add_all([base, current])
+    await test_session.flush()
+    test_session.add(
+        ScreenerJudgement(
+            run_id=base.id, ticker="A", name="A", recommend=True,
+            reasons=[], criteria_hits=[], confidence=0.9,
+            snapshot={}, status="ok",
+        )
+    )
+    test_session.add(
+        ScreenerJudgement(
+            run_id=current.id, ticker="B", name="B", recommend=True,
+            reasons=[], criteria_hits=[], confidence=0.9,
+            snapshot={}, status="ok",
+        )
+    )
+    await test_session.flush()
+
+    markdown, has_previous = await build_run_diff(
+        test_session, current.id, base_run_id=base.id
+    )
+    assert has_previous is True
+    assert base.id.hex[:8] in markdown
+    assert "B" in markdown
+
+
+async def test_explicit_base_cannot_be_current(test_session: AsyncSession):
+    from screener.errors import ScreenerDiffError
+
+    run = _run(_rule(15.0), 8)
+    test_session.add(run)
+    await test_session.flush()
+
+    with pytest.raises(ScreenerDiffError):
+        await build_run_diff(test_session, run.id, base_run_id=run.id)
 
 
 async def test_previous_run_uses_latest_matching_rules(test_session: AsyncSession):

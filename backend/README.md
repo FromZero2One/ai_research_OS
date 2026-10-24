@@ -74,6 +74,7 @@ LLM 只在深判参与，筛选执行确定性。迁移 `b5d2f8a3c6e1` → `c8e1
 
 API：`GET /api/v1/screener/runs/{run_id}/diff` 返回变化日报 Markdown 与 `has_previous`；前端历史运行表新增「日报」按钮。手动触发调度：`POST /api/v1/scheduler/run/screener_schedule`。
 
+**任意两轮对比（2026-10-24）**：`GET /api/v1/screener/runs/{run_id}/diff?base_run_id={id}` 可指定任意已完成运行作为基线（默认仍自动找同口径上一轮）；基线不存在 → 404，基线与当前相同 → 422，基线未完成 → 返回说明文本。前端日报面板新增基线下拉框。
 **口径审计（2026-10-24）**：预设被编辑后 preset_ids 不变，仅按 id 找基线会把旧规则运行误当同一口径。现在 `diff_service` 对 `run.rules` 做稳定哈希（忽略展示用 `preset_names`），只与规则指纹一致的历史运行对比；若同 ids 的历史运行规则已变，则本轮作为新基线，日报明确写「规则已变更，历史运行不可比」。
 
 **取消运行（2026-10-24）**：`POST /api/v1/screener/runs/{run_id}/cancel` 将进行中的运行置为 `cancelling` 并设置进程内取消事件；worker 在阶段边界以及每只深判开始前检查，命中后停止剩余 LLM 调用、清空未完成结果并把状态落为 `cancelled`（不生成报告）。排队中的运行在 worker 启动时直接收尾；已结束的运行返回 409，重复取消幂等。前端历史运行表对进行中的行显示「取消」按钮。取消是 cooperative 的：已在途的单次 LLM 请求会在完成或取消信号到达后尽快返回。
@@ -264,4 +265,4 @@ APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工�
 ```bash
 make test        # pytest，专用 airesearch_test 库 + 隔离 Qdrant 集合
 ```
-当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **310 passed**。
+当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **313 passed**。

@@ -323,7 +323,11 @@ function viewReport(run: ScreenerRunSummary) {
 
 // ── 变化日报 ──
 const viewingDiffRunId = ref<string | null>(null)
-const { data: diffData } = useScreenerRunDiff(viewingDiffRunId)
+const diffBaseRunId = ref<string>('')
+const { data: diffData } = useScreenerRunDiff(
+  viewingDiffRunId,
+  computed(() => diffBaseRunId.value || null),
+)
 const diffHtml = computed(() => {
   const diff = diffData.value?.diff
   if (!diff) return ''
@@ -332,6 +336,7 @@ const diffHtml = computed(() => {
 
 function viewDiff(run: ScreenerRunSummary) {
   viewingDiffRunId.value = run.id
+  diffBaseRunId.value = ''
 }
 
 // ── 推荐后表现 ──
@@ -753,7 +758,22 @@ async function removeSavedPortfolio(p: ScreenerSavedPortfolio) {
       <template #header>
         <div class="card-header">
           <span>变化日报</span>
-          <el-button size="small" link @click="viewingDiffRunId = null">关闭</el-button>
+          <div class="flex items-center gap-2">
+            <el-select
+              v-model="diffBaseRunId" size="small" clearable
+              placeholder="自动（同口径上一轮）" style="width: 220px"
+            >
+              <el-option value="" label="自动（同口径上一轮）" />
+              <el-option
+                v-for="r in (runsData?.runs || []).filter(
+                  (x) => x.id !== viewingDiffRunId && x.status === 'completed'
+                )"
+                :key="r.id" :value="r.id"
+                :label="`${formatLocalTime(r.created_at)} · ${r.id.slice(0, 8)}`"
+              />
+            </el-select>
+            <el-button size="small" link @click="viewingDiffRunId = null">关闭</el-button>
+          </div>
         </div>
       </template>
       <div class="report-md" v-html="diffHtml" />
