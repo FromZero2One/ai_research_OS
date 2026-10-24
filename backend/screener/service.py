@@ -353,7 +353,13 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
                 select(Company.ticker).where(Company.is_active.is_(True))
             )).scalars().all()
         )
-        pool = filter_pool(spot, rules.get("stock_pool", {"type": "all"}), watched)
+        pool_stats: dict[str, int] = {}
+        pool = filter_pool(
+            spot,
+            rules.get("stock_pool", {"type": "all"}),
+            watched,
+            excluded_out=pool_stats,
+        )
 
         # 先补齐所需财务指标，再做确定性初筛：缺数据会让规则直接排除候选，
         # 因此不能等 passed 为空后再补采。
@@ -434,6 +440,7 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
             judgements, run.criteria_text, excluded_missing,
             financial_asof=_financial_asof(financials),
             spot_taken_at=spot_taken_at,
+            pool_stats=pool_stats,
         )
         path = report_path_for(str(run.id))
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -98,6 +98,10 @@ class Settings(BaseSettings):
     BACKTEST_MYSQL_URL: str = ""
 
     # --- Scheduling ---
+    # Screener 股票池卫生（ST/停牌之外的最低交易门槛）
+    SCREENER_MIN_TURNOVER: float = 0.05  # 换手率下限（%）
+    SCREENER_MIN_MARKET_CAP: float = 1e9  # 总市值下限（元，10亿）
+
     SCHEDULER_ENABLED: bool = True
     MARKET_DATA_SCHEDULE: str = "0 2 * * 1-5"  # Weekdays 2am
     FINANCIAL_DATA_SCHEDULE: str = "15 3 * * 1-5"  # Weekdays 3:15am (market-wide financials)

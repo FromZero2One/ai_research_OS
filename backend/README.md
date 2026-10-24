@@ -43,6 +43,8 @@ Company → Market + Document → Knowledge(RAG) → AI → Research → Portfol
 
 估值指标由 `screener/valuation.py` 即时派生：PE = 市值 / 年化净利润、PB = 市值 / (总资产-总负债)、PS = 市值 / 年化营业收入；季报累计值按 Q1×4 / Q2×2 / Q3×4/3 / Q4×1 年化，净利润或净资产非正时返回无数据。深判已接入知识库检索并对无证据命中做确定性降级；无定性标准时跳过 LLM。财务数据由 `core/financial_sync.py` 在工作日 3:15 定时刷新（`FINANCIAL_DATA_SCHEDULE`）。
 
+股票池入口统一做风险卫生过滤：ST/*ST/退市、停牌/无行情、换手率低于 `SCREENER_MIN_TURNOVER`、总市值低于 `SCREENER_MIN_MARKET_CAP`；报告附「股票池卫生过滤」统计。
+
 LLM 只在深判参与，筛选执行确定性。迁移 `b5d2f8a3c6e1` → `c8e1b7d4f2a9` → `b7c8d9e0f1a2`，schema `screener`。
 
 ### 预设回测（2026-10-23 MVP）
@@ -152,6 +154,8 @@ PYTHONPATH=. python scripts/seed_data.py
 | 外部数据源 | `AKSHARE_MCP_DIR` / `NEWSNOW_MCP_SERVER_PATH` | /home/wsm/codes/akshare_mcp 等 | 机器相关 |
 | 调度器 | `SCHEDULER_ENABLED` | **true** | — |
 | | `FINANCIAL_DATA_SCHEDULE` | `15 3 * * 1-5` | — |
+| 选股 | `SCREENER_MIN_TURNOVER` | 0.05（%） | — |
+| | `SCREENER_MIN_MARKET_CAP` | 1e9（元） | — |
 | 安全 | `SECRET_KEY` | 每次启动随机生成 | — |
 
 > **默认是 Ollama，本机跑 DeepSeek**：代码里 `LLM_PROVIDER` 默认 `ollama`，本机 `.env` 设为 `openai` + DeepSeek（`deepseek-chat`，OpenAI 兼容端点 `https://api.deepseek.com/v1`）；light tier（证据分类/事实抽取）同样走云端。

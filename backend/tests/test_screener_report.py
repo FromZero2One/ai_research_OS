@@ -70,6 +70,15 @@ class TestBuildReport:
         assert "数据缺失" in report
         assert "688981" in report
 
+    def test_pool_hygiene_section(self):
+        report = build_report(
+            RUN, JUDGEMENTS, RUN["criteria_text"], [],
+            pool_stats={"st": 2, "suspended": 1, "low_liquidity": 0, "small_cap": 3},
+        )
+        assert "股票池卫生过滤" in report
+        assert "ST/*ST/退市：2 只" in report
+        assert "小市值" in report and "3 只" in report
+
     def test_failed_judgement_listed(self):
         report = build_report(RUN, JUDGEMENTS, RUN["criteria_text"], [])
         assert "000001" in report

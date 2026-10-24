@@ -10,6 +10,8 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from core.config import settings
+
 _MODULE_DIR = Path(__file__).resolve().parent
 
 
@@ -105,6 +107,7 @@ def build_report(
     excluded_missing_data: list[dict],
     financial_asof: str | None = None,
     spot_taken_at: str | None = None,
+    pool_stats: dict[str, int] | None = None,
 ) -> str:
     """生成选股报告 Markdown。"""
     recommended = [j for j in judgements if j.get("status") == "ok" and j.get("recommend") is True]
@@ -260,4 +263,27 @@ def build_report(
             missing = "、".join(c.get("missing") or [])
             lines.append(f"- {c.get('name', '')}（{c['ticker']}）：缺 {missing}")
     lines.append("")
+
+    if pool_stats is not None:
+        lines.append("## 附：股票池卫生过滤")
+        lines.append("")
+        stats = [
+            ("ST/*ST/退市", pool_stats.get("st", 0)),
+            ("停牌/无行情", pool_stats.get("suspended", 0)),
+            (
+                f"低流动性（换手率 < {settings.SCREENER_MIN_TURNOVER:g}%）",
+                pool_stats.get("low_liquidity", 0),
+            ),
+            (
+                f"小市值（< {settings.SCREENER_MIN_MARKET_CAP / 1e8:g} 亿）",
+                pool_stats.get("small_cap", 0),
+            ),
+        ]
+        nonzero = [(label, n) for label, n in stats if n]
+        if not nonzero:
+            lines.append("无（所有股票均通过卫生过滤）")
+        else:
+            for label, n in stats:
+                lines.append(f"- {label}：{n} 只")
+        lines.append("")
     return "\n".join(lines)
