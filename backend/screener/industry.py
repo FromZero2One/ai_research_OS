@@ -75,6 +75,24 @@ def parse_sw_industry_rows(rows: list[dict] | None) -> list[dict]:
     return out
 
 
+def candidate_matches_scope(candidate: dict, scope: str | None) -> bool:
+    """行业范围匹配：all / industrial / financial / bank / insurance。"""
+    if not scope or scope == "all":
+        return True
+    industry = candidate.get("industry")
+    sector = candidate.get("sector") or sector_of(industry)
+    financial_type = candidate.get("financial_type")
+    if scope == "industrial":
+        return sector != "financial"
+    if scope == "financial":
+        return sector == "financial"
+    if scope == "bank":
+        return financial_type == "bank" or "银行" in str(industry or "")
+    if scope == "insurance":
+        return financial_type == "insurance" or "保险" in str(industry or "")
+    return True
+
+
 def sector_of(industry_name: str | None) -> str:
     """行业 → 金融/工业。金融行业不适用流动比率、毛利率、周转率等指标。"""
     if not industry_name:

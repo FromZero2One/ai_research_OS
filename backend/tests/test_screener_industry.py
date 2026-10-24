@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from screener.industry import (
+    candidate_matches_scope,
     is_financial,
     parse_industry_constituents,
     parse_industry_list,
@@ -66,6 +67,28 @@ def test_parse_sw_industry_rows():
     out = parse_sw_industry_rows(rows)
     assert [r["ticker"] for r in out] == ["600519", "000001"]
     assert out[1]["industry_name"] == "银行"
+
+
+def test_candidate_matches_scope():
+    bank = {"industry": "银行", "sector": "financial"}
+    insurer = {"industry": "非银金融", "sector": "financial"}
+    industrial = {"industry": "电子", "sector": "industrial"}
+    assert candidate_matches_scope(bank, "bank") is True
+    assert candidate_matches_scope(insurer, "bank") is False
+    assert candidate_matches_scope(insurer, "insurance") is False
+    assert candidate_matches_scope({"industry": "保险"}, "insurance") is True
+    assert candidate_matches_scope(
+        {"industry": "非银金融", "sector": "financial", "financial_type": "insurance"},
+        "insurance",
+    ) is True
+    assert candidate_matches_scope(
+        {"industry": "非银金融", "sector": "financial", "financial_type": "bank"},
+        "bank",
+    ) is True
+    assert candidate_matches_scope(bank, "industrial") is False
+    assert candidate_matches_scope(industrial, "industrial") is True
+    assert candidate_matches_scope(bank, "financial") is True
+    assert candidate_matches_scope(industrial, "all") is True
 
 
 def test_sector_of():

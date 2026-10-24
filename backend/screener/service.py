@@ -114,6 +114,25 @@ async def _attach_industries(db: AsyncSession, candidates: list[dict]) -> None:
         cand["sector"] = sector_of(name)
 
 
+def _attach_financial_types(pool: list[dict], financials: dict[str, list]) -> None:
+    """区分银行/保险/其它金融：SW 一级行业把保险和券商都归为“非银金融”，
+    只能靠 F10 专属指标（贷款/保费）进一步细分。"""
+    for cand in pool:
+        if cand.get("sector") != "financial":
+            cand["financial_type"] = None
+            continue
+        metrics = {
+            entry.metric_name for entry in financials.get(cand["ticker"], [])
+        }
+        industry = str(cand.get("industry") or "")
+        if "gross_loans" in metrics or "non_performing_loan" in metrics or "银行" in industry:
+            cand["financial_type"] = "bank"
+        elif "earned_premium" in metrics or "solvency_ar" in metrics or "保险" in industry:
+            cand["financial_type"] = "insurance"
+        else:
+            cand["financial_type"] = "other"
+
+
 def _auto_pass_judgement(candidate: dict) -> dict:
     """无定性标准时跳过 LLM：确定性初筛已完整表达选股条件。"""
     return {
@@ -153,6 +172,9 @@ _MAIN_FINANCE_METRICS = frozenset({
     "revenue_growth", "net_income_growth",
     "roic", "interest_coverage", "cash_ratio", "fcff",
     "cfo_to_operating_profit", "tax_rate", "interest_debt_ratio",
+    "net_interest_margin", "non_performing_loan", "gross_loans",
+    "loan_provision_ratio", "first_adequacy_ratio",
+    "net_roi", "earned_premium", "solvency_ar",
 })
 _BS_CF_METRICS = frozenset({
     "total_assets", "total_liabilities", "debt_to_equity", "operating_cash_flow",
@@ -422,6 +444,7 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
                 + "。请修改选股标准（改用可用指标或定性标准）后重试。"
             )
 
+        _attach_financial_types(pool, financials)
         industry_rank = compute_industry_percentiles(pool, financials)
         for cand in pool:
             info = industry_rank.get(cand["ticker"], {})
@@ -459,10 +482,10 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
         else:
             eval_pool = pool
             scope = rules.get("sector_scope", "all") if run.mode == "presets" else "all"
-            if scope == "financial":
-                eval_pool = [c for c in pool if c.get("sector") == "financial"]
-            elif scope == "industrial":
-                eval_pool = [c for c in pool if c.get("sector") != "financial"]
+            if scope != "all":
+                from screener.industry import candidate_matches_scope
+
+                eval_pool = [c for c in pool if candidate_matches_scope(c, scope)]
             passed, excluded_missing = screening.evaluate_quant_rules(
                 eval_pool, rules.get("quant_rules", []), financials
             )

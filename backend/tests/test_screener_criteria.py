@@ -93,6 +93,9 @@ def test_known_metrics_exclude_unavailable_ones():
         "roic", "interest_coverage", "cash_ratio", "fcff",
         "cfo_to_operating_profit", "tax_rate", "interest_debt_ratio",
         "peg", "fcf_yield",
+        "net_interest_margin", "non_performing_loan", "gross_loans",
+        "loan_provision_ratio", "first_adequacy_ratio", "npl_ratio",
+        "net_roi", "earned_premium", "solvency_ar",
     } <= KNOWN_METRICS
 
 

@@ -116,6 +116,25 @@ def test_sector_scope_from_presets():
     assert compose_rules([industrial, financial], "all", "union")["sector_scope"] == "all"
 
 
+def test_sector_scope_bank_insurance():
+    bank = _preset("银行", [_rule("pb", "<", 1.5)], style_tag="bank")
+    insurance = _preset("保险", [_rule("pb", "<", 2)], style_tag="insurance")
+    assert compose_rules([bank], "all", "union")["sector_scope"] == "bank"
+    assert compose_rules([insurance], "all", "union")["sector_scope"] == "insurance"
+    assert compose_rules([bank, insurance], "all", "union")["sector_scope"] == "financial"
+
+
+def test_union_eval_bank_scope():
+    bank = _preset("银行", [_rule("market_cap", ">", 1e9)], style_tag="bank")
+    candidates = [
+        {"ticker": "BANK", "industry": "银行", "sector": "financial", "market_cap": 1e10},
+        {"ticker": "INS", "industry": "非银金融", "sector": "financial", "market_cap": 1e10},
+        {"ticker": "IND", "industry": "电子", "sector": "industrial", "market_cap": 1e10},
+    ]
+    result = evaluate_quant_rules_by_preset(candidates, [bank], {})
+    assert set(result) == {"BANK"}
+
+
 def test_union_eval_sector_isolation():
     """金融预设只看金融股；工业预设排除金融股（unknown 保留）。"""
     industrial = _preset("工业", [_rule("market_cap", ">", 1e9)], style_tag="core")

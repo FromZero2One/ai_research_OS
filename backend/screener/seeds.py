@@ -98,6 +98,44 @@ BUILTIN_METRICS: list[dict] = [
         "key": "fcf_yield", "name_cn": "FCF收益率(%)", "category": "valuation",
         "data_source": "derived", "description": "FCFF / 总市值 × 100",
     },
+    # 银行专属（F10）
+    {
+        "key": "net_interest_margin", "name_cn": "净息差(%)", "category": "bank",
+        "data_source": "main_finance", "description": "净利息收入 / 生息资产",
+    },
+    {
+        "key": "non_performing_loan", "name_cn": "不良贷款(元)", "category": "bank",
+        "data_source": "main_finance", "description": "不良贷款余额",
+    },
+    {
+        "key": "gross_loans", "name_cn": "贷款总额(元)", "category": "bank",
+        "data_source": "main_finance", "description": "发放贷款及垫款总额",
+    },
+    {
+        "key": "loan_provision_ratio", "name_cn": "贷款拨备率(%)", "category": "bank",
+        "data_source": "main_finance", "description": "贷款损失准备 / 贷款总额",
+    },
+    {
+        "key": "first_adequacy_ratio", "name_cn": "一级资本充足率(%)", "category": "bank",
+        "data_source": "main_finance", "description": "一级资本 / 风险加权资产",
+    },
+    {
+        "key": "npl_ratio", "name_cn": "不良贷款率(%)", "category": "bank",
+        "data_source": "derived", "description": "不良贷款 / 贷款总额 × 100",
+    },
+    # 保险专属（F10）
+    {
+        "key": "net_roi", "name_cn": "净投资收益率(%)", "category": "insurance",
+        "data_source": "main_finance", "description": "保险资金净投资收益率",
+    },
+    {
+        "key": "earned_premium", "name_cn": "已赚保费(元)", "category": "insurance",
+        "data_source": "main_finance", "description": "已赚保费",
+    },
+    {
+        "key": "solvency_ar", "name_cn": "偿付能力充足率(%)", "category": "insurance",
+        "data_source": "main_finance", "description": "综合偿付能力充足率",
+    },
 ]
 
 # ── 内置预设（五套通用 + 金融行业专属）────────────────────────────────
@@ -193,6 +231,35 @@ BUILTIN_PRESETS: list[dict] = [
             {"metric": "market_cap", "op": ">", "value": 1e10, "missing_data_policy": _EX},
         ],
         "qualitative": ["资产质量稳健", "拨备/资本充足", "无重大监管处罚"],
+        "suggested_pool": "all",
+    },
+    {
+        "name": "银行价值",
+        "description": "银行专属：低 PB/PE、不良率可控、资本充足的大型银行",
+        "style_tag": "bank",
+        "quant_rules": [
+            {"metric": "pb", "op": "<", "value": 1.5, "missing_data_policy": _EX},
+            {"metric": "pe", "op": "<", "value": 10, "missing_data_policy": _EX},
+            {"metric": "roe", "op": ">", "value": 8, "missing_data_policy": _EX},
+            {"metric": "npl_ratio", "op": "<", "value": 2, "missing_data_policy": _EX},
+            {"metric": "first_adequacy_ratio", "op": ">", "value": 10, "missing_data_policy": _EX},
+            {"metric": "market_cap", "op": ">", "value": 1e11, "missing_data_policy": _EX},
+        ],
+        "qualitative": ["资产质量稳健", "拨备充足"],
+        "suggested_pool": "all",
+    },
+    {
+        "name": "保险价值",
+        "description": "保险专属：低估值、盈利稳定、偿付能力充足的大型险企",
+        "style_tag": "insurance",
+        "quant_rules": [
+            {"metric": "pb", "op": "<", "value": 2, "missing_data_policy": _EX},
+            {"metric": "pe", "op": "<", "value": 15, "missing_data_policy": _EX},
+            {"metric": "roe", "op": ">", "value": 8, "missing_data_policy": _EX},
+            {"metric": "solvency_ar", "op": ">", "value": 150, "missing_data_policy": _EX},
+            {"metric": "market_cap", "op": ">", "value": 5e10, "missing_data_policy": _EX},
+        ],
+        "qualitative": ["新业务价值增长", "投资收益率稳健"],
         "suggested_pool": "all",
     },
 ]

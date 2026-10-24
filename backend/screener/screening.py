@@ -13,8 +13,10 @@ from core.logging import logger
 from market.akshare_executor import run_akshare
 from market.domain import FinancialMetricEntry
 from screener.valuation import (
+    BANK_METRICS,
     QUALITY_METRICS,
     VALUATION_METRICS,
+    derive_bank_metrics,
     derive_quality,
     derive_valuation,
 )
@@ -187,6 +189,8 @@ def _rule_hit(rule: dict, candidate: dict, fin_entries: list[FinancialMetricEntr
         value = derive_valuation(candidate, fin_entries).get(metric)
     elif metric in QUALITY_METRICS:
         value = derive_quality(fin_entries).get(metric)
+    elif metric in BANK_METRICS:
+        value = derive_bank_metrics(fin_entries).get(metric)
     else:
         value = _metric_value(fin_entries, metric)
     if value is None:

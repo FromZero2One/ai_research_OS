@@ -39,7 +39,7 @@ Company → Market + Document → Knowledge(RAG) → AI → Research → Portfol
 → ③ LLM 逐只深判候选（单只失败隔离，结果落 `ScreenerJudgement` 供后续回测）
 → ④ Markdown 报告落 `screener/reports/`。
 
-**presets（v1.5）**：预设标准库驱动，零 LLM 翻译。指标定义在 `screener/seeds.py`（33 个标准化指标，含 PE/PB/PS 派生估值、TTM 现金流质量与 ROIC/FCFF/利息保障等因子）+ 6 套内置预设（核心资产/高成长/深度价值/GARP/周期反转 + 金融行业专属「金融价值」，只读；用户可自建）。触发时传 `preset_ids` + `combine`（union/intersection/flatten），规则纯确定性组装（`compose.py`），报告标注每只候选命中的预设（`[预设名]` 前缀 + snapshot `hits`/`presets`）。前端 `/screener` 有模式切换 + PresetManager 抽屉。
+**presets（v1.5）**：预设标准库驱动，零 LLM 翻译。指标定义在 `screener/seeds.py`（42 个标准化指标，含 PE/PB/PS 派生估值、TTM 现金流质量、ROIC/FCFF/利息保障等因子，以及银行/保险专属指标）+ 8 套内置预设（核心资产/高成长/深度价值/GARP/周期反转 + 金融价值/银行价值/保险价值，只读；用户可自建）。触发时传 `preset_ids` + `combine`（union/intersection/flatten），规则纯确定性组装（`compose.py`），报告标注每只候选命中的预设（`[预设名]` 前缀 + snapshot `hits`/`presets`）。前端 `/screener` 有模式切换 + PresetManager 抽屉。
 
 估值与质量指标由 `screener/valuation.py` 即时派生：PE/PS 优先 TTM（上年年报 + 本期累计 − 上年同期；历史期缺失回退单期年化），PB = 市值 / (总资产−总负债)；盈利质量 = TTM 经营现金流/净利润、TTM 经营现金流/营收、应计比率；PEG = PE / 净利同比，FCF 收益率 = FCFF / 总市值。F10 主要指标另提供 ROIC、利息保障倍数、现金比率、FCFF、现金流/营业利润、实际税率、有息负债率。历史期可用 `scripts/backfill_financial_periods.py` 回补（如 2025Q1–Q4）。深判已接入知识库检索并对无证据命中做确定性降级；无定性标准时跳过 LLM。财务数据由 `core/financial_sync.py` 在工作日 3:15 定时刷新（`FINANCIAL_DATA_SCHEDULE`）。
 
@@ -47,9 +47,11 @@ Company → Market + Document → Knowledge(RAG) → AI → Research → Portfol
 
 行业分类存 `market.stock_industry`（申万一级 31 个行业为主，新浪行业补缺；覆盖 5,663 只 A 股，主板 2,111/2,111）。选股候选携带 `industry`/`sector`，报告与深判上下文均展示行业。工业预设自动排除金融股（流动比率/毛利率/周转率口径不适用），`金融价值` 预设只筛选银行/非银金融。入库脚本：`scripts/ingest_industry_sw.py`（主）与 `scripts/ingest_industry_sina.py`（补缺）。
 
-行业相对排名：候选在其行业内计算 ROE/营收增长/净利增长/现金流质量/PE/PB 分位（金融行业用 PE/PB/ROE），综合为 `industry_score`；排序在筛选得分之后、市值之前使用；单行业候选上限 `SCREENER_MAX_PER_INDUSTRY`（默认 8）。报告与深判上下文展示行业分位。
+行业相对排名：候选在其行业内计算 ROE/ROIC/营收增长/净利增长/现金流质量/PE/PB 分位（金融行业用 PE/PB/ROE），综合为 `industry_score`；排序在筛选得分之后、市值之前使用；单行业候选上限 `SCREENER_MAX_PER_INDUSTRY`（默认 8）。报告与深判上下文展示行业分位。
 
-LLM 只在深判参与，筛选执行确定性。迁移 `b5d2f8a3c6e1` → `c8e1b7d4f2a9` → `b7c8d9e0f1a2` → `c1d2e3f4a5b6` → `d2e3f4a5b6c7` → `e3f4a5b6c7d8` → `f4a5b6c7d8e9` → `a5b6c7d8e9f0` → `b6c7d8e9f0a1`，schema `screener`。
+行业专属指标（F10）：银行侧净息差、不良贷款/贷款总额、不良率、拨备率、一级资本充足率；保险侧净投资收益率、已赚保费、偿付能力充足率。SW 一级行业把保险与券商同归“非银金融”，服务层用 F10 保费/贷款字段进一步区分 `financial_type`，银行/保险预设据此只筛对应子行业。
+
+LLM 只在深判参与，筛选执行确定性。迁移 `b5d2f8a3c6e1` → `c8e1b7d4f2a9` → `b7c8d9e0f1a2` → `c1d2e3f4a5b6` → `d2e3f4a5b6c7` → `e3f4a5b6c7d8` → `f4a5b6c7d8e9` → `a5b6c7d8e9f0` → `b6c7d8e9f0a1` → `c7d8e9f0a1b2`，schema `screener`。
 
 ### 预设回测（2026-10-23 MVP）
 
@@ -226,4 +228,4 @@ APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工�
 ```bash
 make test        # pytest，专用 airesearch_test 库 + 隔离 Qdrant 集合
 ```
-当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **261 passed**。
+当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **268 passed**。

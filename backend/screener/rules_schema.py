@@ -6,7 +6,7 @@ market.ratio_service 比率键 + 行情快照字段（price/turnover/market_cap�
 
 from __future__ import annotations
 
-from screener.valuation import QUALITY_METRICS, VALUATION_METRICS
+from screener.valuation import BANK_METRICS, QUALITY_METRICS, VALUATION_METRICS
 
 # 行情快照字段（来自全市场快照，不依赖财务数据）
 SNAPSHOT_METRICS: frozenset[str] = frozenset({"price", "turnover", "market_cap"})
@@ -39,6 +39,14 @@ FINANCIAL_METRICS: frozenset[str] = frozenset(
         "cfo_to_operating_profit",
         "tax_rate",
         "interest_debt_ratio",
+        "net_interest_margin",
+        "non_performing_loan",
+        "gross_loans",
+        "loan_provision_ratio",
+        "first_adequacy_ratio",
+        "net_roi",
+        "earned_premium",
+        "solvency_ar",
     }
 )
 
@@ -50,7 +58,11 @@ UNAVAILABLE_METRICS: frozenset[str] = frozenset(
 
 # LLM 翻译可用的指标键（快照 + 财务 + 派生估值 + 盈利质量）
 KNOWN_METRICS: frozenset[str] = (
-    SNAPSHOT_METRICS | FINANCIAL_METRICS | VALUATION_METRICS | QUALITY_METRICS
+    SNAPSHOT_METRICS
+    | FINANCIAL_METRICS
+    | VALUATION_METRICS
+    | QUALITY_METRICS
+    | BANK_METRICS
 )
 
 # 以「元」为单位的指标：LLM 把「100亿」直译成 100 会让规则对全市场失效。

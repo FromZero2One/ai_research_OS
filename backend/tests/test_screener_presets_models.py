@@ -50,9 +50,25 @@ async def test_builtin_preset_seeds_exist(test_session: AsyncSession):
         await test_session.execute(select(CriteriaPreset).where(CriteriaPreset.is_builtin.is_(True)))
     ).scalars().all()
     tags = {r.style_tag for r in rows}
-    assert tags == {"core", "growth", "value", "garp", "cycle", "financial"}
+    assert tags == {
+        "core", "growth", "value", "garp", "cycle",
+        "financial", "bank", "insurance",
+    }
     for r in rows:
         assert len(r.quant_rules) >= 2, f"{r.style_tag} quant_rules 为空"
+
+
+async def test_bank_preset_uses_npl_and_capital(test_session: AsyncSession):
+    row = (
+        await test_session.execute(
+            select(CriteriaPreset).where(
+                CriteriaPreset.is_builtin.is_(True),
+                CriteriaPreset.style_tag == "bank",
+            )
+        )
+    ).scalar_one()
+    metrics = {rule["metric"] for rule in row.quant_rules}
+    assert {"npl_ratio", "first_adequacy_ratio"} <= metrics
 
 
 async def test_financial_preset_uses_financial_metrics(test_session: AsyncSession):
@@ -104,12 +120,21 @@ async def test_metric_def_seeds_exist(test_session: AsyncSession):
         "interest_debt_ratio": "main_finance",
         "peg": "derived",
         "fcf_yield": "derived",
+        "net_interest_margin": "main_finance",
+        "non_performing_loan": "main_finance",
+        "gross_loans": "main_finance",
+        "loan_provision_ratio": "main_finance",
+        "first_adequacy_ratio": "main_finance",
+        "npl_ratio": "derived",
+        "net_roi": "main_finance",
+        "earned_premium": "main_finance",
+        "solvency_ar": "main_finance",
     }
     for key, source in expected_sources.items():
         assert key in by_key, f"缺少指标种子: {key}"
         assert by_key[key].data_source == source, f"{key} data_source 应为 {source}"
-    # 原 16 + 2 成长 + 3 估值 + 3 盈利质量 + 9 因子深度
-    assert len(rows) >= 33
+    # 原 16 + 2 成长 + 3 估值 + 3 盈利质量 + 9 因子深度 + 9 银行/保险
+    assert len(rows) >= 42
 
 
 async def test_value_preset_has_valuation_rules(test_session: AsyncSession):

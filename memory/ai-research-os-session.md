@@ -11,6 +11,7 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-10-24（行业专属指标）**: 指标库 33→42；银行侧净息差、不良贷款、贷款总额、不良率、拨备率、一级资本充足率；保险侧净投资收益率、已赚保费、偿付能力充足率；新增「银行价值」「保险价值」预设（共 8 套）；SW 一级行业把保险与券商同归“非银金融”，服务层用 F10 贷款/保费字段区分 `financial_type`，银行/保险预设只筛对应子行业；迁移 `c7d8e9f0a1b2`；screener + financial_sync 268 passed。实跑：银行预设 8 家全部银行；保险预设 5 家全部险企。
 - **2026-10-24（因子深度）**: 指标库 24→33；新增 F10 直接指标 ROIC、利息保障倍数、现金比率、FCFF、现金流/营业利润、实际税率、有息负债率，以及派生 PEG、FCF 收益率；核心资产/GARP 加 `roic>10`，深度价值加 `fcf_yield>0`，高成长加 `peg<2`；F10 2026Q2 重灌 5,739 家（ROIC 5,635、FCFF 5,635、利息保障 5,367）；回测历史财务补拉加入 F10 主要指标；迁移 `b6c7d8e9f0a1`；screener + financial_sync 261 passed。实跑：核心资产 13 候选；临时 `fcf_yield>3 & peg<1.5` 预设选出 50 只。
 - **2026-10-24（三态结论 + 置信度）**: `ScreenerJudgement.verdict` 新增 recommend/reject/insufficient/failed（迁移 `a5b6c7d8e9f0`）；证据守卫/资料不足/低置信度 → insufficient，显式不满足 → reject；报告拆分「未通过标准」与「数据不足」，API 透出 verdict；新增 `SCREENER_MIN_CONFIDENCE`（默认 0）。screener + financial_sync 258 passed。实跑临时护城河预设：7 候选全部 insufficient、0 推荐，报告两个分区正常。
 - **2026-10-24（LLM 深判评测）**: 新增 `screener/eval/judge_cases.jsonl`（10 用例：无资料文档类、财务可验证、带资料引用、混合标准）+ `screener/judge_eval.py` + `scripts/eval_judge.py`；指标 JSON 合法率/推荐匹配/证据违规/自动降级/平均耗时，报告落 `screener/reports/eval-judge-*.md`。本地 qwen3.5-q4 实跑：10/10 JSON 合法、7/7 推荐匹配、0 证据违规、平均 9.1s。screener + financial_sync 257 passed。知识库仍为 0 文档，评测使用受控片段，不依赖生产知识库。
@@ -44,7 +45,7 @@ metadata:
 | AI 中心 | ~75% | 模板/摘要/提取/Token 用量统计；AI 工作流已移除（单用户用不上） |
 | 研究中心 | ~92% | 全链路 + plan_type 四模板 + LLM 证据分类 + 多周期/同业比对 + 报告可视化 |
 | 投资组合 | ~40% | 自选已并入公司；持仓/日志仅后端，前端待做 |
-| 智能选股 | ~95% | 33 指标（TTM 估值 + 现金流质量 + ROIC/FCFF/利息保障等）+ 6 内置预设；股票池卫生 + 行业隔离/相对排名；深判知识库/证据守卫 + 三态结论 + 评测器；预设回测；定时筛选 + 变化日报 + 推荐后表现跟踪；财务数据工作日定时更新（2026-10-24） |
+| 智能选股 | ~95% | 42 指标（TTM 估值 + 现金流质量 + 因子深度 + 银行/保险专属）+ 8 内置预设；股票池卫生 + 行业隔离/相对排名；深判知识库/证据守卫 + 三态结论 + 评测器；预设回测；定时筛选 + 变化日报 + 推荐后表现跟踪；财务数据工作日定时更新（2026-10-24） |
 | 系统/调度 | ~85% | 调度/观察/任务/事件/新鲜度/覆盖矩阵/Token 用量卡片 |
 
 总体：V1.1 达成，V2 按分析师优先级推进中（见下）。
@@ -98,7 +99,7 @@ metadata:
 - LLM：DeepSeek 云端（.env OPENAI_* 已配，key 已 gitignore）；light tier 同走云端；本机无 ollama
 - Embedding 仍指向本机 Ollama（未安装）→ 文档上传/知识检索的稠密向量不可用，BM25 兜底；pytest 有 5 项因此失败
 - akshare 走独立 `akshare_mcp` venv 子进程（`AKSHARE_MCP_DIR` 指向旧机器路径，**本机需改 .env 并确认 venv 存在**，否则 A 股采集失败但不崩）
-- 迁移 head：`b6c7d8e9f0a1`（因子深度指标 + 预设更新）
+- 迁移 head：`c7d8e9f0a1b2`（银行/保险专属指标与预设）
 - pytest 需先起 docker postgres；测试库 airesearch_test 由 conftest 用 create_all 重建（**改模型后旧测试库不会自动加列，需 DROP DATABASE airesearch_test 重建**）；`tests/test_session` fixture 为服务级测试专用（勿用 managed_session，会写进开发库）
 
 ## 相关文档

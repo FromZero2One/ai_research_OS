@@ -152,6 +152,7 @@ const _COMBINES = [
 const styleLabels: Record<string, string> = {
   core: '核心资产', growth: '高成长', value: '深度价值',
   garp: 'GARP', cycle: '周期反转', financial: '金融价值',
+  bank: '银行价值', insurance: '保险价值',
   custom: '自定义', quality: '质量',
 }
 

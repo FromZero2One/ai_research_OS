@@ -34,6 +34,8 @@ QUALITY_METRICS: frozenset[str] = frozenset(
 QUALITY_INPUTS: frozenset[str] = frozenset(
     {"operating_cash_flow", "net_income", "revenue", "total_assets"}
 )
+BANK_METRICS: frozenset[str] = frozenset({"npl_ratio"})
+BANK_INPUTS: frozenset[str] = frozenset({"non_performing_loan", "gross_loans"})
 
 _VALUATION_INPUT_MAP: dict[str, frozenset[str]] = {
     "pe": frozenset({"net_income"}),
@@ -174,6 +176,14 @@ def derive_quality(entries: list[FinancialMetricEntry]) -> dict[str, float | Non
     return result
 
 
+def derive_bank_metrics(entries: list[FinancialMetricEntry]) -> dict[str, float | None]:
+    """银行专属派生指标：不良贷款率 = 不良贷款 / 贷款总额 × 100。"""
+    npl, _ = _metric_latest(entries, "non_performing_loan")
+    loans, _ = _metric_latest(entries, "gross_loans")
+    ratio = npl / loans * 100 if npl is not None and loans and loans > 0 else None
+    return {"npl_ratio": ratio}
+
+
 def required_data_metrics(rule_metrics: set[str]) -> set[str]:
     """规则里出现派生指标时，精确追加计算它们所需的底层财务指标。"""
     metrics = set(rule_metrics)
@@ -182,4 +192,6 @@ def required_data_metrics(rule_metrics: set[str]) -> set[str]:
         extra |= _VALUATION_INPUT_MAP[metric]
     for metric in metrics & QUALITY_METRICS:
         extra |= _QUALITY_INPUT_MAP[metric]
-    return (metrics - VALUATION_METRICS - QUALITY_METRICS) | extra
+    if metrics & BANK_METRICS:
+        extra |= BANK_INPUTS
+    return (metrics - VALUATION_METRICS - QUALITY_METRICS - BANK_METRICS) | extra

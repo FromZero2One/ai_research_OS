@@ -140,17 +140,25 @@ _METRIC_CN = {
     "cash_ratio": "现金比率", "fcff": "自由现金流",
     "cfo_to_operating_profit": "现金流/营业利润", "tax_rate": "税率",
     "interest_debt_ratio": "有息负债率", "peg": "PEG", "fcf_yield": "FCF收益率",
+    "net_interest_margin": "净息差", "non_performing_loan": "不良贷款",
+    "gross_loans": "贷款总额", "loan_provision_ratio": "贷款拨备率",
+    "first_adequacy_ratio": "一级资本充足率", "net_roi": "净投资收益率",
+    "earned_premium": "已赚保费", "solvency_ar": "偿付能力充足率",
+    "npl_ratio": "不良贷款率",
 }
 
 _MONEY_METRICS = frozenset({
     "market_cap", "operating_cash_flow", "revenue", "net_income",
     "total_assets", "total_liabilities", "fcff",
+    "non_performing_loan", "gross_loans", "earned_premium",
 })
 _PERCENT_METRICS = frozenset({
     "roe", "gross_margin", "net_margin", "debt_to_equity",
     "revenue_growth", "net_income_growth", "turnover",
     "cfo_to_revenue", "accrual_ratio",
     "roic", "tax_rate", "interest_debt_ratio", "fcf_yield",
+    "net_interest_margin", "loan_provision_ratio",
+    "first_adequacy_ratio", "net_roi", "solvency_ar", "npl_ratio",
 })
 _RATIO_METRICS = frozenset({
     "current_ratio", "quick_ratio", "asset_turnover",

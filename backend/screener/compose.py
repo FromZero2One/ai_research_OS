@@ -9,15 +9,23 @@ from __future__ import annotations
 
 from typing import Any
 
+from screener.industry import candidate_matches_scope
 from screener.screening import evaluate_quant_rules
 
 
+_FINANCIAL_SCOPES = {"financial", "bank", "insurance"}
+
+
 def _sector_scope(presets: list[Any]) -> str:
-    """全金融预设 → financial；混合 → all；否则 industrial（排除金融股）。"""
+    """单行业预设保留原 scope；纯金融组合 → financial；混合 → all；否则 industrial。"""
     tags = {getattr(p, "style_tag", None) for p in presets}
-    if tags == {"financial"}:
+    if len(tags) == 1:
+        tag = next(iter(tags))
+        if tag in _FINANCIAL_SCOPES:
+            return tag
+    if tags and tags <= _FINANCIAL_SCOPES:
         return "financial"
-    if "financial" in tags:
+    if tags & _FINANCIAL_SCOPES:
         return "all"
     return "industrial"
 
@@ -84,11 +92,11 @@ def evaluate_quant_rules_by_preset(
     result: dict[str, dict] = {}
     excluded_map: dict[str, dict] = {}
     for preset in presets:
-        # 金融预设只看金融股；工业预设排除金融股（行业指标口径不可比）
-        if getattr(preset, "style_tag", None) == "financial":
-            applicable = [c for c in candidates if c.get("sector") == "financial"]
-        else:
-            applicable = [c for c in candidates if c.get("sector") != "financial"]
+        # 金融/银行/保险预设只看对应行业；其它预设排除金融股（口径不可比）
+        scope = getattr(preset, "style_tag", None) or "industrial"
+        if scope not in _FINANCIAL_SCOPES:
+            scope = "industrial"
+        applicable = [c for c in candidates if candidate_matches_scope(c, scope)]
         passed, excluded = evaluate_quant_rules(
             applicable, preset.quant_rules, financials_by_ticker
         )

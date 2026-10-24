@@ -227,6 +227,15 @@ MAIN_FINANCE_ROW_MAP: dict[str, str] = {
     "cfo_to_operating_profit": "NCO_OP",
     "tax_rate": "TAXRATE",
     "interest_debt_ratio": "INTEREST_DEBT_RATIO",
+    # 银行/保险专属
+    "net_interest_margin": "NET_INTEREST_MARGIN",
+    "non_performing_loan": "NON_PERFORMING_LOAN",
+    "gross_loans": "GROSSLOANS",
+    "loan_provision_ratio": "LOAN_PROVISION_RATIO",
+    "first_adequacy_ratio": "FIRST_ADEQUACY_RATIO",
+    "net_roi": "NET_ROI",
+    "earned_premium": "EARNED_PREMIUM",
+    "solvency_ar": "SOLVENCY_AR",
 }
 
 
@@ -571,6 +580,10 @@ _UNIT_MAP = {
     "fcff": "元", "cfo_to_operating_profit": "倍",
     "tax_rate": "%", "interest_debt_ratio": "%",
     "peg": "倍", "fcf_yield": "%",
+    "net_interest_margin": "%", "non_performing_loan": "元",
+    "gross_loans": "元", "loan_provision_ratio": "%",
+    "first_adequacy_ratio": "%", "net_roi": "%",
+    "earned_premium": "元", "solvency_ar": "%", "npl_ratio": "%",
 }
 
 

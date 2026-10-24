@@ -7,6 +7,7 @@ from screener.valuation import (
     QUALITY_INPUTS,
     VALUATION_METRICS,
     annualization_factor,
+    derive_bank_metrics,
     derive_quality,
     derive_valuation,
     required_data_metrics,
@@ -113,6 +114,23 @@ class TestDeriveValuation:
         assert strict == 1.4e9 and is_ttm is True
         fallback, is_ttm = ttm_value([_e("net_income", 6e8, "Q2", 2026)], "net_income")
         assert fallback == 1.2e9 and is_ttm is False
+
+
+class TestDeriveBankMetrics:
+    def test_npl_ratio(self):
+        values = derive_bank_metrics([
+            _e("non_performing_loan", 2e9),
+            _e("gross_loans", 1e11),
+        ])
+        assert values["npl_ratio"] == 2.0
+
+    def test_missing_inputs(self):
+        assert derive_bank_metrics([])["npl_ratio"] is None
+
+    def test_required_inputs(self):
+        assert required_data_metrics({"npl_ratio"}) == {
+            "non_performing_loan", "gross_loans"
+        }
 
 
 class TestDeriveQuality:
