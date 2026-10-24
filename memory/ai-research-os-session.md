@@ -73,9 +73,17 @@ metadata:
 - **structured_facts = 质检器**：与 Market 接口值交叉比对，口径差异生成观察事件，不进报告数字链路
 - 报告双轨：数字论断引用 Market 区块禁止改写；定性论断内联 `[ev:id]` 回跳证据
 
-## 下一步优先级（2026-10-14 更新，按此顺序继续）
+## 下一步优先级（2026-10-24 更新）
 
-### 已完成（2026-10-14，勿重做）
+### 当前阻塞 / 待办
+1. **知识库文档**：0 文档/0 切片；含定性标准的预设会稳定 0 推荐。需要上传年报/公告/研报并完成索引（文档中心已有上传与索引链路）。
+2. **回测实时数据**：`backend/.env` 缺 `BACKTEST_MYSQL_URL`，回测任务报“无法拉取历史日线”；代码、UI、分段稳健性均已完成。
+3. **行情覆盖**：约 781/2111 主板股票具备 ≥200 根日线（507 万行），推荐后表现/回测样本仍偏少；后台每批 10 只继续采集。
+4. **估值历史分位**：`market.valuation_history` 为 0 行，本机 `stock_a_indicator_lg` 返回 no_data，暂未接入选股。
+5. **深判评测常态化**：目前 10 个标注用例 + 脚本，无 CI 回归/评测历史面板。
+6. **调度配置 UI**：cron/预设/Webhook 仍为环境变量，前端只读展示；如需可视化编辑需新增持久化配置表。
+
+### 已完成（历史，勿重做）
 - ✅ 文档 chunk content_type 打标（classifier 纯函数 + 检索过滤）
 - ✅ 报告双轨 + 引用回溯（content_nature + [ev:id] 内联 + 前端回跳）
 - ✅ structured_facts 交叉验证（fact_validator 纯函数 → Observation 口径差异）
@@ -116,7 +124,8 @@ metadata:
 - LLM：DeepSeek 云端（.env OPENAI_* 已配，key 已 gitignore）；light tier 同走云端；本机无 ollama
 - Embedding 仍指向本机 Ollama（未安装）→ 文档上传/知识检索的稠密向量不可用，BM25 兜底；pytest 有 5 项因此失败
 - akshare 走独立 `akshare_mcp` venv 子进程（`AKSHARE_MCP_DIR` 指向旧机器路径，**本机需改 .env 并确认 venv 存在**，否则 A 股采集失败但不崩）
-- 迁移 head：`c7d8e9f0a1b2`（银行/保险专属指标与预设）
+- 迁移 head：`e9f0a1b2c3d4`（组合持久化 + 表现快照；此前含银行/保险指标与预设）
+- 当前数据（2026-10-24）：行情 507 万行，781 只具备 ≥200 根日线；财务期 2026Q2；知识库 0 文档；采集进度文件 738 条记录
 - pytest 需先起 docker postgres；测试库 airesearch_test 由 conftest 用 create_all 重建（**改模型后旧测试库不会自动加列，需 DROP DATABASE airesearch_test 重建**）；`tests/test_session` fixture 为服务级测试专用（勿用 managed_session，会写进开发库）
 
 ## 相关文档

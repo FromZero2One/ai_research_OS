@@ -44,7 +44,7 @@ A personal AI-powered investment research assistant. Company → Knowledge → A
    └────────────────────────────────┘
 ```
 
-> **数据源架构**：A 股/港股统一走 akshare 子进程直连（Tencent/Sina/Eastmoney），数据落 PG（`market` schema）；美股走 yfinance（需代理）。无外部 MySQL 依赖。
+> **数据源架构**：A 股/港股统一走 akshare 子进程直连（Tencent/Sina/Eastmoney），数据落 PG（`market` schema）；美股走 yfinance（需代理）。日常行情/财务无外部 MySQL 依赖；仅预设回测可选读取外部 MySQL 历史前复权日线（`BACKTEST_MYSQL_URL`，未配置时回测不可用）。
 
 ## 7 Business Centers
 
@@ -143,10 +143,10 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 | 研究中心 | ~95% | 全链路 + LLM 证据分类（含定量/定性双轨）+ 多周期比对 + 报告可视化 + [ev:id] 引用回溯 + structured_facts 交叉验证 |
 | 投资组合 | ~40% | 自选已并入公司；持仓/日志后端就绪，前端随 V2 |
 | 系统/调度 | ~85% | 调度/观察/持久任务/事件/新鲜度可用 |
-| 智能选股 | ~95% | 42 指标（TTM 估值 + 现金流质量 + 因子深度 + 银行/保险专属）+ 8 内置预设；股票池卫生 + 行业隔离/相对排名；深判知识库/证据守卫 + 三态结论 + 评测器；预设回测（Sharpe/Sortino/Calmar）；定时筛选 + 变化日报 + 推荐后表现（含沪深300超额）+ 组合构建 + 推荐股送入研究中心 + 变化日报/失败告警 Webhook（企微/飞书/钉钉）+ 调度状态/立即运行 + CSV 导出 + 组合保存/再平衡 + 回测面板/分段稳健性 + 表现快照 + 运行取消 + 近似命中；财务数据工作日定时更新 |
+| 智能选股 | ~97% | 42 指标（TTM 估值 + 现金流质量 + 因子深度 + 银行/保险专属）+ 8 内置预设；股票池卫生 + 行业隔离/相对排名；深判知识库/证据守卫 + 三态结论 + 评测器；预设回测（Sharpe/Sortino/Calmar）；定时筛选 + 变化日报 + 推荐后表现（含沪深300超额）+ 组合构建 + 推荐股送入研究中心 + 变化日报/失败告警 Webhook（企微/飞书/钉钉）+ 调度状态/立即运行 + CSV 导出 + 组合保存/再平衡 + 回测面板/分段稳健性 + 表现快照 + 运行取消 + 近似命中；财务数据工作日定时更新 |
 
 总体：V1.1 目标基本达成，后端 **391 passed / 2 failed / 2 skipped**（2 项失败为既有 research 证据继承依赖本地 LLM 结构化输出，与选股改动无关）；screener + financial_sync 专项 **324 passed**；前端 vue-tsc/build 通过。改动文件 ruff 通过（仓库仍保留历史 E501 债务）。
-已知缺口：美股真实行情、持仓/日志前端、Market.vue 覆盖网格列数动态化（当前硬编码 5 列）。下一步（证据继承/差异日报）详见 [memory/ai-research-os-session.md](memory/ai-research-os-session.md)。
+已知缺口：①知识库 0 文档 → 含定性标准的预设稳定判“数据不足”；②`BACKTEST_MYSQL_URL` 未配置 → 实时回测不可用（代码/UI 已完成）；③行情覆盖约 781/2111 主板股票（≥200 根日线），推荐后表现/回测样本仍偏少，采集持续进行；④`valuation_history` 为空且上游 `stock_a_indicator_lg` 本机无数据，估值历史分位暂未接入选股；⑤深判评测仍为脚本，无 CI/历史面板。其余历史缺口（美股真实行情、持仓/日志前端、Market.vue 动态列）见 [memory/ai-research-os-session.md](memory/ai-research-os-session.md)。
 
 ## API (when backend is running)
 
