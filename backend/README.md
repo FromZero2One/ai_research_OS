@@ -75,6 +75,12 @@ API：`GET /api/v1/screener/runs/{run_id}/diff` 返回变化日报 Markdown 与 
 
 `SCREENER_MIN_CONFIDENCE`（默认 0，即不启用）大于 0 时，置信度低于阈值的推荐会自动转为 `insufficient`。
 
+### 定性选股前置：知识库文档（2026-10-24）
+
+含定性标准的预设依赖知识库检索。知识库为空时，证据守卫会把文档类命中判为“数据不足”，预设会稳定 0 推荐（核心资产等纯量化预设不受影响）。报告概览会明确提示“知识库为空”。
+
+使用步骤：文档中心上传年报/公告/研报 → 关联公司 → 等待后台索引完成（`is_indexed=true`）→ 再运行深度价值/GARP/周期反转/高成长/银行/保险等含定性标准的预设。
+
 ### LLM 深判评测（2026-10-24）
 
 `screener/eval/judge_cases.jsonl` 内置 10 个标注用例：无资料文档类标准、财务可验证标准、带资料片段且要求引用、混合标准。`scripts/eval_judge.py` 调用真实 LLM 跑 `judge_one`，输出 JSON 合法率、推荐判定匹配率、证据纪律违规数、自动降级数与平均耗时，报告落 `screener/reports/eval-judge-*.md`。
@@ -233,4 +239,4 @@ APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工�
 ```bash
 make test        # pytest，专用 airesearch_test 库 + 隔离 Qdrant 集合
 ```
-当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **278 passed**。
+当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **279 passed**。

@@ -108,6 +108,8 @@ def build_report(
     financial_asof: str | None = None,
     spot_taken_at: str | None = None,
     pool_stats: dict[str, int] | None = None,
+    knowledge_docs: int | None = None,
+    has_qualitative: bool = False,
 ) -> str:
     """生成选股报告 Markdown。"""
     recommended = [j for j in judgements if j.get("status") == "ok" and j.get("recommend") is True]
@@ -138,6 +140,11 @@ def build_report(
         lines.append(f"- 财务数据截至：{financial_asof}")
     if spot_taken_at:
         lines.append(f"- 快照时间：{spot_taken_at}（新浪源，缓存命中时为缓存采集时间）")
+    if has_qualitative and knowledge_docs == 0:
+        lines.append(
+            "- ⚠ 知识库为空：定性标准会稳定判为“数据不足”，"
+            "请先在文档中心上传并索引年报/公告"
+        )
     lines.append("")
     lines.append("## 推荐列表")
     lines.append("")

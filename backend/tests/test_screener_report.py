@@ -70,6 +70,14 @@ class TestBuildReport:
         assert "数据缺失" in report
         assert "688981" in report
 
+    def test_knowledge_empty_warning(self):
+        report = build_report(
+            RUN, JUDGEMENTS, RUN["criteria_text"], [],
+            knowledge_docs=0, has_qualitative=True,
+        )
+        assert "知识库为空" in report
+        assert "文档中心" in report
+
     def test_pool_hygiene_section(self):
         report = build_report(
             RUN, JUDGEMENTS, RUN["criteria_text"], [],
