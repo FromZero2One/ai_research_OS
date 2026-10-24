@@ -12,8 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.container import Container
 from core.database import get_container, get_db
-from core.exceptions import NotFoundError
 from core.event_service import EventLogger
+from core.exceptions import NotFoundError
 from screener.criteria import read_criteria, write_criteria
 from screener.models import (
     CriteriaPreset,
@@ -259,6 +259,18 @@ async def get_report(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     if not path.exists():
         raise NotFoundError("ScreenerReport", str(run_id))
     return {"report": path.read_text(encoding="utf-8")}
+
+
+@router.get("/runs/{run_id}/diff")
+async def get_diff(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """变化日报：与同口径上一轮运行对比。"""
+    from screener.diff_service import build_run_diff
+
+    try:
+        markdown, has_previous = await build_run_diff(db, run_id)
+    except ValueError as e:
+        raise NotFoundError("ScreenerRun", str(run_id)) from e
+    return {"diff": markdown, "has_previous": has_previous}
 
 
 @router.get("/criteria")

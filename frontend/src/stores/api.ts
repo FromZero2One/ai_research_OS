@@ -655,6 +655,12 @@ export function useScreenerRunReport(id: MaybeRefOrGetter<string | null>) {
     computed(() => (toValue(id) ? `/screener/runs/${toValue(id)}/report` : '')),
   )
 }
+export function useScreenerRunDiff(id: MaybeRefOrGetter<string | null>) {
+  return useGet<{ diff: string; has_previous: boolean }>(
+    computed(() => ['screener-diff', toValue(id) ?? '']),
+    computed(() => (toValue(id) ? `/screener/runs/${toValue(id)}/diff` : '')),
+  )
+}
 export function useScreenerRules() {
   return useGet<{ rules: Record<string, any> | null; criteria_hash?: string }>(['screener-rules'], '/screener/rules')
 }

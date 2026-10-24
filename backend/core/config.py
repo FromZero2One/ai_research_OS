@@ -105,6 +105,8 @@ class Settings(BaseSettings):
     SCHEDULER_ENABLED: bool = True
     MARKET_DATA_SCHEDULE: str = "0 2 * * 1-5"  # Weekdays 2am
     FINANCIAL_DATA_SCHEDULE: str = "15 3 * * 1-5"  # Weekdays 3:15am (market-wide financials)
+    SCREENER_SCHEDULE: str = "30 16 * * 1-5"  # Weekdays 4:30pm after close
+    SCREENER_SCHEDULE_PRESETS: str = "core"  # comma-separated style tags
     REPORT_SCHEDULE: str = "0 6 * * 1-5"  # Weekdays 6am
     OBSERVATION_SCHEDULE: str = "30 5 * * 1-5"  # Weekdays 5:30am (before brief)
     EVENT_LOG_CLEANUP_SCHEDULE: str = "0 3 * * 1"  # Weekly Monday 3am

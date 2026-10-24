@@ -120,9 +120,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         from core.market_sync import market_data_update
         from core.observation_engine import run_observation_cycle
         from core.scheduler import register_job, start_scheduler
+        from core.screener_schedule import scheduled_screener_update
 
         register_job("market_data_update", market_data_update)
         register_job("financial_data_update", financial_data_update)
+        register_job("screener_schedule", scheduled_screener_update)
         register_job("observation_cycle", run_observation_cycle)
         register_job("event_log_cleanup", event_log_cleanup)
         start_scheduler()

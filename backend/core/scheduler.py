@@ -72,6 +72,13 @@ def start_scheduler() -> AsyncIOScheduler:
             settings.FINANCIAL_DATA_SCHEDULE,
         )
 
+    # Register scheduled screener + change report (weekdays after close)
+    if hasattr(settings, "SCREENER_SCHEDULE") and settings.SCREENER_SCHEDULE:
+        _add_cron_job(
+            "screener_schedule",
+            settings.SCREENER_SCHEDULE,
+        )
+
     # Register observation cycle job (daily)
     if hasattr(settings, "OBSERVATION_SCHEDULE") and settings.OBSERVATION_SCHEDULE:
         _add_cron_job(

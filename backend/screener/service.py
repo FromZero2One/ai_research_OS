@@ -241,7 +241,9 @@ def _financial_asof(financials: dict[str, list]) -> str | None:
     return f"{year}{period}（{year}-{end}）" if end else f"{year}{period}"
 
 
-async def trigger_run(db: AsyncSession, params: dict | None = None) -> ScreenerRun | None:
+async def trigger_run(
+    db: AsyncSession, params: dict | None = None, enqueue: bool = True
+) -> ScreenerRun | None:
     """手动触发一次筛选。已有 pending/running 时返回 None（路由转 409）。
 
     params 形如 {"mode": "presets", "pool": "all", "preset_ids": [...], "combine": "union"}；
@@ -311,9 +313,13 @@ async def trigger_run(db: AsyncSession, params: dict | None = None) -> ScreenerR
     await db.flush()
 
     # 持久后台任务（worker 循环拾取；测试环境由测试直接调 run_screener_by_id）
-    from core.task_manager import create_task
+    # 定时任务传 enqueue=False 直接在当前 session 执行，避免与 worker 重复。
+    if enqueue:
+        from core.task_manager import create_task
 
-    await create_task("screener_run", f"screener:{run.id}", {"run_id": str(run.id)}, db=db)
+        await create_task(
+            "screener_run", f"screener:{run.id}", {"run_id": str(run.id)}, db=db
+        )
 
     await EventLogger(db).record(
         source="screener",

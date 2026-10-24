@@ -9,6 +9,7 @@ import {
   useScreenerMetrics,
   useScreenerPresets,
   useScreenerRun,
+  useScreenerRunDiff,
   useScreenerRunReport,
   useScreenerRuns,
   useTriggerScreenerRun,
@@ -198,6 +199,19 @@ const reportHtml = computed(() => {
 function viewReport(run: ScreenerRunSummary) {
   viewingRunId.value = run.id
 }
+
+// ── 变化日报 ──
+const viewingDiffRunId = ref<string | null>(null)
+const { data: diffData } = useScreenerRunDiff(viewingDiffRunId)
+const diffHtml = computed(() => {
+  const diff = diffData.value?.diff
+  if (!diff) return ''
+  return DOMPurify.sanitize(marked.parse(diff, { async: false }) as string)
+})
+
+function viewDiff(run: ScreenerRunSummary) {
+  viewingDiffRunId.value = run.id
+}
 </script>
 
 <template>
@@ -328,6 +342,11 @@ function viewReport(run: ScreenerRunSummary) {
                 <el-button v-if="row.report_path" size="small" link type="primary" @click.stop="viewReport(row)">查看</el-button>
               </template>
             </el-table-column>
+            <el-table-column label="变化" width="70">
+              <template #default="{ row }">
+                <el-button size="small" link @click.stop="viewDiff(row)">日报</el-button>
+              </template>
+            </el-table-column>
           </el-table>
         </el-card>
       </el-col>
@@ -346,6 +365,16 @@ function viewReport(run: ScreenerRunSummary) {
         </div>
       </template>
       <div class="report-md" v-html="reportHtml" />
+    </el-card>
+
+    <el-card v-if="viewingDiffRunId" class="mt-3">
+      <template #header>
+        <div class="card-header">
+          <span>变化日报</span>
+          <el-button size="small" link @click="viewingDiffRunId = null">关闭</el-button>
+        </div>
+      </template>
+      <div class="report-md" v-html="diffHtml" />
     </el-card>
   </div>
 </template>
