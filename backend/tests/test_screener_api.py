@@ -19,14 +19,14 @@ SPOT = [
 RULES = {
     "stock_pool": {"type": "all", "tickers": []},
     "quant_rules": [{"metric": "price", "op": "<", "value": 1000.0, "missing_data_policy": "exclude"}],
-    "qualitative_criteria": ["行业格局稳定"],
+    "qualitative_criteria": ["现金充裕"],
     "candidate_limit": 50,
 }
 
 VALID_JUDGE = {
     "recommend": True,
     "reasons": ["符合标准"],
-    "criteria_hits": [{"criterion": "行业格局稳定", "hit": True, "evidence": "资料充分"}],
+    "criteria_hits": [{"criterion": "现金充裕", "hit": True, "evidence": "流动比率 4.0 倍"}],
     "confidence": 0.8,
 }
 
@@ -51,6 +51,12 @@ def screener_env(monkeypatch):
         return False
 
     monkeypatch.setattr("screener.service._ensure_market_data", _no_ingest)
+
+    class _NoKnowledge:
+        async def search(self, *args, **kwargs):
+            return []
+
+    monkeypatch.setattr("screener.service._create_knowledge", lambda db: _NoKnowledge())
 
 
 def _async(value):
@@ -108,6 +114,15 @@ class TestTriggerAndRun:
         report = client.get(f"/api/v1/screener/runs/{run['id']}/report")
         assert report.status_code == 200
         assert "推荐列表" in report.json()["report"]
+
+    def test_trigger_then_immediate_get(self, client: TestClient, screener_env):
+        """POST 返回后立即按 id 查询必须可见（run 行已在返回前提交）。"""
+        resp = client.post("/api/v1/screener/runs")
+        assert resp.status_code == 201, resp.text
+        run_id = resp.json()["id"]
+        detail = client.get(f"/api/v1/screener/runs/{run_id}")
+        assert detail.status_code == 200
+        assert detail.json()["id"] == run_id
 
     def test_duplicate_trigger_409(self, client: TestClient, screener_env):
         first = client.post("/api/v1/screener/runs")

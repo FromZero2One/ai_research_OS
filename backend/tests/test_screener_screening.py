@@ -102,7 +102,7 @@ class TestFetchMarketSpot:
             "screener.screening.run_akshare",
             lambda code, env_args=None, timeout=60: "__R__:" + json.dumps(sample, ensure_ascii=False),
         )
-        spot = await fetch_market_spot()
+        spot = await fetch_market_spot(force_refresh=True)
         assert spot[0]["ticker"] == "600519"
         assert spot[0]["price"] == 1500.5
         assert spot[0]["market_cap"] == 1.88e12
@@ -116,7 +116,7 @@ class TestFetchMarketSpot:
             "screener.screening.run_akshare",
             lambda code, env_args=None, timeout=60: "__R__:" + json.dumps(sample),
         )
-        spot = await fetch_market_spot()
+        spot = await fetch_market_spot(force_refresh=True)
         assert spot[0]["price"] is None
         assert spot[0]["turnover"] is None
         assert spot[0]["market_cap"] is None
@@ -124,4 +124,38 @@ class TestFetchMarketSpot:
     async def test_akshare_none_raises(self, monkeypatch):
         monkeypatch.setattr("screener.screening.run_akshare", lambda code, env_args=None, timeout=60: None)
         with pytest.raises(Exception):
-            await fetch_market_spot()
+            await fetch_market_spot(force_refresh=True)
+
+
+class TestValuationRules:
+    def test_pe_rule_and_missing_data(self):
+        financials = {
+            "AAA": [_entry(2026, "Q2", "net_income", 5e8)],   # PE 10
+            "BBB": [_entry(2026, "Q2", "net_income", 1e8)],   # PE 50
+        }
+        candidates = [_c("AAA", market_cap=1e10), _c("BBB", market_cap=1e10), _c("CCC", market_cap=1e10)]
+        rule = {"metric": "pe", "op": "<", "value": 15.0, "missing_data_policy": "exclude"}
+        passed, excluded = evaluate_quant_rules(candidates, [rule], financials)
+
+        assert [c["ticker"] for c in passed] == ["AAA"]
+        # BBB 命中 False（硬淘汰），不进入 passed/excluded
+        assert "BBB" not in {c["ticker"] for c in passed + excluded}
+        # CCC 无净利润 → 缺数据排除
+        assert [c["ticker"] for c in excluded] == ["CCC"]
+        assert excluded[0]["missing"] == ["pe"]
+
+    def test_pb_rule(self):
+        financials = {
+            "AAA": [
+                _entry(2026, "Q2", "total_assets", 8e9),
+                _entry(2026, "Q2", "total_liabilities", 3e9),  # PB 2
+            ],
+            "BBB": [
+                _entry(2026, "Q2", "total_assets", 5e9),
+                _entry(2026, "Q2", "total_liabilities", 1e9),  # PB 2.5
+            ],
+        }
+        candidates = [_c("AAA", market_cap=1e10), _c("BBB", market_cap=1e10)]
+        rule = {"metric": "pb", "op": "<", "value": 2.2, "missing_data_policy": "exclude"}
+        passed, _ = evaluate_quant_rules(candidates, [rule], financials)
+        assert [c["ticker"] for c in passed] == ["AAA"]

@@ -57,7 +57,7 @@ A personal AI-powered investment research assistant. Company → Knowledge → A
 | **AI Center** | Prompt mgmt, LLM orchestration, summarization | DeepSeek V4 Flash (默认) / Ollama / OpenAI 兼容 |
 | **Research Center** | Question → Evidence → Report → Decision → Thesis | LangGraph-ready |
 | **Portfolio Center** | 关注公司（并入公司中心）、持仓、投资日志（后端） | PostgreSQL |
-| **Screener** | 预设标准库选股：18 指标（含营收/净利同比）+ 5 内置大师预设 + union/intersection/flatten 组合，零 LLM 翻译（2026-10-22 v1.5） | AKShare + LLM 深判 |
+| **Screener** | 预设标准库选股：21 指标（含营收/净利同比、PE/PB/PS 派生估值）+ 5 内置大师预设 + union/intersection/flatten 组合，零 LLM 翻译（2026-10-24） | AKShare + LLM 深判 |
 
 > **Screener 数据管道（2026-10-22）**：全市场快照走新浪源（东财风控应对）；财务三表（业绩/资产负债/现金流）均为市场级一次调用（~5000 只/期），不再逐只拉取；流动/速动/周转/成长率走东财 F10 主要指标（`RPT_F10_FINANCE_MAINFINADATA`）分页补采。已知缺口见 Roadmap。
 
@@ -143,9 +143,9 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 | 研究中心 | ~95% | 全链路 + LLM 证据分类（含定量/定性双轨）+ 多周期比对 + 报告可视化 + [ev:id] 引用回溯 + structured_facts 交叉验证 |
 | 投资组合 | ~40% | 自选已并入公司；持仓/日志后端就绪，前端随 V2 |
 | 系统/调度 | ~85% | 调度/观察/持久任务/事件/新鲜度可用 |
-| 智能选股 | ~90% | v1.5 预设库（18 指标 + 5 内置预设 + 组合模式）全链路；深度价值/高成长已完成真实端到端验证；预设回测 MVP 已交付（2026-10-23）；缺数据更新调度 |
+| 智能选股 | ~95% | 21 指标（含 PE/PB/PS 派生估值）+ 5 内置预设 + 组合模式全链路；深判接入知识库与证据守卫；预设回测 MVP；财务数据工作日定时更新 |
 
-总体：V1.1 目标基本达成，后端 168 项测试通过（另有 4 项依赖 Ollama embeddings，无 Ollama 环境时不计；test_finalize_session 需补 LLM mock）；ruff/vue-tsc/build 全绿。
+总体：V1.1 目标基本达成，后端 **391 passed / 2 failed / 2 skipped**（2 项失败为既有 research 证据继承依赖本地 LLM 结构化输出，与选股改动无关）；screener + financial_sync 专项 **214 passed**；前端 vue-tsc/build 通过。改动文件 ruff 通过（仓库仍保留历史 E501 债务）。
 已知缺口：美股真实行情、持仓/日志前端、Market.vue 覆盖网格列数动态化（当前硬编码 5 列）。下一步（证据继承/差异日报）详见 [memory/ai-research-os-session.md](memory/ai-research-os-session.md)。
 
 ## API (when backend is running)
@@ -190,13 +190,13 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 | ~~覆盖矩阵定性维度~~ | ✅ 2026-10-15 | 矩阵新增定性列：已索引文档含 mda/risk 切片 → ok；仅已索引 → partial；无 → missing；纳入 worst_health |
 | ~~证据继承~~ | ✅ 2026-10-16 | auto-gather 自动带入同公司已完成会话证据（上限 10 条/去重/幂等），标 inherited_from_session_id，前端「📥 历史已核实」徽标可跳原会话 |
 | **差异日报** | 未开始 | 旧晨报已删（2026-10-14），从零构建"只报变化"日报：新公告、财报日历临近、价格异动、证据与旧结论冲突 |
-| ~~预设标准库（Screener v1.5）~~ | ✅ 2026-10-22 | 18 指标 + 5 内置大师预设 + union/intersection/flatten 组合，零 LLM 翻译；全市场 bs/cf 市场级拉取；current_ratio/quick_ratio/周转率/成长率由 F10 主要指标补齐；东财风控应对（快照切新浪源 + akshare 子进程反风控头） |
+| ~~预设标准库（Screener v1.5）~~ | ✅ 2026-10-22 | 21 指标（2026-10-24 新增 PE/PB/PS 派生估值）+ 5 内置大师预设 + union/intersection/flatten 组合，零 LLM 翻译；全市场 bs/cf 市场级拉取；current_ratio/quick_ratio/周转率/成长率由 F10 主要指标补齐；东财风控应对（快照切新浪源 + akshare 子进程反风控头） |
 
 收尾待办（小项）：Market.vue 覆盖网格列数动态化（当前硬编码 `repeat(5, 90px)`）；test_finalize_session 补 LLM mock（真实 LLM 调用挂起）；qualColor 硬编码色值统一 CSS 变量。
 
 Screener 后续（2026-10-22 排序）：
 
-1. **财务数据更新调度** — `ingest_marketwide_yjbb` / `ingest_marketwide_main_finance` / `ingest_marketwide_bs_cf` 已实现（按需补采）但未挂 APScheduler，财务数据会随时间过期；需加每日 job
+1. ~~财务数据更新调度~~ ✅ 2026-10-24 — `core/financial_sync.py` 挂 APScheduler（`FINANCIAL_DATA_SCHEDULE`，工作日 3:15），三类数据源 SAVEPOINT 隔离，`/scheduler/status` 可见
 2. ~~全链路真实端到端验证~~ ✅ 2026-10-22 — 深度价值 50 候选/21 推荐；高成长 106 候选（营收/净利同比规则生效）；F10 指标覆盖 98%+
 3. ~~预设回测~~ ✅ 2026-10-23 — MVP 已交付：`POST /screener/backtests`（5 年季度调仓、外部 MySQL 前复权日线、akshare 历史财务按需补拉、年报口径无未来函数、近似市值声明）；结果 {summary, yearly} + Markdown 报告落盘；见 `backend/screener/backtest*.py`
 4. ~~报告数据时效标注~~ ✅ 2026-10-22 — 报告概览标注「财务数据截至 2026Q2（2026-06-30）」

@@ -6,10 +6,62 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
 
 _MODULE_DIR = Path(__file__).resolve().parent
+
+
+def _fmt_price(value) -> str:
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return "-" if value is None else str(value)
+
+
+def _fmt_money(value) -> str:
+    """金额转亿/万，报告里不直接暴露原始浮点。"""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "-" if value is None else str(value)
+    if abs(v) >= 1e8:
+        return f"{v / 1e8:.2f} 亿"
+    if abs(v) >= 1e4:
+        return f"{v / 1e4:.2f} 万"
+    return f"{v:.2f}"
+
+
+def _fmt_conf(value) -> str:
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return "-" if value is None else str(value)
+
+
+def _normalize_criterion(text: str, preset_names: list[str]) -> str:
+    """去掉 LLM 返回的预设前缀，合并「[深度价值] 现金充裕」与「深度价值 - 现金充裕」。"""
+    s = str(text).strip()
+    s = re.sub(r"^\[[^\]]+\]\s*", "", s)
+    for name in sorted(preset_names, key=len, reverse=True):
+        if s.startswith(name):
+            rest = s[len(name):].lstrip(" -—：:")
+            if rest:
+                s = rest
+                break
+    return s.strip()
+
+
+def _preset_names_for(run: dict, judgements: list[dict]) -> list[str]:
+    names = list(run.get("preset_names") or [])
+    if names:
+        return names
+    return sorted({
+        name
+        for j in judgements
+        for name in ((j.get("snapshot") or {}).get("presets") or [])
+    })
 
 
 def report_path_for(run_id: str) -> Path:
@@ -76,6 +128,7 @@ def build_report(
     lines.append("## 推荐列表")
     lines.append("")
     preset_mode = _preset_mode(run, judgements)
+    preset_names = _preset_names_for(run, judgements)
     if not recommended:
         lines.append("本次无推荐 — 初筛候选均未通过定性判断。")
     elif preset_mode:
@@ -84,8 +137,9 @@ def build_report(
         for j in recommended:
             snap = j.get("snapshot") or {}
             lines.append(
-                f"| {j['ticker']} | {j['name']} | {snap.get('price', '-')} | "
-                f"{snap.get('market_cap', '-')} | {j.get('confidence', '-')} | {_preset_label(snap)} |"
+                f"| {j['ticker']} | {j['name']} | {_fmt_price(snap.get('price'))} | "
+                f"{_fmt_money(snap.get('market_cap'))} | {_fmt_conf(j.get('confidence'))} | "
+                f"{_preset_label(snap)} |"
             )
         lines.append("")
     else:
@@ -94,19 +148,21 @@ def build_report(
         for j in recommended:
             snap = j.get("snapshot") or {}
             lines.append(
-                f"| {j['ticker']} | {j['name']} | {snap.get('price', '-')} | "
-                f"{snap.get('market_cap', '-')} | {j.get('confidence', '-')} |"
+                f"| {j['ticker']} | {j['name']} | {_fmt_price(snap.get('price'))} | "
+                f"{_fmt_money(snap.get('market_cap'))} | {_fmt_conf(j.get('confidence'))} |"
             )
         lines.append("")
-        for j in recommended:
-            lines.append(f"### {j['name']}（{j['ticker']}）")
-            lines.append("")
-            snap = j.get("snapshot") or {}
-            if preset_mode and snap.get("presets"):
-                lines.append(f"- 命中：{_preset_label(snap)}")
-            for reason in j.get("reasons") or []:
-                lines.append(f"- {reason}")
-            lines.append("")
+
+    # 推荐个股的理由（预设模式此前只输出表格，理由被丢弃）
+    for j in recommended:
+        lines.append(f"### {j['name']}（{j['ticker']}）")
+        lines.append("")
+        snap = j.get("snapshot") or {}
+        if preset_mode and snap.get("presets"):
+            lines.append(f"- 命中：{_preset_label(snap)}")
+        for reason in j.get("reasons") or []:
+            lines.append(f"- {reason}")
+        lines.append("")
 
     # ── 标准吻合度说明：逐条对照标准原文 ──
     lines.append("## 标准吻合度说明")
@@ -119,7 +175,7 @@ def build_report(
         stats: dict[str, dict] = {}
         for j in ok_judgements:
             for h in j.get("criteria_hits") or []:
-                criterion = str(h.get("criterion", "")).strip()
+                criterion = _normalize_criterion(str(h.get("criterion", "")), preset_names)
                 if not criterion:
                     continue
                 if criterion not in stats:
@@ -144,20 +200,33 @@ def build_report(
                 lines.append(f"- **{criterion}**：本次候选无相关判断记录")
     else:
         for item in _extract_criteria_items(criteria_text):
-            hits = [j for j in ok_judgements if any(
-                h.get("hit") and item in str(h.get("criterion", "")) for h in (j.get("criteria_hits") or [])
-            )]
-            misses = [j for j in ok_judgements if any(
-                not h.get("hit") and item in str(h.get("criterion", "")) for h in (j.get("criteria_hits") or [])
-            )]
+            hits = [
+                j for j in ok_judgements
+                if any(
+                    h.get("hit") and item in str(h.get("criterion", ""))
+                    for h in (j.get("criteria_hits") or [])
+                )
+            ]
+            misses = [
+                j for j in ok_judgements
+                if any(
+                    not h.get("hit") and item in str(h.get("criterion", ""))
+                    for h in (j.get("criteria_hits") or [])
+                )
+            ]
             if hits:
                 sample = hits[0]
                 evidence = next(
-                    (h.get("evidence", "") for h in sample.get("criteria_hits") or [] if h.get("hit") and item in str(h.get("criterion", ""))),
+                    (
+                        h.get("evidence", "")
+                        for h in sample.get("criteria_hits") or []
+                        if h.get("hit") and item in str(h.get("criterion", ""))
+                    ),
                     "",
                 )
                 lines.append(
-                    f"- **{item}**：命中 {len(hits)} 只（如 {sample['name']} — {evidence or '见理由'}）"
+                    f"- **{item}**：命中 {len(hits)} 只"
+                    f"（如 {sample['name']} — {evidence or '见理由'}）"
                 )
             elif misses:
                 lines.append(f"- **{item}**：{len(misses)} 只候选未命中该条")

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-import pytest
-
 from screener import criteria as criteria_mod
-from screener.rules_schema import RULES_JSON_SCHEMA, hash_criteria, validate_rules
-
+from screener.rules_schema import (
+    KNOWN_METRICS,
+    RULES_JSON_SCHEMA,
+    UNAVAILABLE_METRICS,
+    hash_criteria,
+    validate_rules,
+)
 
 # ── criteria IO ──────────────────────────────────────────────────────
 
@@ -77,6 +80,49 @@ def test_validate_unknown_metric():
     rules = _valid_rules()
     rules["quant_rules"][0]["metric"] = "magic_factor"
     assert validate_rules(rules) != []
+
+
+def test_known_metrics_exclude_unavailable_ones():
+    """白名单只能包含 market.financial_metrics 里真实有数据的指标。"""
+    assert UNAVAILABLE_METRICS.isdisjoint(KNOWN_METRICS)
+    assert {"gross_profit", "operating_profit", "rd_expense", "total_equity"} == UNAVAILABLE_METRICS
+    assert {"roe", "market_cap", "operating_cash_flow"} <= KNOWN_METRICS
+    assert {"pe", "pb", "ps"} <= KNOWN_METRICS
+
+
+def test_validate_money_unit_mistake_rejected():
+    """『市值大于100亿』被直译成 market_cap > 100 → 单位错误，必须拦下。"""
+    rules = _valid_rules()
+    rules["quant_rules"][0] = {
+        "metric": "market_cap", "op": ">", "value": 100, "missing_data_policy": "exclude"
+    }
+    errors = validate_rules(rules)
+    assert any("单位" in e and "market_cap" in e for e in errors)
+
+
+def test_validate_value_unit_accepted():
+    rules = _valid_rules()
+    rules["quant_rules"][0] = {
+        "metric": "market_cap", "op": ">", "value": 100,
+        "value_unit": "亿", "missing_data_policy": "exclude",
+    }
+    assert validate_rules(rules) == []
+
+
+def test_validate_money_value_in_yuan_accepted():
+    rules = _valid_rules()
+    rules["quant_rules"][0] = {
+        "metric": "market_cap", "op": ">", "value": 1e10, "missing_data_policy": "exclude"
+    }
+    assert validate_rules(rules) == []
+
+
+def test_validate_unavailable_metric_has_actionable_message():
+    """命中无数据源的指标要明确提示改写为定性标准，而不是笼统的"未知指标"。"""
+    rules = _valid_rules()
+    rules["quant_rules"][0]["metric"] = "rd_expense"
+    errors = validate_rules(rules)
+    assert any("数据源" in e and "qualitative_criteria" in e for e in errors)
 
 
 def test_validate_bad_pool_type():

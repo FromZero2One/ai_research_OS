@@ -44,11 +44,25 @@ def backtest_env(monkeypatch):
     import screener.backtest_data as bd
     import screener.backtest_service as bs
 
-    async def _daily_ok(tickers, start, end):
+    async def _daily_ok(db, tickers, start, end):
+        # 现实现是「逐只拉取并落库」，返回值是同步的票数；测试里直接灌 StockPrice
+        from market.models import StockPrice
+
         full = _daily()
-        if not tickers:
-            return full  # 测试库无 Company 行 → 全量返回
-        return {t: full[t] for t in tickers if t in full}
+        synced = 0
+        for t in tickers:
+            bars = full.get(t) or []
+            for b in bars:
+                db.add(
+                    StockPrice(
+                        ticker=t, date=b["date"], open=b["open"], high=b["high"],
+                        low=b["low"], close=b["close"], volume=b["volume"],
+                    )
+                )
+            if bars:
+                synced += 1
+        await db.flush()
+        return synced
 
     async def _noop(db, periods):
         return 0
@@ -63,6 +77,11 @@ def backtest_env(monkeypatch):
     async def _shares(db, tickers):
         return {t: 1e9 for t in tickers}  # 总股本 10 亿（近似市值用）
 
+    async def _all_tickers(start, end):
+        # 测试库无 Company 行时，服务会回退到外部 MySQL 取票池；单测中固定返回两只票
+        return ["600519", "300750"]
+
+    monkeypatch.setattr(bd, "fetch_all_tickers", _all_tickers)
     monkeypatch.setattr(bs, "fetch_daily_from_mysql", _daily_ok)
     monkeypatch.setattr(bs, "ensure_financial_periods", _noop)
     monkeypatch.setattr(bs, "fetch_index_daily", _bench)
@@ -82,7 +101,7 @@ class TestRunBacktest:
         from screener.backtest_service import run_backtest
 
         preset = CriteriaPreset(
-            name="测试预设", description="d", style_tag="test", is_builtin=True, is_active=True,
+            name="测试预设", description="d", style_tag="test", is_builtin=False, is_active=True,
             quant_rules=[{"metric": "roe", "op": ">", "value": 10, "missing_data_policy": "exclude"}],
             qualitative=[], suggested_pool="all",
         )
@@ -116,7 +135,7 @@ class TestRunBacktest:
         monkeypatch.setattr(bs, "fetch_daily_from_mysql", _empty)
 
         preset = CriteriaPreset(
-            name="测试预设2", description="d", style_tag="test2", is_builtin=True, is_active=True,
+            name="测试预设2", description="d", style_tag="test2", is_builtin=False, is_active=True,
             quant_rules=[], qualitative=[], suggested_pool="all",
         )
         test_session.add(preset)
@@ -135,7 +154,7 @@ class TestBacktestAPI:
     async def test_post_and_get(self, client, backtest_env, test_session: AsyncSession):
         """POST 建 run 返回 201；未知预设 → 422。"""
         preset = CriteriaPreset(
-            name="API预设", description="d", style_tag="api", is_builtin=True, is_active=True,
+            name="API预设", description="d", style_tag="api", is_builtin=False, is_active=True,
             quant_rules=[], qualitative=[], suggested_pool="all",
         )
         test_session.add(preset)

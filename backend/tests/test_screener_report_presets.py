@@ -55,3 +55,30 @@ def test_union_report_single_preset():
     j = {**J, "snapshot": {**J["snapshot"], "hits": 1, "presets": ["核心资产"]}}
     report = build_report(RUN_PRESETS, [j], RUN_PRESETS["criteria_text"], [])
     assert "核心资产" in report
+
+
+def test_preset_report_includes_per_stock_reasons():
+    """预设模式也应输出个股理由，而不是只有表格。"""
+    report = build_report(RUN_PRESETS, [J_UNION], RUN_PRESETS["criteria_text"], [])
+    assert "### 贵州茅台（600519）" in report
+    assert "- ROE 高" in report
+    assert "- 命中：核心资产 + 质量价值 GARP（2 个）" in report
+
+
+def test_criterion_prefixes_normalized_and_merged():
+    """`[深度价值] 现金充裕` 与 `深度价值 - 现金充裕` 应合并为同一条统计。"""
+    j1 = {
+        **J_UNION,
+        "criteria_hits": [{"criterion": "[深度价值] 现金充裕", "hit": True, "evidence": "[1] x"}],
+    }
+    j2 = {
+        **J_UNION,
+        "ticker": "000001",
+        "name": "平安银行",
+        "criteria_hits": [{"criterion": "深度价值 - 现金充裕", "hit": True, "evidence": "[1] y"}],
+    }
+    run = {**RUN_PRESETS, "preset_names": ["深度价值", "核心资产", "质量价值 GARP"]}
+    report = build_report(run, [j1, j2], RUN_PRESETS["criteria_text"], [])
+    assert "- **现金充裕**：命中 2 只" in report
+    assert "[深度价值] 现金充裕" not in report
+    assert "深度价值 - 现金充裕" not in report

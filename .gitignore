@@ -26,6 +26,9 @@ frontend/out/
 .DS_Store
 Thumbs.db
 
+# Local run logs
+backend/*.out
+
 # 工具产物（编辑器备份 / gstack / 图表导出）
 *~
 *.un~

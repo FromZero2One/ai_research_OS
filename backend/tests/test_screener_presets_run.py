@@ -61,6 +61,13 @@ def screener_env(monkeypatch):
 
     monkeypatch.setattr("screener.service._ensure_market_data", _no_ingest)
 
+    # 单测不连真实 Qdrant/Ollama：知识库固定返回空片段（走“无资料”证据守卫）
+    class _NoKnowledge:
+        async def search(self, *args, **kwargs):
+            return []
+
+    monkeypatch.setattr("screener.service._create_knowledge", lambda db: _NoKnowledge())
+
 
 async def _builtin_ids(db: AsyncSession, tags: list[str]) -> list:
     rows = (
@@ -75,6 +82,27 @@ async def _builtin_ids(db: AsyncSession, tags: list[str]) -> list:
 
 async def test_presets_mode_end_to_end(test_session: AsyncSession, screener_env, monkeypatch):
     """presets 模式端到端：落库字段、零翻译、union 候选带命中预设。"""
+    from market.models import FinancialMetric
+    from screener.service import _latest_fiscal
+
+    _, year, period = _latest_fiscal()
+    for t in ("600519", "300750"):
+        for metric, value in (
+            ("roe", 20.0),
+            ("net_margin", 30.0),
+            ("operating_cash_flow", 1e9),
+            ("debt_to_equity", 30.0),
+            # GARP 新增 pe<40：两票 PE 分别约 18.8 / 8.8
+            ("net_income", 5e10),
+        ):
+            test_session.add(
+                FinancialMetric(
+                    ticker=t, metric_name=metric, metric_value=value,
+                    fiscal_year=year, fiscal_period=period,
+                )
+            )
+    await test_session.flush()
+
     ids, by_tag = await _builtin_ids(test_session, ["core", "garp"])
     rules_before = (
         await test_session.execute(select(func.count()).select_from(ScreenerRule))
@@ -100,17 +128,80 @@ async def test_presets_mode_end_to_end(test_session: AsyncSession, screener_env,
     ).scalar_one()
     assert rules_after == rules_before
 
-    # 联合初筛：两只票市值均超 core/garp 门槛（roe 缺数据 → exclude → 都被排除？）
-    # core: roe>15 缺数据 exclude → 两只都被排除。改断言：roes 无财务数据时无候选。
     judgements = (
         await test_session.execute(select(ScreenerJudgement).where(ScreenerJudgement.run_id == run.id))
     ).scalars().all()
-    # financials 空 → roe/净利率/现金流全缺 → core/garp 全 exclude → 0 候选，0 深判
-    assert done.candidate_count == 0
-    assert judgements == []
+    # 财务数据齐备 → 两只票同时命中 core/garp → 2 候选、2 条深判
+    assert done.candidate_count == 2
+    assert len(judgements) == 2
+    for j in judgements:
+        assert set(j.snapshot["presets"]) == {"核心资产", "质量价值 GARP"}
+        assert j.snapshot["hits"] == 2
     # run.rules 记录组装结果与来源预设
     assert set(done.rules["preset_names"]) == {"核心资产", "质量价值 GARP"}
     assert done.rules["combine"] == "union"
+
+
+async def test_presets_mode_without_financial_data_fails_explicitly(
+    test_session: AsyncSession, screener_env, monkeypatch
+):
+    """所需指标全市场无数据 → run 明确失败并报出指标名，不再静默产出 0 候选。"""
+    ids, _ = await _builtin_ids(test_session, ["core"])
+    run = await trigger_run(
+        test_session,
+        params={"mode": "presets", "pool": "all", "preset_ids": ids, "combine": "union"},
+    )
+    done = await run_screener(test_session, run.id)
+    assert done.status == "failed"
+    assert "没有任何数据" in (done.error or "")
+    assert "roe" in (done.error or "")
+
+
+async def test_quant_only_preset_skips_llm(
+    test_session: AsyncSession, screener_env, monkeypatch
+):
+    """预设没有定性条目时，确定性初筛就是结论，不应再调用 LLM 深判。"""
+    from market.models import FinancialMetric
+    from screener.service import _latest_fiscal
+
+    _, year, period = _latest_fiscal()
+    for t in ("600519", "300750"):
+        for metric, value in (
+            ("roe", 20.0),
+            ("net_margin", 30.0),
+            ("operating_cash_flow", 1e9),
+            ("debt_to_equity", 30.0),
+        ):
+            test_session.add(
+                FinancialMetric(
+                    ticker=t, metric_name=metric, metric_value=value,
+                    fiscal_year=year, fiscal_period=period,
+                )
+            )
+    await test_session.flush()
+
+    ids, _ = await _builtin_ids(test_session, ["core"])
+    run = await trigger_run(
+        test_session,
+        params={"mode": "presets", "pool": "all", "preset_ids": ids, "combine": "union"},
+    )
+
+    async def _boom(*args, **kwargs):
+        raise AssertionError("无定性标准时不应调用 judge_candidates")
+
+    monkeypatch.setattr("screener.service.judge_candidates", _boom)
+    done = await run_screener(test_session, run.id)
+    assert done.status == "completed"
+    assert done.candidate_count == 2
+    assert done.result_count == 2
+
+    judgements = (
+        await test_session.execute(
+            select(ScreenerJudgement).where(ScreenerJudgement.run_id == run.id)
+        )
+    ).scalars().all()
+    assert all(j.recommend is True for j in judgements)
+    assert all("未调用 LLM" in " ".join(j.reasons or []) for j in judgements)
 
 
 async def test_presets_union_with_financials(test_session: AsyncSession, screener_env, monkeypatch):
@@ -124,12 +215,18 @@ async def test_presets_union_with_financials(test_session: AsyncSession, screene
     monkeypatch.setattr("screener.ingest.ingest_marketwide_bs_cf", _noop_ingest)
     ids, by_tag = await _builtin_ids(test_session, ["cycle"])  # 周期反转只看市值+负债率
     for t in ("600519", "300750"):
-        test_session.add(
-            FinancialMetric(
-                ticker=t, metric_name="debt_to_equity", metric_value=30.0,
-                fiscal_year=2026, fiscal_period="Q2",
+        for metric, value in (
+            ("debt_to_equity", 30.0),
+            # 周期反转新增 pb<2.5：净资产 8e11 → PB 2.35 / 1.1
+            ("total_assets", 1e12),
+            ("total_liabilities", 2e11),
+        ):
+            test_session.add(
+                FinancialMetric(
+                    ticker=t, metric_name=metric, metric_value=value,
+                    fiscal_year=2026, fiscal_period="Q2",
+                )
             )
-        )
     await test_session.flush()
 
     run = await trigger_run(

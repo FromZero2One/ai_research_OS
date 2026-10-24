@@ -100,6 +100,7 @@ class Settings(BaseSettings):
     # --- Scheduling ---
     SCHEDULER_ENABLED: bool = True
     MARKET_DATA_SCHEDULE: str = "0 2 * * 1-5"  # Weekdays 2am
+    FINANCIAL_DATA_SCHEDULE: str = "15 3 * * 1-5"  # Weekdays 3:15am (market-wide financials)
     REPORT_SCHEDULE: str = "0 6 * * 1-5"  # Weekdays 6am
     OBSERVATION_SCHEDULE: str = "30 5 * * 1-5"  # Weekdays 5:30am (before brief)
     EVENT_LOG_CLEANUP_SCHEDULE: str = "0 3 * * 1"  # Weekly Monday 3am

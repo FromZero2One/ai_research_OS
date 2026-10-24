@@ -33,6 +33,19 @@ BUILTIN_METRICS: list[dict] = [
     {"key": "asset_turnover", "name_cn": "总资产周转率", "category": "profitability", "data_source": "main_finance", "description": "营业收入 / 平均总资产"},
     {"key": "inventory_turnover", "name_cn": "存货周转率", "category": "profitability", "data_source": "main_finance", "description": "营业成本 / 平均存货"},
     {"key": "receivables_turnover", "name_cn": "应收账款周转率", "category": "profitability", "data_source": "main_finance", "description": "营业收入 / 平均应收账款"},
+    # 估值（派生：总市值 + 最新报告期财务；PE/PS 为年化近似）
+    {
+        "key": "pe", "name_cn": "市盈率(年化,倍)", "category": "valuation",
+        "data_source": "derived", "description": "总市值 / 年化净利润（净利润≤0 时为无数据）",
+    },
+    {
+        "key": "pb", "name_cn": "市净率(倍)", "category": "valuation",
+        "data_source": "derived", "description": "总市值 / (总资产-总负债)",
+    },
+    {
+        "key": "ps", "name_cn": "市销率(年化,倍)", "category": "valuation",
+        "data_source": "derived", "description": "总市值 / 年化营业收入",
+    },
 ]
 
 # ── 内置五套预设（spec「内置五套预设」一节逐字落地）──────────────────────
@@ -69,12 +82,14 @@ BUILTIN_PRESETS: list[dict] = [
     },
     {
         "name": "深度价值",
-        "description": "格雷厄姆式：低负债、流动比率充裕、现金流为正的便宜大市值股",
+        "description": "格雷厄姆式：低负债、流动比率充裕、现金流为正、估值便宜的大市值股",
         "style_tag": "value",
         "quant_rules": [
             {"metric": "debt_to_equity", "op": "<", "value": 40, "missing_data_policy": _EX},
             {"metric": "current_ratio", "op": ">", "value": 2, "missing_data_policy": _EX},
             {"metric": "operating_cash_flow", "op": ">", "value": 0, "missing_data_policy": _EX},
+            {"metric": "pe", "op": "<", "value": 25, "missing_data_policy": _EX},
+            {"metric": "pb", "op": "<", "value": 3, "missing_data_policy": _EX},
             {"metric": "market_cap", "op": ">", "value": 5e9, "missing_data_policy": _EX},
         ],
         "qualitative": ["现金充裕", "非壳公司", "无暴雷风险"],
@@ -82,13 +97,14 @@ BUILTIN_PRESETS: list[dict] = [
     },
     {
         "name": "质量价值 GARP",
-        "description": "芒格式：质量与估值兼顾，要求盈利持续性、护城河与股东回报",
+        "description": "芒格式：质量与估值兼顾，要求盈利持续性、护城河、股东回报与合理估值",
         "style_tag": "garp",
         "quant_rules": [
             {"metric": "roe", "op": ">", "value": 15, "missing_data_policy": _EX},
             {"metric": "net_margin", "op": ">", "value": 12, "missing_data_policy": _EX},
             {"metric": "debt_to_equity", "op": "<", "value": 55, "missing_data_policy": _EX},
             {"metric": "operating_cash_flow", "op": ">", "value": 0, "missing_data_policy": _EX},
+            {"metric": "pe", "op": "<", "value": 40, "missing_data_policy": _EX},
             {"metric": "market_cap", "op": ">", "value": 2e10, "missing_data_policy": _EX},
         ],
         "qualitative": ["盈利具有持续性", "存在护城河", "无重大违规", "重视股东回报"],
@@ -96,11 +112,12 @@ BUILTIN_PRESETS: list[dict] = [
     },
     {
         "name": "周期反转",
-        "description": "逆向：周期底部的大市值低负债龙头，赌困境反转",
+        "description": "逆向：周期底部的大市值低负债龙头，市净率处于低位，赌困境反转",
         "style_tag": "cycle",
         "quant_rules": [
             {"metric": "market_cap", "op": ">", "value": 1.5e10, "missing_data_policy": _EX},
             {"metric": "debt_to_equity", "op": "<", "value": 65, "missing_data_policy": _EX},
+            {"metric": "pb", "op": "<", "value": 2.5, "missing_data_policy": _EX},
         ],
         "qualitative": ["处于周期底部", "行业龙头且成本低", "无产能过剩包袱"],
         "suggested_pool": "all",

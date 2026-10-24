@@ -23,6 +23,7 @@ from screener.pool import filter_pool
 from screener.report import build_report, report_path_for
 from screener.rules_schema import hash_criteria
 from screener.translate import get_or_translate_rules
+from screener.valuation import required_data_metrics
 
 
 def _now() -> str:
@@ -62,6 +63,53 @@ async def _reload_financials(
             )
         )
     return financials
+
+
+_SNAPSHOT_METRICS = frozenset({"price", "turnover", "market_cap"})
+_JUDGE_SNAPSHOT_FIELDS = ("price", "turnover", "market_cap", "score", "hits", "presets")
+
+
+def _create_knowledge(db: AsyncSession):
+    """深判用知识库（检索失败由 judge 层吞掉并按无资料处理）。"""
+    try:
+        from knowledge.service import KnowledgeService
+
+        # 深判逐只检索，reranker 会显著拖慢批量任务，这里只用 hybrid RRF
+        return KnowledgeService(db, use_reranker=False)
+    except Exception as e:  # noqa: BLE001 — 知识库不可用不应阻断选股
+        logger.warning("深判知识库初始化失败，按无资料处理: %s", e)
+        return None
+
+
+def _auto_pass_judgement(candidate: dict) -> dict:
+    """无定性标准时跳过 LLM：确定性初筛已完整表达选股条件。"""
+    return {
+        "ticker": candidate["ticker"],
+        "name": candidate.get("name"),
+        "recommend": True,
+        "reasons": ["通过全部量化规则（该标准无定性条目，未调用 LLM 深判）"],
+        "criteria_hits": [],
+        "confidence": 1.0,
+        "snapshot": {
+            k: candidate.get(k)
+            for k in _JUDGE_SNAPSHOT_FIELDS
+            if candidate.get(k) is not None
+        },
+        "status": "ok",
+        "error": None,
+    }
+
+
+def metrics_without_any_data(
+    needed: set[str], financials: dict[str, list]
+) -> list[str]:
+    """needed 中在已加载财务数据里完全没有出现的指标（快照字段除外）。
+
+    用于替代「指标无数据 → 全员 excluded → 静默 0 候选」：只要某个所需指标
+    在全市场最新报告期一条数据都没有，就直接让 run 失败并报出指标名。
+    """
+    present = {entry.metric_name for entries in financials.values() for entry in entries}
+    return sorted(m for m in needed if m not in _SNAPSHOT_METRICS and m not in present)
 
 
 _YJBB_METRICS = frozenset({"roe", "gross_margin", "net_margin", "revenue", "net_income"})
@@ -174,7 +222,9 @@ async def trigger_run(db: AsyncSession, params: dict | None = None) -> ScreenerR
     """
     active = (
         await db.execute(
-            select(ScreenerRun).where(ScreenerRun.status.in_(["pending", "screening", "judging"])).limit(1)
+            select(ScreenerRun)
+            .where(ScreenerRun.status.in_(["pending", "screening", "judging"]))
+            .limit(1)
         )
     ).scalar_one_or_none()
     if active:
@@ -244,6 +294,9 @@ async def trigger_run(db: AsyncSession, params: dict | None = None) -> ScreenerR
         entity_id=str(run.id),
         summary=f"触发智能选股（hash={run.criteria_hash}）",
     )
+    # 立即提交：POST 返回后前端会马上按 id 轮询，未提交会 404；
+    # 同时保证 worker 拾取任务时 run 行已可见。
+    await db.commit()
     return run
 
 
@@ -255,6 +308,9 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
     run.status = "screening"
     run.started_at = _now()
     await db.flush()
+    # 中间状态独立提交：后台任务与 API 是不同 session，不提交的话
+    # 前端在整个运行期间只能看到 pending（screening/judging 永远不可见）。
+    await db.commit()
 
     try:
         # ① 标准来源：presets 模式纯函数组装（零 LLM）；自由文本走 LLM 翻译（hash 缓存）
@@ -299,18 +355,30 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
             needed_metrics = {r["metric"] for p in presets for r in p.quant_rules}
         else:
             needed_metrics = {r["metric"] for r in rules.get("quant_rules", [])}
-        await _ensure_market_data(db, needed_metrics)
+        # pe/pb/ps 是派生指标：补采/预检/加载都要换成底层财务指标
+        data_metrics = required_data_metrics(needed_metrics)
+        await _ensure_market_data(db, data_metrics)
         # 按「所需指标 × 最新报告期」过滤加载（全市场多期数据全量加载不可持续）
         _date, _year, _period = _latest_fiscal()
         financials = await _reload_financials(
-            db, metrics=needed_metrics, year=_year, period=_period
+            db, metrics=data_metrics, year=_year, period=_period
         )
+        unavailable = metrics_without_any_data(data_metrics, financials)
+        if unavailable:
+            raise ValueError(
+                "以下指标在最新报告期没有任何数据，无法执行筛选："
+                + "、".join(unavailable)
+                + "。请修改选股标准（改用可用指标或定性标准）后重试。"
+            )
 
+        excluded_missing: list[dict] = []
         if run.mode == "presets" and run.combine_mode == "union":
             # union：每个预设独立初筛 → 票数排名（hits ↓ → score ↓ → 市值 ↓）
             from screener.compose import evaluate_quant_rules_by_preset
 
-            union_map = evaluate_quant_rules_by_preset(pool, presets, financials)
+            union_map = evaluate_quant_rules_by_preset(
+                pool, presets, financials, collect_excluded=excluded_missing
+            )
             spot_by_ticker = {c["ticker"]: c for c in pool}
             ranked = sorted(
                 union_map.values(),
@@ -325,7 +393,6 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
                 {**spot_by_ticker[e["ticker"]], **e}
                 for e in ranked[: rules.get("candidate_limit", 50)]
             ]
-            excluded_missing: list[dict] = []
         else:
             passed, excluded_missing = screening.evaluate_quant_rules(
                 pool, rules.get("quant_rules", []), financials
@@ -336,13 +403,19 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
         run.candidate_count = len(candidates)
         run.status = "judging"
         await db.flush()
+        await db.commit()
 
-        # ③ LLM 逐只深判（v1 不接知识库检索 — 见 ledger Ruling）
-        judgements = await judge_candidates(
-            llm, candidates, run.criteria_text, knowledge=None,
-            qualitative=rules.get("qualitative_criteria", []),
-            financials_by_ticker=financials,
-        )
+        # ③ 定性深判：接入知识库检索；无定性条目时跳过 LLM（确定性初筛即结论）
+        qualitative = rules.get("qualitative_criteria", [])
+        if qualitative:
+            knowledge = _create_knowledge(db)
+            judgements = await judge_candidates(
+                llm, candidates, run.criteria_text, knowledge=knowledge,
+                qualitative=qualitative,
+                financials_by_ticker=financials,
+            )
+        else:
+            judgements = [_auto_pass_judgement(c) for c in candidates]
         for j in judgements:
             db.add(ScreenerJudgement(run_id=run.id, **j))
         await db.flush()
@@ -350,7 +423,8 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
         # ④ 报告落盘 + 收尾
         report = build_report(
             {"id": str(run.id), "candidate_count": run.candidate_count,
-             "result_count": sum(1 for j in judgements if j.get("recommend") is True)},
+             "result_count": sum(1 for j in judgements if j.get("recommend") is True),
+             "preset_names": rules.get("preset_names", [])},
             judgements, run.criteria_text, excluded_missing,
             financial_asof=_financial_asof(financials),
             spot_taken_at=spot_taken_at,
@@ -378,6 +452,7 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
             entity_type="screener_run", entity_id=str(run.id), summary=str(e)[:500],
         )
     await db.flush()
+    await db.commit()
     return run
 
 

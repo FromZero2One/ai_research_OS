@@ -9,7 +9,8 @@ from screener.compose import compose_rules, evaluate_quant_rules_by_preset
 
 def _preset(name, quant_rules, qualitative=None, suggested_pool="all"):
     return SimpleNamespace(
-        name=name, quant_rules=quant_rules, qualitative=qualitative or [], suggested_pool=suggested_pool
+        name=name, quant_rules=quant_rules, qualitative=qualitative or [],
+        suggested_pool=suggested_pool,
     )
 
 
@@ -87,15 +88,48 @@ def test_union_eval_counts_hits_and_dedupes():
     assert result["BBB"]["presets"] == ["P1"]
 
 
+def test_union_eval_collects_excluded_missing_only_unmatched():
+    """union 缺失名单：只收「没有任何预设命中、且因缺数据被排除」的票。"""
+    p1 = _preset("P1", [_rule("roe", ">", 15)])
+    p2 = _preset("P2", [_rule("market_cap", ">", 1e9)])
+    candidates = [
+        {"ticker": "AAA", "name": "甲", "market_cap": 3e9},
+        {"ticker": "BBB", "name": "乙", "market_cap": 2e9},
+        {"ticker": "CCC", "name": "丙", "market_cap": 0.5e9},
+    ]
+    excluded: list[dict] = []
+    result = evaluate_quant_rules_by_preset(
+        candidates, [p1, p2], financials_by_ticker={}, collect_excluded=excluded
+    )
+
+    assert set(result) == {"AAA", "BBB"}  # 命中了 P2
+    assert excluded == [
+        {"ticker": "CCC", "name": "丙", "missing": ["roe"], "presets": ["P1"]}
+    ]
+
+
 def test_union_eval_financial_metric_rules():
     """union 初筛：财务指标规则走 financials_by_ticker。"""
     from market.domain import FinancialMetricEntry
 
     p1 = _preset("P1", [_rule("roe", ">", 15)])
-    candidates = [{"ticker": "AAA", "name": "甲", "market_cap": 3e9}, {"ticker": "BBB", "name": "乙"}]
+    candidates = [
+        {"ticker": "AAA", "name": "甲", "market_cap": 3e9},
+        {"ticker": "BBB", "name": "乙"},
+    ]
     financials = {
-        "AAA": [FinancialMetricEntry(metric_name="roe", metric_value=18.0, fiscal_year=2026, fiscal_period="Q2")],
-        "BBB": [FinancialMetricEntry(metric_name="roe", metric_value=10.0, fiscal_year=2026, fiscal_period="Q2")],
+        "AAA": [
+            FinancialMetricEntry(
+                metric_name="roe", metric_value=18.0,
+                fiscal_year=2026, fiscal_period="Q2",
+            )
+        ],
+        "BBB": [
+            FinancialMetricEntry(
+                metric_name="roe", metric_value=10.0,
+                fiscal_year=2026, fiscal_period="Q2",
+            )
+        ],
     }
     result = evaluate_quant_rules_by_preset(candidates, [p1], financials_by_ticker=financials)
     assert set(result) == {"AAA"}

@@ -6,25 +6,21 @@ market.ratio_service 比率键 + 行情快照字段（price/turnover/market_cap�
 
 from __future__ import annotations
 
-# LLM 翻译可用的指标键（= financial_metrics 常用名 + ratio_service 比率键 + 快照字段）
-KNOWN_METRICS: frozenset[str] = frozenset(
+from screener.valuation import VALUATION_METRICS
+
+# 行情快照字段（来自全市场快照，不依赖财务数据）
+SNAPSHOT_METRICS: frozenset[str] = frozenset({"price", "turnover", "market_cap"})
+
+# 财务指标：必须是 market.financial_metrics 中真实有市场级数据的指标。
+# 口径 = yjbb（业绩报表）+ bs/cf（资产负债表/现金流）+ F10 主要指标。
+FINANCIAL_METRICS: frozenset[str] = frozenset(
     {
-        # 行情快照（akshare stock_zh_a_spot_em）
-        "price",
-        "turnover",
-        "market_cap",
-        # financial_metrics 标准枚举指标
         "revenue",
         "net_income",
-        "gross_profit",
-        "operating_profit",
-        "rd_expense",
         "eps",
         "total_assets",
         "total_liabilities",
-        "total_equity",
         "operating_cash_flow",
-        # ratio_service 比率键（透出 + 派生）
         "roe",
         "gross_margin",
         "net_margin",
@@ -34,11 +30,33 @@ KNOWN_METRICS: frozenset[str] = frozenset(
         "receivables_turnover",
         "current_ratio",
         "quick_ratio",
-        # 成长率（yjbb 同比 / F10 主要指标）
         "revenue_growth",
         "net_income_growth",
     }
 )
+
+# 曾有定义但当前没有任何市场级数据源的指标：翻译命中时明确报错，
+# 引导 LLM/用户改写为定性标准，而不是产出「全员缺数据」的静默 0 候选。
+UNAVAILABLE_METRICS: frozenset[str] = frozenset(
+    {"gross_profit", "operating_profit", "rd_expense", "total_equity"}
+)
+
+# LLM 翻译可用的指标键（快照 + 可用财务指标 + 派生估值指标）
+KNOWN_METRICS: frozenset[str] = SNAPSHOT_METRICS | FINANCIAL_METRICS | VALUATION_METRICS
+
+# 以「元」为单位的指标：LLM 把「100亿」直译成 100 会让规则对全市场失效。
+# 翻译阶段允许 LLM 输出 value + value_unit，由服务端换算，避免模型自己数零。
+MONEY_METRICS = frozenset(
+    {
+        "market_cap",
+        "revenue",
+        "net_income",
+        "operating_cash_flow",
+        "total_assets",
+        "total_liabilities",
+    }
+)
+VALUE_UNITS = frozenset({"元", "万", "亿", "%", "倍"})
 
 _ALLOWED_OPS = frozenset({">", ">=", "<", "<=", "=="})
 _ALLOWED_POOLS = frozenset({"all", "main", "chinext", "star", "watchlist"})
@@ -63,6 +81,14 @@ RULES_JSON_SCHEMA: dict = {
                     "metric": {"type": "string", "enum": sorted(KNOWN_METRICS)},
                     "op": {"type": "string", "enum": sorted(_ALLOWED_OPS)},
                     "value": {"type": "number"},
+                    "value_unit": {
+                        "type": "string",
+                        "enum": sorted(VALUE_UNITS),
+                        "description": (
+                            "金额类指标填 元/万/亿，百分比填 %，倍数填 倍；"
+                            "服务端负责换算到基础单位"
+                        ),
+                    },
                     "missing_data_policy": {
                         "type": "string",
                         "enum": ["exclude", "include"],
@@ -110,12 +136,34 @@ def validate_rules(obj: object) -> list[str]:
             if not isinstance(rule, dict):
                 errors.append(f"quant_rules[{i}] 不是对象")
                 continue
-            if rule.get("metric") not in KNOWN_METRICS:
-                errors.append(f"quant_rules[{i}].metric 未知: {rule.get('metric')!r}")
+            metric = rule.get("metric")
+            if metric in UNAVAILABLE_METRICS:
+                errors.append(
+                    f"quant_rules[{i}].metric 暂无可用的市场级数据源: {metric!r}；"
+                    "请改写为 qualitative_criteria 或改用其它指标"
+                )
+            elif metric not in KNOWN_METRICS:
+                errors.append(f"quant_rules[{i}].metric 未知: {metric!r}")
             if rule.get("op") not in _ALLOWED_OPS:
                 errors.append(f"quant_rules[{i}].op 非法: {rule.get('op')!r}")
-            if not isinstance(rule.get("value"), (int, float)) or isinstance(rule.get("value"), bool):
+            value = rule.get("value")
+            unit = rule.get("value_unit")
+            if unit is not None and unit not in VALUE_UNITS:
+                errors.append(f"quant_rules[{i}].value_unit 非法: {unit!r}")
+            if metric in MONEY_METRICS and unit in {"%", "倍"}:
+                errors.append(f"quant_rules[{i}].value_unit 与金额指标不匹配: {unit!r}")
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
                 errors.append(f"quant_rules[{i}].value 必须是数字")
+            elif (
+                metric in MONEY_METRICS
+                and unit is None
+                and abs(float(value)) > 0
+                and abs(float(value)) < 1e6
+            ):
+                errors.append(
+                    f"quant_rules[{i}].value 疑似单位错误：{metric} 以元为单位"
+                    "（1亿=100000000），请换算后再填，或提供 value_unit"
+                )
             if rule.get("missing_data_policy") not in _ALLOWED_POLICIES:
                 errors.append(f"quant_rules[{i}].missing_data_policy 非法")
 

@@ -12,6 +12,7 @@ from core.exceptions import DataSourceError
 from core.logging import logger
 from market.akshare_executor import run_akshare
 from market.domain import FinancialMetricEntry
+from screener.valuation import VALUATION_METRICS, derive_valuation
 
 # 全市场 A 股实时快照。
 # 注1：不走 akshare.stock_zh_a_spot_em（东财 push2 2026-10-22 起风控掐无 UA 请求 +
@@ -170,10 +171,15 @@ def _metric_value(entries: list[FinancialMetricEntry], metric: str) -> float | N
 
 
 def _rule_hit(rule: dict, candidate: dict, fin_entries: list[FinancialMetricEntry]) -> bool | None:
-    """单条规则求值：True=命中，False=不命中，None=数据缺失。"""
+    """单条规则求值：True=命中，False=不命中，None=数据缺失。
+
+    估值指标（pe/pb/ps）由快照市值 + 最新财务数据即时派生，不落库。
+    """
     metric = rule["metric"]
     if metric in _SNAPSHOT_FIELDS:
         value = candidate.get(metric)
+    elif metric in VALUATION_METRICS:
+        value = derive_valuation(candidate, fin_entries).get(metric)
     else:
         value = _metric_value(fin_entries, metric)
     if value is None:

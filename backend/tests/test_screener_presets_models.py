@@ -75,12 +75,29 @@ async def test_metric_def_seeds_exist(test_session: AsyncSession):
         "net_income": "yjbb",
         "market_cap": "snapshot",
         "turnover": "snapshot",
+        "pe": "derived",
+        "pb": "derived",
+        "ps": "derived",
     }
     for key, source in expected_sources.items():
         assert key in by_key, f"缺少指标种子: {key}"
         assert by_key[key].data_source == source, f"{key} data_source 应为 {source}"
-    # 原 16 条 + 新增 2 条成长指标
-    assert len(rows) >= 16
+    # 原 16 条 + 2 条成长指标 + 3 条估值指标
+    assert len(rows) >= 21
+
+
+async def test_value_preset_has_valuation_rules(test_session: AsyncSession):
+    """深度价值预设必须包含估值条件，否则名不副实。"""
+    row = (
+        await test_session.execute(
+            select(CriteriaPreset).where(
+                CriteriaPreset.is_builtin.is_(True),
+                CriteriaPreset.style_tag == "value",
+            )
+        )
+    ).scalar_one()
+    metrics = {rule["metric"] for rule in row.quant_rules}
+    assert {"pe", "pb"} <= metrics
 
 
 async def test_run_v1_mode_columns_nullable(test_session: AsyncSession):

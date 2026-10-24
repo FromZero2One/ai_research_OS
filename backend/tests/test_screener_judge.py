@@ -31,9 +31,13 @@ class FakeLLM:
     def __init__(self, responses: list[str]):
         self.responses = list(responses)
         self.calls = 0
+        self.calls_kwargs: list[dict] = []
+        self.calls_messages: list[list] = []
 
     async def generate(self, messages: Any, **kwargs: Any) -> LLMResponse:
         self.calls += 1
+        self.calls_kwargs.append(kwargs)
+        self.calls_messages.append(list(messages))
         return LLMResponse(content=self.responses.pop(0), model="fake", usage=None)
 
 
@@ -49,6 +53,13 @@ class ExplodingKnowledge:
 class EmptyKnowledge:
     async def search(self, *a: Any, **kw: Any) -> list:
         return []
+
+
+class SnippetKnowledge:
+    async def search(self, *a: Any, **kw: Any) -> list:
+        from types import SimpleNamespace
+
+        return [SimpleNamespace(content="年报披露：公司在细分市场份额领先，品牌壁垒显著。")]
 
 
 class TestBuildContext:
@@ -97,6 +108,73 @@ class TestJudgeOne:
         with pytest.raises(ValueError):
             await judge_one(llm, CAND, ["x"], knowledge=None)
 
+    async def test_no_snippets_downgrades_doc_only_hit(self):
+        """无资料时光靠'未发现违规'不能算命中；自动降级并否决 recommend。"""
+        payload = {
+            **VALID_JUDGE,
+            "recommend": True,
+            "criteria_hits": [
+                {"criterion": "无重大违规", "hit": True, "evidence": "数据快照未显示违规记录"}
+            ],
+        }
+        out = await judge_one(FakeLLM([_json_text(payload)]), CAND, ["无重大违规"], knowledge=EmptyKnowledge())
+        assert out["recommend"] is False
+        assert out["criteria_hits"][0]["hit"] is False
+        assert any("自动判定" in r for r in out["reasons"])
+
+    async def test_financial_hit_without_number_downgraded(self):
+        """可由财务数字判断的标准，evidence 没有任何数字 → 视为无证据。"""
+        payload = {
+            **VALID_JUDGE,
+            "criteria_hits": [
+                {"criterion": "现金充裕", "hit": True, "evidence": "公司现金非常充足"}
+            ],
+        }
+        out = await judge_one(FakeLLM([_json_text(payload)]), CAND, ["现金充裕"], knowledge=EmptyKnowledge())
+        assert out["criteria_hits"][0]["hit"] is False
+        assert out["recommend"] is False
+
+    async def test_snippet_hit_requires_citation(self):
+        """有资料片段时，hit=true 的 evidence 必须引用 [n]。"""
+        payload = {
+            **VALID_JUDGE,
+            "criteria_hits": [
+                {"criterion": "存在护城河", "hit": True, "evidence": "品牌壁垒显著"}
+            ],
+        }
+        out = await judge_one(FakeLLM([_json_text(payload)]), CAND, ["存在护城河"], knowledge=SnippetKnowledge())
+        assert out["criteria_hits"][0]["hit"] is False
+
+    async def test_snippet_hit_with_citation_kept(self):
+        payload = {
+            **VALID_JUDGE,
+            "criteria_hits": [
+                {"criterion": "存在护城河", "hit": True, "evidence": "[1] 品牌壁垒显著"}
+            ],
+        }
+        out = await judge_one(FakeLLM([_json_text(payload)]), CAND, ["存在护城河"], knowledge=SnippetKnowledge())
+        assert out["criteria_hits"][0]["hit"] is True
+        assert out["recommend"] is True
+
+    async def test_retry_raises_token_budget_and_asks_for_compact_output(self):
+        """截断重试不能原样重发：第二轮要放大 max_tokens 并追加压缩提示。"""
+        llm = FakeLLM(["坏输出", _json_text(VALID_JUDGE)])
+        out = await judge_one(llm, CAND, ["x"], knowledge=None)
+        assert out["recommend"] is True
+        assert llm.calls_kwargs[0]["max_tokens"] < llm.calls_kwargs[1]["max_tokens"]
+        assert len(llm.calls_messages[1]) == len(llm.calls_messages[0]) + 1
+        assert "压缩" in llm.calls_messages[1][-1].content
+
+    async def test_empty_transport_error_includes_exception_type(self):
+        """httpx 超时的 str(e) 可能为空，错误信息必须有类型名而不是只剩冒号。"""
+        class BlankErrorLLM(FakeLLM):
+            async def generate(self, messages: Any, **kwargs: Any) -> LLMResponse:
+                raise TimeoutError
+
+        results = await judge_candidates(BlankErrorLLM([]), [CAND], "标准文本", knowledge=None)
+        assert results[0]["status"] == "failed"
+        assert "TimeoutError" in results[0]["error"]
+
 
 class TestJudgeCandidates:
     async def test_failure_isolated(self):
@@ -108,7 +186,7 @@ class TestJudgeCandidates:
             async def generate(self, messages: Any, **kwargs: Any) -> LLMResponse:
                 self.calls += 1
                 # 第二只（宁德时代）返回坏输出两次（触发重试后仍失败）
-                if "宁德时代" in messages[-1].content:
+                if any("宁德时代" in m.content for m in messages):
                     return LLMResponse(content="坏输出", model="fake", usage=None)
                 return LLMResponse(content=_json_text(VALID_JUDGE), model="fake", usage=None)
 
@@ -128,7 +206,7 @@ class TestJudgeCandidates:
         class FlakyLLM(FakeLLM):
             async def generate(self, messages: Any, **kwargs: Any) -> LLMResponse:
                 self.calls += 1
-                if "宁德时代" in messages[-1].content:
+                if any("宁德时代" in m.content for m in messages):
                     raise TimeoutError("LLM request timed out")
                 return LLMResponse(content=_json_text(VALID_JUDGE), model="fake", usage=None)
 

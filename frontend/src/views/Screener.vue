@@ -51,6 +51,13 @@ watch(activeStatus, (s) => {
   if (s === 'failed') ElMessage.error(`筛选失败：${activeRun.value?.error || '未知原因'}`)
 })
 
+// 页面刷新/从别处触发后，自动接管仍在进行中的 run，否则不会轮询
+watch(runsData, (v) => {
+  if (activeRunId.value) return
+  const active = (v?.runs || []).find((r) => ['pending', 'screening', 'judging'].includes(r.status))
+  if (active) activeRunId.value = active.id
+}, { immediate: true })
+
 const running = computed(() =>
   activeStatus.value === 'pending' || activeStatus.value === 'screening' || activeStatus.value === 'judging'
   || (runsData.value?.runs || []).some((r) => ['pending', 'screening', 'judging'].includes(r.status)),

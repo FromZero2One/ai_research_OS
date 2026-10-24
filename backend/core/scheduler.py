@@ -65,6 +65,13 @@ def start_scheduler() -> AsyncIOScheduler:
             settings.MARKET_DATA_SCHEDULE,
         )
 
+    # Register market-wide financial data refresh (weekdays, after price sync)
+    if hasattr(settings, "FINANCIAL_DATA_SCHEDULE") and settings.FINANCIAL_DATA_SCHEDULE:
+        _add_cron_job(
+            "financial_data_update",
+            settings.FINANCIAL_DATA_SCHEDULE,
+        )
+
     # Register observation cycle job (daily)
     if hasattr(settings, "OBSERVATION_SCHEDULE") and settings.OBSERVATION_SCHEDULE:
         _add_cron_job(

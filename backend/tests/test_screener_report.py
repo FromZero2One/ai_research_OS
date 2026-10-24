@@ -74,6 +74,12 @@ class TestBuildReport:
         report = build_report(RUN, JUDGEMENTS, RUN["criteria_text"], [])
         assert "000001" in report
 
+    def test_market_cap_and_price_formatted(self):
+        report = build_report(RUN, JUDGEMENTS, RUN["criteria_text"], [])
+        assert "18800.00 亿" in report
+        assert "1500.00" in report
+        assert "1880000000000.0" not in report
+
     def test_no_recommendations(self):
         empty = [{**j, "recommend": False} for j in JUDGEMENTS if j["status"] == "ok"]
         report = build_report(RUN, empty, RUN["criteria_text"], [])

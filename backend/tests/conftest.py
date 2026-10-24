@@ -225,6 +225,25 @@ def _disable_background_tasks(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_screener_spot_cache(monkeypatch: pytest.MonkeyPatch):
+    """Don't write test snapshots into the shared dev Redis cache.
+
+    The screener spot cache key is date-based, so a test snapshot (1-2 rows)
+    would poison real screens for the rest of the day.
+    """
+    from screener import screening
+
+    class _NoopCache:
+        async def get(self, key: str):
+            return None
+
+        async def set(self, key: str, value: str, ttl: int | None = None) -> None:
+            return None
+
+    monkeypatch.setattr(screening, "_get_cache", lambda: _NoopCache())
+
+
+@pytest.fixture(autouse=True)
 def clean_tables():
     """Truncate all project tables before each test.
 

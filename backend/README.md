@@ -8,7 +8,7 @@ Python/FastAPI 后端。完整使用手册见根目录 [`USAGE.md`](../USAGE.md)
 - **存储**: PostgreSQL（多 schema + pgvector）+ Qdrant（向量）+ Redis（缓存）
 - **AI**: DeepSeek（OpenAI 兼容，本机默认）/ Ollama（本地 LLM + Embedding）
 - **数据源**: akshare 子进程直连（A股/港股，Tencent/Sina/Eastmoney），yfinance（美股备选）
-- **质量**: pytest 150 用例 + ruff + mypy + pre-commit
+- **质量**: pytest 390+ 用例 + ruff + mypy + pre-commit
 
 ## 架构
 
@@ -39,9 +39,11 @@ Company → Market + Document → Knowledge(RAG) → AI → Research → Portfol
 → ③ LLM 逐只深判候选（单只失败隔离，结果落 `ScreenerJudgement` 供后续回测）
 → ④ Markdown 报告落 `screener/reports/`。
 
-**presets（v1.5）**：预设标准库驱动，零 LLM 翻译。`screener/metrics`（16 个标准化指标）+ `screener/presets`（5 套内置大师预设：核心资产/高成长/深度价值/GARP/周期反转，只读；用户可自建）。触发时传 `preset_ids` + `combine`（union/intersection/flatten），规则纯确定性组装（`compose.py`），报告标注每只候选命中的预设（`[预设名]` 前缀 + snapshot `hits`/`presets`）。前端 `/screener` 有模式切换 + PresetManager 抽屉。
+**presets（v1.5）**：预设标准库驱动，零 LLM 翻译。指标定义在 `screener/seeds.py`（21 个标准化指标，含 2026-10-24 新增的 PE/PB/PS 派生估值）+ 5 套内置大师预设（核心资产/高成长/深度价值/GARP/周期反转，只读；用户可自建）。触发时传 `preset_ids` + `combine`（union/intersection/flatten），规则纯确定性组装（`compose.py`），报告标注每只候选命中的预设（`[预设名]` 前缀 + snapshot `hits`/`presets`）。前端 `/screener` 有模式切换 + PresetManager 抽屉。
 
-LLM 只在深判参与，筛选执行确定性。迁移 `b5d2f8a3c6e1` → `c8e1b7d4f2a9`，schema `screener`。
+估值指标由 `screener/valuation.py` 即时派生：PE = 市值 / 年化净利润、PB = 市值 / (总资产-总负债)、PS = 市值 / 年化营业收入；季报累计值按 Q1×4 / Q2×2 / Q3×4/3 / Q4×1 年化，净利润或净资产非正时返回无数据。深判已接入知识库检索并对无证据命中做确定性降级；无定性标准时跳过 LLM。财务数据由 `core/financial_sync.py` 在工作日 3:15 定时刷新（`FINANCIAL_DATA_SCHEDULE`）。
+
+LLM 只在深判参与，筛选执行确定性。迁移 `b5d2f8a3c6e1` → `c8e1b7d4f2a9` → `b7c8d9e0f1a2`，schema `screener`。
 
 ### 预设回测（2026-10-23 MVP）
 
@@ -148,6 +150,7 @@ PYTHONPATH=. python scripts/seed_data.py
 | 市场 | `AKSHARE_ENABLED` / `YFINANCE_ENABLED` | true / true | — |
 | 外部数据源 | `AKSHARE_MCP_DIR` / `NEWSNOW_MCP_SERVER_PATH` | /home/wsm/codes/akshare_mcp 等 | 机器相关 |
 | 调度器 | `SCHEDULER_ENABLED` | **true** | — |
+| | `FINANCIAL_DATA_SCHEDULE` | `15 3 * * 1-5` | — |
 | 安全 | `SECRET_KEY` | 每次启动随机生成 | — |
 
 > **默认是 Ollama，本机跑 DeepSeek**：代码里 `LLM_PROVIDER` 默认 `ollama`，本机 `.env` 设为 `openai` + DeepSeek（`deepseek-chat`，OpenAI 兼容端点 `https://api.deepseek.com/v1`）；light tier（证据分类/事实抽取）同样走云端。
@@ -173,9 +176,11 @@ Ollama 版本过旧（<0.3.0）时 `/api/embed` 不可用，Embedding 降级为 
 
 `core/task_manager.py`：PostgreSQL 持久化 `core.task_records` + worker 循环 + 自动重试 + `(type,key)` 去重 + 启动恢复。快速研究（`research/quick.py`）通过它后台跑 计划→搜集→报告 链，SSE 推流进度。
 
+APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工作日 2:00）、`financial_data_update`（工作日 3:15，全市场财务三表刷新，三类数据源 SAVEPOINT 隔离）、`observation_cycle`（工作日 5:30）、`event_log_cleanup`（周一 3:00）。状态见 `GET /api/v1/scheduler/status`。
+
 ## 测试
 
 ```bash
 make test        # pytest，专用 airesearch_test 库 + 隔离 Qdrant 集合
 ```
-当前 **150 passed**（另有 4 项依赖本机 Ollama embeddings，无 Ollama 环境时不计）。
+当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **214 passed**。

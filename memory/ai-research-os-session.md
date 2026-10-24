@@ -11,6 +11,7 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-10-24（Screener 优化 5 阶段）**: ①深判 `max_tokens` 1024→2560（截断重试 3584+压缩提示），上下文金额统一亿/万、比率带单位，净利润/ROE/毛利率越界加异常提示，报告市值/价格格式化；②freeform 指标白名单对齐真实入库指标（移除 gross_profit/operating_profit/rd_expense/total_equity），无数据指标自动降级为定性条目，所需指标全市场零覆盖时 run 显式失败；新增 `value_unit`（元/万/亿/%/倍）服务端换算，修掉“100亿→100”单位错误；③深判接入 KnowledgeService 检索（hybrid、无 reranker），新增确定性证据守卫：无资料时文档类命中降级、财务类要求 evidence 含数字、有资料必须引用 `[n]`，任一条降级即 recommend=False 且置信度≤0.4；无定性标准时跳过 LLM（auto-pass）；④状态分阶段提交（screening/judging/completed 可见）、前端自动接管进行中 run、union 收集缺失数据名单、预设报告补个股理由、标准条目前缀归一化去重；触发后立即提交 run 行（修 POST→GET 404 竞态）；⑤新增 PE/PB/PS 派生估值（市值/年化净利、市值/净资产、市值/年化营收）与内置预设估值条件（深度价值 pe<25/pb<3，GARP pe<40，周期反转 pb<2.5）；`core/financial_sync.py` 挂工作日 3:15 财务数据刷新。迁移 head `b7c8d9e0f1a2`；全量 391 passed / 2 failed / 2 skipped（失败为既有 research 证据继承依赖本地 LLM 结构化输出问题），screener + financial_sync 专项 214 passed，前端 build 绿。A股主板行情采集累计 259/2111 只（1,822,820 行），按 10 只/批后台续采。**注意**：知识库当前 0 文档，含定性标准的四套预设会稳定 0 推荐（数据不足），核心资产/纯量化预设正常。
 - **2026-10-23（Screener 预设回测 MVP + A股主板数据采集）**: `POST /screener/backtests`（preset_id + years 1-10，409 防并发）+ `GET /screener/backtests/{id}`。数据层 `backtest_data.py`：外部 MySQL 前复权日线（`BACKTEST_MYSQL_URL` 仅存 .env；同票同日重复行去重；本地 `market.stock_prices` 加 (ticker,date) 唯一约束、幂等灌库）+ 历史财务缺失期按需补拉（SAVEPOINT 隔离）+ 沪深300 基准。核心 `backtest.py` 纯函数：调仓日 = 披露截止日后首个交易日、**4 月调仓统一用上一年年报**（无未来函数）、停牌收益 0 标注、净值/CAGR/最大回撤/年度胜率。编排 `backtest_service.py`（状态机 pending→running→completed/failed，持久任务 `screener_backtest`）+ `backtest_report.py`（Markdown 报告含免责声明：未计费用、近似市值、幸存者偏差）。result 形状 `{summary, yearly}`。迁移 `f7a9c3e1b5d2` + `a1b2c3d4e5f6`。票池本地空时取外部库 distinct symbol（含退市票）。**日线拉取为逐只「边拉边灌」模式**（单票一次查询 ~1200 行、立即落库 commit，本地表行数即真实进度；≥200 根视为完整可断点续传；单票瞬时网络错误重试 3 次退避；全市场 ~18 分钟）。测试：models 2/2 + data 7/7 + core 12/12 通过，api 2/3（1 个待查）、回归 screener_api 5/5；端到端真实冒烟完成度 ~4%（5273 只拉取正常，整体验证待后续重跑）。
 - **2026-10-23（A股主板数据采集）**: 通过 akshare 新浪源获取全市场 A 股 5,576 只（sz:2,906 / sh:2,317 / bj:353），其中主板 2,111 只（沪市主板 1,700 + 深市主板 411）。股票代码已批量落库 `company.companies`（is_active=false, priority=999，2,111 条）。行情采集脚本 `ingest_main_board_batch.py` 支持分批（--limit N）、中断恢复（自动跳过已有 >=200 行的股票），每只约 40–60 秒。当前已采集 **94 只**（约 653,003 行，1991–2026-10-23），覆盖 000001–000166 及 600036/600276/600519 等。美股（yfinance）需代理，本地无法直连。
 - **2026-10-22（Screener 数据补全）**: F10 主要指标全市场采集（`RPT_F10_FINANCE_MAINFINADATA`：`LD`/`SD`/`TOAZZL`/`CHZZL`/`YSZKZZL`/`EPSJB` + 营收/净利同比，A 股前缀过滤）；yjbb 补 eps/营收同比/净利同比映射；新增 revenue_growth / net_income_growth 指标与迁移 `e2b6f4a8c9d1`；高成长预设改用营收/净利同比（>20%）；报告概览标注财务数据截至。实跑：深度价值 50 候选/21 推荐，高成长 106 候选；current_ratio/quick_ratio 覆盖 98.2%。全套 305 passed / 2 failed（research 证据继承依赖真实 light-tier LLM 的预存环境问题，非本次改动）。
@@ -34,7 +35,7 @@ metadata:
 | AI 中心 | ~75% | 模板/摘要/提取/Token 用量统计；AI 工作流已移除（单用户用不上） |
 | 研究中心 | ~92% | 全链路 + plan_type 四模板 + LLM 证据分类 + 多周期/同业比对 + 报告可视化 |
 | 投资组合 | ~40% | 自选已并入公司；持仓/日志仅后端，前端待做 |
-| 智能选股 | ~95% | v1.5 预设库（18 指标 + 5 内置预设 + 组合模式）+ F10 主要指标补采；深度价值/高成长真实跑通；预设回测 MVP 已交付（2026-10-23）；缺财务数据调度 |
+| 智能选股 | ~95% | 21 指标（含 PE/PB/PS 派生估值）+ 5 内置预设 + 组合模式；深判接入知识库与证据守卫；预设回测 MVP；财务数据工作日定时更新（2026-10-24） |
 | 系统/调度 | ~85% | 调度/观察/任务/事件/新鲜度/覆盖矩阵/Token 用量卡片 |
 
 总体：V1.1 达成，V2 按分析师优先级推进中（见下）。
@@ -88,7 +89,7 @@ metadata:
 - LLM：DeepSeek 云端（.env OPENAI_* 已配，key 已 gitignore）；light tier 同走云端；本机无 ollama
 - Embedding 仍指向本机 Ollama（未安装）→ 文档上传/知识检索的稠密向量不可用，BM25 兜底；pytest 有 5 项因此失败
 - akshare 走独立 `akshare_mcp` venv 子进程（`AKSHARE_MCP_DIR` 指向旧机器路径，**本机需改 .env 并确认 venv 存在**，否则 A 股采集失败但不崩）
-- 迁移 head：`e8a2c4f6b9d1`（瘦身：drop morning_briefs + macro_indicators）
+- 迁移 head：`b7c8d9e0f1a2`（估值指标 pe/pb/ps + 内置预设估值条件）
 - pytest 需先起 docker postgres；测试库 airesearch_test 由 conftest 用 create_all 重建（**改模型后旧测试库不会自动加列，需 DROP DATABASE airesearch_test 重建**）；`tests/test_session` fixture 为服务级测试专用（勿用 managed_session，会写进开发库）
 
 ## 相关文档

@@ -33,3 +33,26 @@ class TestPresetHitsInContext:
         cand = {**CAND, "hits": 1, "presets": []}
         ctx = build_judge_context(cand, [])
         assert "600519" in ctx
+
+
+class TestContextFormatting:
+    def test_money_metrics_have_units(self):
+        """大额金额转成亿元，避免 LLM 对原始元值做单位换算（曾把 83.77 亿读成 837 亿）。"""
+        ctx = build_judge_context(CAND, [], financials={"operating_cash_flow": 8377406414.45})
+        assert "经营现金流=83.77亿元" in ctx
+        assert "8377406414.45" not in ctx
+
+    def test_percent_and_ratio_units(self):
+        ctx = build_judge_context(CAND, [], financials={"roe": 21.89, "current_ratio": 4.01})
+        assert "ROE=21.89%" in ctx
+        assert "流动比率=4.01倍" in ctx
+
+    def test_snapshot_market_cap_formatted(self):
+        ctx = build_judge_context({**CAND, "market_cap": 205559656684.0}, [])
+        assert "2055.60亿元" in ctx
+
+    def test_extreme_margin_flagged_as_anomaly(self):
+        """净利率 176% 这类越界值必须显式提示异常，不能被当作经营信号。"""
+        ctx = build_judge_context(CAND, [], financials={"net_margin": 176.19})
+        assert "数据异常提示" in ctx
+        assert "176.19%" in ctx
