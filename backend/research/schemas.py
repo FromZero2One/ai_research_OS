@@ -125,7 +125,7 @@ class ResearchSessionResponse(BaseModel):
     thesis: str | None
     decision: str | None
     confidence: float | None
-    tags: dict | None
+    tags: list[str] | None
     extra_metadata: dict | None = None
     created_at: datetime
     updated_at: datetime | None

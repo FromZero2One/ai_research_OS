@@ -39,7 +39,7 @@ class ResearchSession(Base, UUIDMixin, TimestampMixin):
     confidence: Mapped[float | None] = mapped_column(nullable=True)
     """0.0 - 1.0 confidence score."""
 
-    tags: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    tags: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     extra_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # Relationships

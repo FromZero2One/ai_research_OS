@@ -11,7 +11,7 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
-- **2026-10-24（选股 → 研究中心交接）**: 新增 `screener/handoff.py`：`POST /screener/runs/{run_id}/to-research` 把该轮推荐股（按置信度排序，默认 5 只，可传 `tickers`/`limit`）创建为研究中心会话（`auto_plan=False`，tag `["screener", run_id]`，metadata 记录 `screener_run_id`/`screener_ticker`，已创建过则跳过）；前端历史运行表新增「送入」按钮。screener + financial_sync 281 passed。
+- **2026-10-24（选股 → 研究中心交接）**: 新增 `screener/handoff.py`：`POST /screener/runs/{run_id}/to-research` 把该轮推荐股（按置信度排序，默认 5 只，可传 `tickers`/`limit`）创建为研究中心会话（`auto_plan=False`，tag `["screener", run_id]`，metadata 记录 `screener_run_id`/`screener_ticker`，已创建过则跳过）；前端历史运行表新增「送入」按钮。顺带修复 `ResearchSession.tags` 类型不一致（模型注解/响应 schema 原为 dict，实际 service 存 list[str]，导致有 tags 的会话详情 500），统一为 `list[str]`（JSONB 列不变，无需迁移）。screener + financial_sync 281 passed；research 22 passed / 2 既有失败（证据继承依赖本地 LLM）。
 - **2026-10-24（知识库空提示）**: 含定性标准的 run 会检查已索引文档数；为 0 时日志告警并在报告概览写明“知识库为空，定性标准会判数据不足”，并指向文档中心上传/索引流程。纯量化预设不受影响。screener + financial_sync 279 passed。
 - **2026-10-24（表现基准）**: 推荐后表现接口新增沪深300 T+1 同期限收益、基准与超额列；修复 `backtest_data.fetch_index_daily` 的既有 import/解析错误（`_AKSHARE_PROLOGUE`/`_run_child` 来源错误、返回 list 被当字符串）；基准不可用时自动省略。screener + financial_sync 278 passed。实跑基准入口 2026-10-23 收盘 4105.329。
 - **2026-10-24（回测风险指标）**: `compute_nav_and_stats` 新增基准 CAGR、年化超额、年化波动、Sharpe、Sortino、Calmar（季度收益年化 ×√4，无风险利率 `BACKTEST_RISK_FREE_RATE` 默认 2%）；回测报告展示全部指标；screener + financial_sync 277 passed。样例报告：CAGR 25.78%、基准年化 1.74%、超额 +24.03%、Sharpe 1.08、Sortino 2.29、Calmar 2.58。

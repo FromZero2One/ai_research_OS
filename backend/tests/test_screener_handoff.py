@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from company.models import Company
 from research.models import ResearchSession
+from research.schemas import ResearchSessionResponse
 from screener.handoff import create_research_sessions
 from screener.models import ScreenerJudgement, ScreenerRun
 
@@ -42,6 +43,10 @@ async def test_create_sessions_and_dedupe(test_session: AsyncSession):
     assert all(s.company_id is not None for s in sessions)
     assert all("screener" in (s.tags or []) for s in sessions)
     assert all((s.extra_metadata or {}).get("screener_run_id") == str(run.id) for s in sessions)
+
+    # 会话详情接口按 list[str] 序列化 tags，避免 500
+    detail = ResearchSessionResponse.model_validate(sessions[0])
+    assert detail.tags == ["screener", str(run.id)]
 
     again = await create_research_sessions(test_session, run.id, limit=5)
     assert again["created"] == []
