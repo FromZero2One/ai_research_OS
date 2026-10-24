@@ -13,6 +13,7 @@ import {
   useScreenerPresets,
   useDeleteScreenerPortfolio,
   usePushScreenerToResearch,
+  usePushScreenerToWatchlist,
   useScreenerPortfolio,
   useScreenerPortfolios,
   useScreenerRun,
@@ -26,6 +27,7 @@ import {
   useTriggerScreenerBacktest,
   useTriggerScreenerRun,
   useTriggerScreenerRunPresets,
+  type ScreenerJudgement,
   type ScreenerPreset,
   type ScreenerRunSummary,
   type ScreenerSavedPortfolio,
@@ -381,6 +383,44 @@ function viewPortfolio(run: ScreenerRunSummary) {
 const handoffRunId = ref<string | null>(null)
 const handoffMutation = usePushScreenerToResearch(handoffRunId)
 
+// ── 运行明细 + 单只操作 ──
+const detailRunId = ref<string | null>(null)
+const { data: detailData } = useScreenerRun(detailRunId)
+const watchlistRunId = ref<string | null>(null)
+const watchlistMutation = usePushScreenerToWatchlist(watchlistRunId)
+const verdictLabel: Record<string, { label: string; type: string }> = {
+  recommend: { label: '推荐', type: 'success' },
+  reject: { label: '未通过', type: 'danger' },
+  insufficient: { label: '数据不足', type: 'warning' },
+  failed: { label: '深判失败', type: 'info' },
+}
+function viewDetail(run: ScreenerRunSummary) {
+  detailRunId.value = run.id
+}
+async function pushOneToResearch(row: ScreenerJudgement) {
+  if (!detailRunId.value) return
+  handoffRunId.value = detailRunId.value
+  try {
+    const r = await handoffMutation.mutateAsync({ tickers: [row.ticker], limit: 1 })
+    if (r.created.length) ElMessage.success(`已为 ${row.name} 创建研究会话`)
+    else ElMessage.info(`${row.name} 已有研究会话`)
+  } catch (e: any) {
+    ElMessage.error(e.message || '送入研究失败')
+  }
+}
+async function addOneToWatchlist(row: ScreenerJudgement) {
+  if (!detailRunId.value) return
+  watchlistRunId.value = detailRunId.value
+  try {
+    const r = await watchlistMutation.mutateAsync({ tickers: [row.ticker] })
+    if (r.added.length) ElMessage.success(`${row.name} 已加入自选`)
+    else if (r.already.length) ElMessage.info(`${row.name} 已在自选中`)
+    else ElMessage.warning(`${row.name} 缺少公司记录，无法加入自选`)
+  } catch (e: any) {
+    ElMessage.error(e.message || '加入自选失败')
+  }
+}
+
 async function pushToResearch(run: ScreenerRunSummary) {
   handoffRunId.value = run.id
   try {
@@ -693,10 +733,11 @@ async function removeSavedPortfolio(p: ScreenerSavedPortfolio) {
             </el-table-column>
             <el-table-column label="候选" prop="candidate_count" width="70" />
             <el-table-column label="推荐" prop="result_count" width="70" />
-            <el-table-column label="报告" width="110">
+            <el-table-column label="报告" width="150">
               <template #default="{ row }">
                 <el-button v-if="row.report_path" size="small" link type="primary" @click.stop="viewReport(row)">查看</el-button>
                 <el-button size="small" link @click.stop="exportRun(row)">CSV</el-button>
+                <el-button size="small" link @click.stop="viewDetail(row)">明细</el-button>
               </template>
             </el-table-column>
             <el-table-column label="变化" width="70">
@@ -777,6 +818,56 @@ async function removeSavedPortfolio(p: ScreenerSavedPortfolio) {
         </div>
       </template>
       <div class="report-md" v-html="diffHtml" />
+    </el-card>
+
+    <el-card v-if="detailRunId" class="mt-3">
+      <template #header>
+        <div class="card-header">
+          <span>运行明细 {{ detailRunId.slice(0, 8) }}（{{ detailData?.judgements?.length || 0 }} 只）</span>
+          <el-button size="small" link @click="detailRunId = null">关闭</el-button>
+        </div>
+      </template>
+      <el-table :data="detailData?.judgements || []" size="small" max-height="380">
+        <el-table-column label="代码" prop="ticker" width="80" />
+        <el-table-column label="名称" prop="name" width="100" />
+        <el-table-column label="结论" width="90">
+          <template #default="{ row }">
+            <el-tag size="small" :type="(verdictLabel[row.verdict]?.type as any) || 'info'">
+              {{ verdictLabel[row.verdict]?.label || row.verdict || '-' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="置信度" width="75">
+          <template #default="{ row }">{{ row.confidence ?? '-' }}</template>
+        </el-table-column>
+        <el-table-column label="行业" width="90">
+          <template #default="{ row }">{{ row.snapshot?.industry || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="现价" width="80">
+          <template #default="{ row }">{{ row.snapshot?.price ?? '-' }}</template>
+        </el-table-column>
+        <el-table-column label="理由/错误" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ row.error || (row.reasons || []).join('；') || '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="110">
+          <template #default="{ row }">
+            <el-button
+              v-if="row.status === 'ok' && row.recommend"
+              size="small" link type="primary"
+              :loading="handoffMutation.isPending.value && handoffRunId === detailRunId"
+              @click.stop="pushOneToResearch(row)"
+            >送入</el-button>
+            <el-button
+              v-if="row.status === 'ok' && row.recommend"
+              size="small" link
+              :loading="watchlistMutation.isPending.value && watchlistRunId === detailRunId"
+              @click.stop="addOneToWatchlist(row)"
+            >自选</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
     </el-card>
 
     <el-card v-if="portfolioRunId" class="mt-3">

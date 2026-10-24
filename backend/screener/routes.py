@@ -86,6 +86,13 @@ class ToResearchParams(BaseModel):
     limit: int = Field(default=5, ge=1, le=50)
 
 
+class WatchlistParams(BaseModel):
+    """POST /runs/{id}/watchlist body。"""
+
+    tickers: list[str] | None = None
+    limit: int = Field(default=50, ge=1, le=500)
+
+
 def _preset_json(p: CriteriaPreset) -> dict:
     return {
         "id": str(p.id), "name": p.name, "description": p.description,
@@ -650,6 +657,25 @@ async def to_research(
         )
     except ValueError as e:
         raise NotFoundError("ScreenerRun", str(run_id)) from e
+
+
+@router.post("/runs/{run_id}/watchlist")
+async def push_to_watchlist(
+    run_id: uuid.UUID,
+    params: WatchlistParams,
+    db: AsyncSession = Depends(get_db),
+):
+    """把推荐股（或指定 ticker）加入自选（Company.is_active=True），幂等。"""
+    from screener.actions import add_to_watchlist
+
+    try:
+        result = await add_to_watchlist(
+            db, run_id, tickers=params.tickers, limit=params.limit
+        )
+    except ValueError as e:
+        raise NotFoundError("ScreenerRun", str(run_id)) from e
+    await db.commit()
+    return result
 
 
 @router.get("/criteria")

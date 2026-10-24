@@ -165,6 +165,29 @@ class TestExportAndSchedule:
         assert text.startswith("代码,名称,结论,推荐")
         assert "300750" in text and "宁德时代" in text
 
+    def test_push_recommendation_to_watchlist(self, client: TestClient, screener_env):
+        company = client.post(
+            "/api/v1/companies",
+            json={"ticker": "300750", "name": "宁德时代"},
+        ).json()
+        client.patch(
+            f"/api/v1/companies/{company['id']}", json={"is_active": False}
+        )
+        run = _run_screener_run(client, client.post("/api/v1/screener/runs").json())
+
+        resp = client.post(
+            f"/api/v1/screener/runs/{run['id']}/watchlist",
+            json={"tickers": ["300750"]},
+        )
+        assert resp.status_code == 200, resp.text
+        assert [x["ticker"] for x in resp.json()["added"]] == ["300750"]
+        again = client.post(
+            f"/api/v1/screener/runs/{run['id']}/watchlist",
+            json={"tickers": ["300750"]},
+        )
+        assert again.json()["added"] == []
+        assert [x["ticker"] for x in again.json()["already"]] == ["300750"]
+
     def test_diff_with_explicit_base(self, client: TestClient, screener_env):
         first = _run_screener_run(client, client.post("/api/v1/screener/runs").json())
         second = _run_screener_run(client, client.post("/api/v1/screener/runs").json())

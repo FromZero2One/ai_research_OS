@@ -610,6 +610,7 @@ POST /api/v1/screener/backtests             # 触发预设回测（Body: {"prese
 GET  /api/v1/screener/backtests/{id}        # 回测详情（含 split_sample）
 GET  /api/v1/screener/backtests/{id}/report # 回测 Markdown 报告
 POST /api/v1/screener/runs/{id}/to-research # 推荐股 → 研究中心会话（Body 可选 {"tickers": [...], "limit": 5}）
+POST /api/v1/screener/runs/{id}/watchlist    # 推荐股 → 自选（Body 可选 {"tickers": [...], "limit": 50}）
 ```
 
 > 全流程约 2-10 分钟（全市场快照 + 财务补采 + LLM 深判）。报告落 `backend/screener/reports/`。
