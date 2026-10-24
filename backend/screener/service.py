@@ -18,6 +18,7 @@ from core.event_service import EventLogger
 from core.logging import logger
 from screener import screening
 from screener.criteria import read_criteria
+from screener.errors import ScreenerCancelled
 from screener.industry_ranking import compute_industry_percentiles
 from screener.judge import judge_candidates
 from screener.models import ScreenerJudgement, ScreenerRun
@@ -71,6 +72,21 @@ async def _reload_financials(
             )
         )
     return financials
+
+
+ACTIVE_STATUSES = ("pending", "screening", "judging", "cancelling")
+
+
+async def cancellation_requested(run_id: uuid.UUID) -> bool:
+    """供并发深判任务安全地轮询取消请求（进程内事件，无 DB 并发问题）。"""
+    from screener.cancel import is_cancelled
+
+    return is_cancelled(run_id)
+
+
+async def _check_cancelled(run_id: uuid.UUID) -> None:
+    if await cancellation_requested(run_id):
+        raise ScreenerCancelled()
 
 
 _SNAPSHOT_METRICS = frozenset({"price", "turnover", "market_cap"})
@@ -283,7 +299,7 @@ async def trigger_run(
     active = (
         await db.execute(
             select(ScreenerRun)
-            .where(ScreenerRun.status.in_(["pending", "screening", "judging"]))
+            .where(ScreenerRun.status.in_(ACTIVE_STATUSES))
             .limit(1)
         )
     ).scalar_one_or_none()
@@ -369,6 +385,17 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
     run = (
         await db.execute(select(ScreenerRun).where(ScreenerRun.id == run_id))
     ).scalar_one()
+    if run.status in ("cancelling", "cancelled"):
+        # 排队期间已被取消：worker 启动后直接收尾，不再执行流水线
+        from screener.cancel import clear_cancel
+
+        run.status = "cancelled"
+        run.error = "已取消"
+        run.finished_at = _now()
+        await db.flush()
+        await db.commit()
+        clear_cancel(run.id)
+        return run
     run.status = "screening"
     run.started_at = _now()
     await db.flush()
@@ -403,6 +430,7 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
 
         # ② 确定性初筛：全市场快照 → 股票池过滤 → 量化规则 → 排名截断
         spot = await screening.fetch_market_spot()
+        await _check_cancelled(run.id)
         spot_taken_at = _local_now_text()
         from company.models import Company
 
@@ -431,6 +459,7 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
         check_metrics = required_data_metrics(needed_metrics)
         load_metrics = required_data_metrics(needed_metrics | _RANKING_METRICS)
         await _ensure_market_data(db, load_metrics)
+        await _check_cancelled(run.id)
         # 按「所需指标 × 最新报告期」过滤加载（全市场多期数据全量加载不可持续）
         _date, _year, _period = _latest_fiscal()
         financials = await _reload_financials(
@@ -496,6 +525,7 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
                 rules.get("candidate_limit", 50),
             )
         run.candidate_count = len(candidates)
+        await _check_cancelled(run.id)
         run.status = "judging"
         await db.flush()
         await db.commit()
@@ -526,14 +556,17 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
                 llm, candidates, run.criteria_text, knowledge=knowledge,
                 qualitative=qualitative,
                 financials_by_ticker=financials,
+                should_stop=lambda: cancellation_requested(run.id),
             )
         else:
             judgements = [_auto_pass_judgement(c) for c in candidates]
+        await _check_cancelled(run.id)
         for j in judgements:
             db.add(ScreenerJudgement(run_id=run.id, **j))
         await db.flush()
 
         # ④ 报告落盘 + 收尾
+        await _check_cancelled(run.id)
         report = build_report(
             {"id": str(run.id), "candidate_count": run.candidate_count,
              "result_count": sum(1 for j in judgements if j.get("recommend") is True),
@@ -558,6 +591,16 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
             entity_type="screener_run", entity_id=str(run.id),
             summary=f"选股完成：候选 {run.candidate_count}，推荐 {run.result_count}",
         )
+    except ScreenerCancelled:
+        run.status = "cancelled"
+        run.error = "已取消"
+        run.finished_at = _now()
+        logger.info("选股运行已取消 %s", run_id)
+        await EventLogger(db).record(
+            source="screener", event_type="screener.cancelled",
+            entity_type="screener_run", entity_id=str(run.id),
+            summary="用户取消运行",
+        )
     except Exception as e:  # noqa: BLE001 — 全链路兜底：失败要可见
         run.status = "failed"
         run.error = str(e)
@@ -569,6 +612,9 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
         )
     await db.flush()
     await db.commit()
+    from screener.cancel import clear_cancel
+
+    clear_cancel(run.id)
     return run
 
 

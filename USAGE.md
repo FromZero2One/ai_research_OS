@@ -597,6 +597,7 @@ GET  /api/v1/screener/presets              # 预设列表（含内置）
 POST /api/v1/screener/runs                 # Body: {"mode": "presets", "pool": "all", "preset_ids": [...], "combine": "union"}
 GET  /api/v1/screener/runs/{id}            # 运行详情（含逐只判断）
 GET  /api/v1/screener/runs/{id}/report     # Markdown 报告
+POST /api/v1/screener/runs/{id}/cancel      # 取消进行中的筛选（阶段边界/逐只深判前生效）
 POST /api/v1/screener/runs/{id}/to-research # 推荐股 → 研究中心会话（Body 可选 {"tickers": [...], "limit": 5}）
 ```
 

@@ -5,6 +5,7 @@ import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import {
   useSaveCriteria,
+  useCancelScreenerRun,
   useScreenerCriteria,
   useScreenerMetrics,
   useScreenerPresets,
@@ -53,23 +54,38 @@ const { data: activeRun } = useScreenerRun(activeRunId, {
 })
 watch(activeStatus, (s) => {
   if (s === 'completed') ElMessage.success('筛选完成')
+  if (s === 'cancelled') ElMessage.info('筛选已取消')
   if (s === 'failed') ElMessage.error(`筛选失败：${activeRun.value?.error || '未知原因'}`)
 })
 
 // 页面刷新/从别处触发后，自动接管仍在进行中的 run，否则不会轮询
 watch(runsData, (v) => {
   if (activeRunId.value) return
-  const active = (v?.runs || []).find((r) => ['pending', 'screening', 'judging'].includes(r.status))
+  const active = (v?.runs || []).find((r) => ['pending', 'screening', 'judging', 'cancelling'].includes(r.status))
   if (active) activeRunId.value = active.id
 }, { immediate: true })
 
 const running = computed(() =>
   activeStatus.value === 'pending' || activeStatus.value === 'screening' || activeStatus.value === 'judging'
-  || (runsData.value?.runs || []).some((r) => ['pending', 'screening', 'judging'].includes(r.status)),
+  || activeStatus.value === 'cancelling'
+  || (runsData.value?.runs || []).some((r) => ['pending', 'screening', 'judging', 'cancelling'].includes(r.status)),
 )
 
+const cancelRunId = ref<string | null>(null)
+const cancelMutation = useCancelScreenerRun()
+async function cancelRun(run: ScreenerRunSummary) {
+  cancelRunId.value = run.id
+  try {
+    await cancelMutation.mutateAsync(run.id)
+    ElMessage.info('已请求取消，运行会在当前步骤结束后停止')
+    if (activeRunId.value === run.id) activeRunId.value = run.id
+  } catch (e: any) {
+    ElMessage.error(e.message || '取消失败')
+  }
+}
+
 watch(activeRun, (run) => {
-  if (run && (run.status === 'completed' || run.status === 'failed')) {
+  if (run && (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled')) {
     refetchRuns()
   }
 }, { immediate: true })
@@ -188,6 +204,8 @@ const statusLabel: Record<string, { label: string; type: string }> = {
   pending: { label: '排队中', type: 'info' },
   screening: { label: '初筛中', type: 'warning' },
   judging: { label: '深判中', type: 'warning' },
+  cancelling: { label: '取消中', type: 'info' },
+  cancelled: { label: '已取消', type: 'info' },
   completed: { label: '已完成', type: 'success' },
   failed: { label: '失败', type: 'danger' },
 }
@@ -421,6 +439,17 @@ async function buildPortfolio() {
             <el-table-column label="组合" width="70">
               <template #default="{ row }">
                 <el-button size="small" link @click.stop="viewPortfolio(row)">组合</el-button>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="70">
+              <template #default="{ row }">
+                <el-button
+                  v-if="['pending', 'screening', 'judging', 'cancelling'].includes(row.status)"
+                  size="small" link type="danger"
+                  :disabled="row.status === 'cancelling'"
+                  :loading="cancelMutation.isPending.value && cancelRunId === row.id"
+                  @click.stop="cancelRun(row)"
+                >取消</el-button>
               </template>
             </el-table-column>
             <el-table-column label="研究" width="70">

@@ -279,3 +279,18 @@ class TestJudgeCandidates:
 
         results = await judge_candidates(IdentityLLM([]), cands, "标准文本", knowledge=None)
         assert [r["ticker"] for r in results] == [c["ticker"] for c in cands]
+
+    async def test_should_stop_cancels_before_llm_calls(self):
+        """取消回调返回 True 时立即中断，不再发起新的深判。"""
+        from screener.errors import ScreenerCancelled
+
+        async def stop() -> bool:
+            return True
+
+        cands = [{**CAND, "ticker": f"60{i:04d}", "name": f"股票{i}"} for i in range(10)]
+        llm = FakeLLM([_json_text(VALID_JUDGE)] * 10)
+        with pytest.raises(ScreenerCancelled):
+            await judge_candidates(
+                llm, cands, "标准文本", knowledge=None, should_stop=stop
+            )
+        assert llm.calls == 0

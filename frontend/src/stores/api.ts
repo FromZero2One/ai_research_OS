@@ -639,6 +639,17 @@ export function useScreenerRun(id: MaybeRefOrGetter<string | null>, opts?: { pol
 export function useTriggerScreenerRun(invalidateKeys: string[][] = [['screener-runs']]) {
   return useCreate<{ id: string; status: string }>('/screener/runs', invalidateKeys)
 }
+export function useCancelScreenerRun() {
+  const qc = useQueryClient()
+  return useMutation<{ id: string; status: string }, Error, string>({
+    mutationFn: (runId) =>
+      fetchApi(`/screener/runs/${runId}/cancel`, { method: 'POST' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['screener-runs'] })
+      qc.invalidateQueries({ queryKey: ['screener-run'] })
+    },
+  })
+}
 export function useScreenerCriteria() {
   return useGet<{ criteria: string }>(['screener-criteria'], '/screener/criteria')
 }

@@ -232,6 +232,35 @@ async def list_runs(db: AsyncSession = Depends(get_db)):
     }
 
 
+@router.post("/runs/{run_id}/cancel")
+async def cancel_run(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """请求取消运行：worker 在阶段边界/下一只深判前 cooperative 停止。"""
+    from screener.service import ACTIVE_STATUSES
+
+    run = (
+        await db.execute(select(ScreenerRun).where(ScreenerRun.id == run_id))
+    ).scalar_one_or_none()
+    if run is None:
+        raise NotFoundError("ScreenerRun", str(run_id))
+    if run.status == "cancelling":
+        return {"id": str(run.id), "status": run.status}
+    if run.status not in ACTIVE_STATUSES:
+        return JSONResponse(
+            status_code=409, content={"error": f"运行已结束（{run.status}），无法取消"}
+        )
+    run.status = "cancelling"
+    from screener.cancel import request_cancel
+
+    request_cancel(run.id)
+    await EventLogger(db).record(
+        source="screener", event_type="screener.cancel_requested",
+        entity_type="screener_run", entity_id=str(run.id),
+        summary="用户请求取消运行",
+    )
+    await db.commit()
+    return {"id": str(run.id), "status": run.status}
+
+
 @router.get("/runs/{run_id}")
 async def get_run(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     """运行详情 + 深判结果列表。"""

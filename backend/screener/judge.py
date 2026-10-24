@@ -366,6 +366,7 @@ async def judge_candidates(
     qualitative: list[str] | None = None,
     financials_by_ticker: dict[str, list] | None = None,
     max_concurrency: int = _DEFAULT_MAX_CONCURRENCY,
+    should_stop=None,
 ) -> list[dict]:
     """并发深判；单只失败 → 该只 status=failed，其余不受影响。
 
@@ -373,17 +374,32 @@ async def judge_candidates(
     financials_by_ticker 提供候选的最新财务指标（进入深判上下文）。
     max_concurrency 限制同时在途的 LLM 调用数（Semaphore）。
     结果顺序与输入顺序一致（asyncio.gather 保序）。
+    should_stop 为异步回调：返回 True 时中断剩余深判并抛 ScreenerCancelled
+    （已开始的 LLM 调用会被取消）。
     """
+    from screener.errors import ScreenerCancelled
+
     criteria = qualitative or [criteria_text]
     semaphore = asyncio.Semaphore(max_concurrency)
 
     async def _judge_with_limits(cand: dict) -> dict:
         async with semaphore:
+            if should_stop is not None and await should_stop():
+                raise ScreenerCancelled()
             return await _judge_single(
                 llm, cand, criteria, criteria_text, knowledge, financials_by_ticker
             )
 
-    return list(await asyncio.gather(*(_judge_with_limits(c) for c in candidates)))
+    tasks = [
+        asyncio.create_task(_judge_with_limits(c)) for c in candidates
+    ]
+    try:
+        return list(await asyncio.gather(*tasks))
+    except ScreenerCancelled:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
 
 
 def _snapshot_fields(cand: dict) -> dict:

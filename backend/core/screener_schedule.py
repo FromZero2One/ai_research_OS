@@ -15,7 +15,7 @@ from core.database import managed_session
 from core.event_service import EventLogger
 from core.logging import logger
 
-_ACTIVE = ("pending", "screening", "judging")
+_ACTIVE = ("pending", "screening", "judging", "cancelling")
 
 
 async def _run_one(db, preset, tag: str) -> dict:
