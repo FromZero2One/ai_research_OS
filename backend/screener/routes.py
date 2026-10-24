@@ -74,6 +74,13 @@ class PortfolioParams(BaseModel):
     max_holdings: int = Field(default=20, ge=1, le=100)
 
 
+class ToResearchParams(BaseModel):
+    """POST /runs/{id}/to-research body。"""
+
+    tickers: list[str] | None = None
+    limit: int = Field(default=5, ge=1, le=50)
+
+
 def _preset_json(p: CriteriaPreset) -> dict:
     return {
         "id": str(p.id), "name": p.name, "description": p.description,
@@ -343,6 +350,23 @@ async def build_portfolio(
     except ValueError as e:
         return JSONResponse(status_code=422, content={"error": str(e)})
     return {"run_id": str(run.id), **result}
+
+
+@router.post("/runs/{run_id}/to-research")
+async def to_research(
+    run_id: uuid.UUID,
+    params: ToResearchParams,
+    db: AsyncSession = Depends(get_db),
+):
+    """为推荐股创建研究中心会话（默认取置信度最高的 5 只，不自动规划）。"""
+    from screener.handoff import create_research_sessions
+
+    try:
+        return await create_research_sessions(
+            db, run_id, tickers=params.tickers, limit=params.limit
+        )
+    except ValueError as e:
+        raise NotFoundError("ScreenerRun", str(run_id)) from e
 
 
 @router.get("/criteria")

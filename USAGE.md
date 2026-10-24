@@ -597,6 +597,7 @@ GET  /api/v1/screener/presets              # 预设列表（含内置）
 POST /api/v1/screener/runs                 # Body: {"mode": "presets", "pool": "all", "preset_ids": [...], "combine": "union"}
 GET  /api/v1/screener/runs/{id}            # 运行详情（含逐只判断）
 GET  /api/v1/screener/runs/{id}/report     # Markdown 报告
+POST /api/v1/screener/runs/{id}/to-research # 推荐股 → 研究中心会话（Body 可选 {"tickers": [...], "limit": 5}）
 ```
 
 > 全流程约 2-10 分钟（全市场快照 + 财务补采 + LLM 深判）。报告落 `backend/screener/reports/`。

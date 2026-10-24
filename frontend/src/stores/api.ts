@@ -738,6 +738,22 @@ export function useScreenerPortfolio(id: MaybeRefOrGetter<string | null>) {
       }),
   })
 }
+
+export interface ScreenerHandoffResult {
+  run_id: string
+  created: { session_id: string; ticker: string; name: string }[]
+  skipped: { ticker: string; name: string; reason: string }[]
+  requested: number
+}
+export function usePushScreenerToResearch(id: MaybeRefOrGetter<string | null>) {
+  return useMutation<ScreenerHandoffResult, Error, { limit?: number; tickers?: string[] }>({
+    mutationFn: (payload) =>
+      fetchApi(`/screener/runs/${toValue(id) ?? ''}/to-research`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+  })
+}
 export function useScreenerRules() {
   return useGet<{ rules: Record<string, any> | null; criteria_hash?: string }>(['screener-rules'], '/screener/rules')
 }

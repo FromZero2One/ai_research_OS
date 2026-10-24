@@ -8,6 +8,7 @@ import {
   useScreenerCriteria,
   useScreenerMetrics,
   useScreenerPresets,
+  usePushScreenerToResearch,
   useScreenerPortfolio,
   useScreenerRun,
   useScreenerRunDiff,
@@ -256,6 +257,20 @@ function viewPortfolio(run: ScreenerRunSummary) {
   portfolioResult.value = null
 }
 
+const handoffRunId = ref<string | null>(null)
+const handoffMutation = usePushScreenerToResearch(handoffRunId)
+
+async function pushToResearch(run: ScreenerRunSummary) {
+  handoffRunId.value = run.id
+  try {
+    const result = await handoffMutation.mutateAsync({ limit: 5 })
+    const skipped = result.skipped.length ? `，跳过 ${result.skipped.length} 只` : ''
+    ElMessage.success(`已创建 ${result.created.length} 个研究会话${skipped}`)
+  } catch (e: any) {
+    ElMessage.error(e.message || '送入研究失败')
+  }
+}
+
 async function buildPortfolio() {
   try {
     portfolioResult.value = await portfolioMutation.mutateAsync({ ...portfolioParams.value })
@@ -406,6 +421,15 @@ async function buildPortfolio() {
             <el-table-column label="组合" width="70">
               <template #default="{ row }">
                 <el-button size="small" link @click.stop="viewPortfolio(row)">组合</el-button>
+              </template>
+            </el-table-column>
+            <el-table-column label="研究" width="70">
+              <template #default="{ row }">
+                <el-button
+                  size="small" link type="primary"
+                  :loading="handoffMutation.isPending.value && handoffRunId === row.id"
+                  @click.stop="pushToResearch(row)"
+                >送入</el-button>
               </template>
             </el-table-column>
           </el-table>
