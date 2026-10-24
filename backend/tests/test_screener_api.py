@@ -205,6 +205,26 @@ class TestExportAndSchedule:
         )
         assert bad.status_code == 422
 
+    def test_performance_snapshot_and_history(self, client: TestClient, screener_env):
+        run = _run_screener_run(client, client.post("/api/v1/screener/runs").json())
+        first = client.post(
+            f"/api/v1/screener/runs/{run['id']}/performance/snapshot"
+        )
+        assert first.status_code == 200, first.text
+        data = first.json()
+        assert data["run_id"] == run["id"]
+        assert "summary" in data and data["as_of"]
+        # 同日重复 → 覆盖同一条，不新增
+        second = client.post(
+            f"/api/v1/screener/runs/{run['id']}/performance/snapshot"
+        )
+        assert second.json()["id"] == data["id"]
+        history = client.get(
+            f"/api/v1/screener/runs/{run['id']}/performance/history"
+        )
+        assert history.status_code == 200
+        assert len(history.json()["snapshots"]) == 1
+
     def test_data_quality(self, client: TestClient):
         resp = client.get("/api/v1/screener/data-quality")
         assert resp.status_code == 200

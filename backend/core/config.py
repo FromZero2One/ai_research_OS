@@ -118,6 +118,7 @@ class Settings(BaseSettings):
     SCREENER_WEBHOOK_FORMAT: str = "generic"  # generic | wecom | feishu | dingtalk
     SCREENER_WEBHOOK_TIMEOUT: float = 10.0
     SCREENER_WEBHOOK_NOTIFY_ON: str = "changes"  # changes | always
+    PERFORMANCE_SNAPSHOT_SCHEDULE: str = "10 17 * * 1-5"  # Weekdays after close
     REPORT_SCHEDULE: str = "0 6 * * 1-5"  # Weekdays 6am
     OBSERVATION_SCHEDULE: str = "30 5 * * 1-5"  # Weekdays 5:30am (before brief)
     EVENT_LOG_CLEANUP_SCHEDULE: str = "0 3 * * 1"  # Weekly Monday 3am

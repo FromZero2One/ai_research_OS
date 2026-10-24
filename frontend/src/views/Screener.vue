@@ -20,6 +20,8 @@ import {
   useScreenerRun,
   useScreenerRunDiff,
   useScreenerRunPerformance,
+  useScreenerPerformanceHistory,
+  useSnapshotScreenerPerformance,
   useScreenerRunReport,
   useRunScreenerSchedule,
   useScreenerRuns,
@@ -358,6 +360,17 @@ function viewDiff(run: ScreenerRunSummary) {
 // ── 推荐后表现 ──
 const viewingPerfRunId = ref<string | null>(null)
 const { data: perfData } = useScreenerRunPerformance(viewingPerfRunId)
+const { data: perfHistory } = useScreenerPerformanceHistory(viewingPerfRunId)
+const snapshotMutation = useSnapshotScreenerPerformance()
+async function savePerformanceSnapshot() {
+  if (!viewingPerfRunId.value) return
+  try {
+    await snapshotMutation.mutateAsync(viewingPerfRunId.value)
+    ElMessage.success('已记录今日表现快照')
+  } catch (e: any) {
+    ElMessage.error(e.message || '快照保存失败')
+  }
+}
 const perf = computed(() => perfData.value)
 const perfSummaryRows = computed(() => {
   const summary = perf.value?.summary || {}
@@ -999,7 +1012,14 @@ async function removeSavedPortfolio(p: ScreenerSavedPortfolio) {
       <template #header>
         <div class="card-header">
           <span>推荐后表现</span>
-          <el-button size="small" link @click="viewingPerfRunId = null">关闭</el-button>
+          <div class="flex items-center gap-2">
+            <el-button
+              size="small" link type="primary"
+              :loading="snapshotMutation.isPending.value"
+              @click="savePerformanceSnapshot"
+            >记录快照</el-button>
+            <el-button size="small" link @click="viewingPerfRunId = null">关闭</el-button>
+          </div>
         </div>
       </template>
       <template v-if="perf">
@@ -1045,6 +1065,24 @@ async function removeSavedPortfolio(p: ScreenerSavedPortfolio) {
           </el-table-column>
         </el-table>
         <div v-if="perf.message" class="text-secondary mt-2">{{ perf.message }}</div>
+        <div class="section-label mt-3">历史快照（每个交易日一条）</div>
+        <el-table :data="perfHistory?.snapshots || []" size="small" max-height="220">
+          <el-table-column label="日期" prop="as_of" width="110" />
+          <el-table-column label="当前平均" width="100">
+            <template #default="{ row }">{{ formatPct(row.summary?.current?.avg_return) }}</template>
+          </el-table-column>
+          <el-table-column label="胜率" width="90">
+            <template #default="{ row }">{{ formatPct(row.summary?.current?.hit_rate) }}</template>
+          </el-table-column>
+          <el-table-column label="样本" width="70">
+            <template #default="{ row }">{{ row.summary?.current?.count ?? 0 }}</template>
+          </el-table-column>
+          <el-table-column label="买入价覆盖">
+            <template #default="{ row }">
+              {{ row.meta?.with_entry_price ?? 0 }}/{{ row.meta?.recommended_count ?? 0 }}
+            </template>
+          </el-table-column>
+        </el-table>
       </template>
     </el-card>
   </div>

@@ -119,6 +119,8 @@ ALL_PROXY= all_proxy= PYTHONPATH=. ./.venv/Scripts/python.exe -X utf8 scripts/ev
 
 `GET /api/v1/screener/runs/{run_id}/performance`：按 **T+1 收盘价**（运行日之后首个交易日）作为买入价，计算每只推荐股在 1/3/6/12 个月的收益与当前收益；等权汇总平均收益、胜率、样本数；同时拉沪深300同期限收益，汇总增加基准与超额（基准不可用时自动省略）。前端历史运行表新增「表现」按钮。日线覆盖不足的票标记 `no_entry_price`；随着行情采集推进覆盖率会提升。
 
+**表现快照（2026-10-24）**：表 `screener.performance_snapshots`（迁移 `e9f0a1b2c3d4`，`(run_id, as_of)` 唯一）按自然日保存表现汇总与个股明细。`POST /api/v1/screener/runs/{run_id}/performance/snapshot` 计算并保存当日快照（同日重复调用幂等覆盖），`GET /api/v1/screener/runs/{run_id}/performance/history` 返回历史快照。`core/performance_schedule.py` 按 `PERFORMANCE_SNAPSHOT_SCHEDULE`（默认工作日 17:10）为最近 30 天完成的运行自动记录快照；也可用 `POST /api/v1/scheduler/run/performance_snapshot` 手动触发。前端表现面板新增「记录快照」与历史快照表。
+
 ### 选股 → 研究中心交接（2026-10-24）
 
 `POST /api/v1/screener/runs/{run_id}/to-research`：把该轮**推荐股**创建为研究中心会话（`screener/handoff.py`）。body 可选 `tickers`（只挑指定票）与 `limit`（默认 5，≤50）；不传则按深判置信度从高到低取前 `limit` 只。会话 `auto_plan=False`，tag 为 `["screener", run_id]`，metadata 记录 `screener_run_id` / `screener_ticker`；同一 run 下同一 ticker 重复调用会跳过。返回 `{run_id, created, skipped, requested}`。前端历史运行表新增「送入」按钮。
@@ -229,6 +231,7 @@ PYTHONPATH=. python scripts/seed_data.py
 | | `SCREENER_WEBHOOK_URL` | 空（禁用） | 企微/飞书/钉钉群机器人 URL |
 | | `SCREENER_WEBHOOK_FORMAT` | `generic`（另支持 wecom/feishu/dingtalk） | — |
 | | `SCREENER_WEBHOOK_NOTIFY_ON` | `changes`（或 `always`） | — |
+| | `PERFORMANCE_SNAPSHOT_SCHEDULE` | `10 17 * * 1-5` | — |
 | 回测 | `BACKTEST_COMMISSION_RATE` | 0.0003（单边万三） | — |
 | | `BACKTEST_STAMP_DUTY_RATE` | 0.0005（卖出） | — |
 | | `BACKTEST_SLIPPAGE_RATE` | 0.001（单边千一） | — |
@@ -262,11 +265,11 @@ Ollama 版本过旧（<0.3.0）时 `/api/embed` 不可用，Embedding 降级为 
 
 `core/task_manager.py`：PostgreSQL 持久化 `core.task_records` + worker 循环 + 自动重试 + `(type,key)` 去重 + 启动恢复。快速研究（`research/quick.py`）通过它后台跑 计划→搜集→报告 链，SSE 推流进度。
 
-APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工作日 2:00）、`financial_data_update`（工作日 3:15，全市场财务三表刷新，三类数据源 SAVEPOINT 隔离）、`screener_schedule`（工作日 16:30，定时选股 + 变化日报）、`observation_cycle`（工作日 5:30）、`event_log_cleanup`（周一 3:00）。状态见 `GET /api/v1/scheduler/status`。
+APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工作日 2:00）、`financial_data_update`（工作日 3:15，全市场财务三表刷新，三类数据源 SAVEPOINT 隔离）、`screener_schedule`（工作日 16:30，定时选股 + 变化日报）、`performance_snapshot`（工作日 17:10，最近运行表现快照）、`observation_cycle`（工作日 5:30）、`event_log_cleanup`（周一 3:00）。状态见 `GET /api/v1/scheduler/status`。
 
 ## 测试
 
 ```bash
 make test        # pytest，专用 airesearch_test 库 + 隔离 Qdrant 集合
 ```
-当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **318 passed**。
+当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **319 passed**。

@@ -745,6 +745,33 @@ export function useScreenerRunPerformance(id: MaybeRefOrGetter<string | null>) {
   )
 }
 
+export interface ScreenerPerformanceSnapshot {
+  id: string
+  run_id: string
+  as_of: string
+  summary: Record<string, any>
+  meta: Record<string, any>
+  created_at: string | null
+}
+export function useScreenerPerformanceHistory(id: MaybeRefOrGetter<string | null>) {
+  return useGet<{ snapshots: ScreenerPerformanceSnapshot[] }>(
+    computed(() => ['screener-performance-history', toValue(id) ?? '']),
+    computed(() =>
+      toValue(id) ? `/screener/runs/${toValue(id)}/performance/history` : ''
+    ),
+  )
+}
+export function useSnapshotScreenerPerformance() {
+  const qc = useQueryClient()
+  return useMutation<ScreenerPerformanceSnapshot, Error, string>({
+    mutationFn: (runId) =>
+      fetchApi(`/screener/runs/${runId}/performance/snapshot`, { method: 'POST' }),
+    onSuccess: (row) => {
+      qc.invalidateQueries({ queryKey: ['screener-performance-history', row.run_id] })
+    },
+  })
+}
+
 export interface ScreenerPortfolioHolding {
   ticker: string
   name: string | null

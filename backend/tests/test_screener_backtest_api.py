@@ -156,6 +156,7 @@ class TestBacktestAPI:
         from core.task_manager import _task_handlers
 
         assert "screener_backtest" in _task_handlers
+        assert "screener_performance_snapshot" in _task_handlers
 
     async def test_handler_parses_uuid(self, monkeypatch):
         """后台 handler 必须能把字符串 run_id 转为 UUID（曾 NameError: uuid）。"""

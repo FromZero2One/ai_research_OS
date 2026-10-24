@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Float, ForeignKey, Index, String, Text, UniqueConstraint, text
+from datetime import date as _date
+
+from sqlalchemy import Date, Float, ForeignKey, Index, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -145,3 +147,24 @@ class ScreenerPortfolio(Base, UUIDMixin, TimestampMixin):
     name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     params: Mapped[dict] = mapped_column(JSONB, nullable=False)
     result: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+
+class ScreenerPerformanceSnapshot(Base, UUIDMixin, TimestampMixin):
+    """推荐后表现的定期快照（同一 run 每日一条，幂等 upsert）。"""
+
+    __tablename__ = "performance_snapshots"
+    __table_args__ = (
+        UniqueConstraint("run_id", "as_of", name="uq_perf_snapshot_run_date"),
+        {"schema": "screener"},
+    )
+
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("screener.screener_runs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    as_of: Mapped[_date] = mapped_column(Date, nullable=False)
+    summary: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    stocks: Mapped[list] = mapped_column(JSONB, nullable=False)
+    meta: Mapped[dict] = mapped_column(JSONB, nullable=False)

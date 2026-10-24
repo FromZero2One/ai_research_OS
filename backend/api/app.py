@@ -103,6 +103,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # 持久任务 handler 必须在 worker 启动前导入注册；否则只有被路由/容器
     # 首次间接导入的 handler 生效（例如回测任务曾因此报 no handler）。
+    import core.performance_schedule  # noqa: F401
     import screener.backtest_service  # noqa: F401
     import screener.service  # noqa: F401
 
@@ -124,12 +125,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         from core.financial_sync import financial_data_update
         from core.market_sync import market_data_update
         from core.observation_engine import run_observation_cycle
+        from core.performance_schedule import scheduled_performance_snapshot
         from core.scheduler import register_job, start_scheduler
         from core.screener_schedule import scheduled_screener_update
 
         register_job("market_data_update", market_data_update)
         register_job("financial_data_update", financial_data_update)
         register_job("screener_schedule", scheduled_screener_update)
+        register_job("performance_snapshot", scheduled_performance_snapshot)
         register_job("observation_cycle", run_observation_cycle)
         register_job("event_log_cleanup", event_log_cleanup)
         start_scheduler()
