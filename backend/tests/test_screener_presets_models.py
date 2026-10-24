@@ -95,12 +95,21 @@ async def test_metric_def_seeds_exist(test_session: AsyncSession):
         "cfo_to_ni": "derived",
         "cfo_to_revenue": "derived",
         "accrual_ratio": "derived",
+        "roic": "main_finance",
+        "interest_coverage": "main_finance",
+        "cash_ratio": "main_finance",
+        "fcff": "main_finance",
+        "cfo_to_operating_profit": "main_finance",
+        "tax_rate": "main_finance",
+        "interest_debt_ratio": "main_finance",
+        "peg": "derived",
+        "fcf_yield": "derived",
     }
     for key, source in expected_sources.items():
         assert key in by_key, f"缺少指标种子: {key}"
         assert by_key[key].data_source == source, f"{key} data_source 应为 {source}"
-    # 原 16 条 + 2 成长 + 3 估值 + 3 盈利质量
-    assert len(rows) >= 24
+    # 原 16 + 2 成长 + 3 估值 + 3 盈利质量 + 9 因子深度
+    assert len(rows) >= 33
 
 
 async def test_value_preset_has_valuation_rules(test_session: AsyncSession):

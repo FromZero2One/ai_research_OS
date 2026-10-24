@@ -61,6 +61,43 @@ BUILTIN_METRICS: list[dict] = [
         "data_source": "derived",
         "description": "(TTM 净利润 - TTM 经营现金流) / 最新总资产 × 100（越低越好）",
     },
+    # 因子深度（F10 主要指标直接提供）
+    {
+        "key": "roic", "name_cn": "投入资本回报率(%)", "category": "quality",
+        "data_source": "main_finance", "description": "ROIC，衡量资本使用效率",
+    },
+    {
+        "key": "interest_coverage", "name_cn": "利息保障倍数", "category": "solvency",
+        "data_source": "main_finance", "description": "息税前利润 / 利息费用",
+    },
+    {
+        "key": "cash_ratio", "name_cn": "现金比率", "category": "solvency",
+        "data_source": "main_finance", "description": "货币资金 / 流动负债",
+    },
+    {
+        "key": "fcff", "name_cn": "自由现金流(元)", "category": "cashflow",
+        "data_source": "main_finance", "description": "F10 FCFF（企业自由现金流，历史口径）",
+    },
+    {
+        "key": "cfo_to_operating_profit", "name_cn": "现金流/营业利润(倍)", "category": "quality",
+        "data_source": "main_finance", "description": "经营现金流 / 营业利润",
+    },
+    {
+        "key": "tax_rate", "name_cn": "实际税率(%)", "category": "quality",
+        "data_source": "main_finance", "description": "所得税 / 税前利润",
+    },
+    {
+        "key": "interest_debt_ratio", "name_cn": "有息负债率(%)", "category": "solvency",
+        "data_source": "main_finance", "description": "有息负债 / 总资产",
+    },
+    {
+        "key": "peg", "name_cn": "PEG(倍)", "category": "valuation",
+        "data_source": "derived", "description": "PE / 净利润同比增速（增速≤0 时无数据）",
+    },
+    {
+        "key": "fcf_yield", "name_cn": "FCF收益率(%)", "category": "valuation",
+        "data_source": "derived", "description": "FCFF / 总市值 × 100",
+    },
 ]
 
 # ── 内置预设（五套通用 + 金融行业专属）────────────────────────────────
@@ -73,6 +110,7 @@ BUILTIN_PRESETS: list[dict] = [
         "style_tag": "core",
         "quant_rules": [
             {"metric": "roe", "op": ">", "value": 15, "missing_data_policy": _EX},
+            {"metric": "roic", "op": ">", "value": 10, "missing_data_policy": _EX},
             {"metric": "net_margin", "op": ">", "value": 10, "missing_data_policy": _EX},
             {"metric": "cfo_to_ni", "op": ">", "value": 0.8, "missing_data_policy": _EX},
             {"metric": "debt_to_equity", "op": "<", "value": 50, "missing_data_policy": _EX},
@@ -91,6 +129,7 @@ BUILTIN_PRESETS: list[dict] = [
             {"metric": "roe", "op": ">", "value": 12, "missing_data_policy": _EX},
             {"metric": "net_margin", "op": ">", "value": 8, "missing_data_policy": _EX},
             {"metric": "cfo_to_ni", "op": ">", "value": 0.5, "missing_data_policy": _EX},
+            {"metric": "peg", "op": "<", "value": 2, "missing_data_policy": _EX},
             {"metric": "market_cap", "op": ">", "value": 1e10, "missing_data_policy": _EX},
         ],
         "qualitative": ["所处行业渗透率持续提升", "增长由主营业务驱动", "细分行业排名前二"],
@@ -104,6 +143,7 @@ BUILTIN_PRESETS: list[dict] = [
             {"metric": "debt_to_equity", "op": "<", "value": 40, "missing_data_policy": _EX},
             {"metric": "current_ratio", "op": ">", "value": 2, "missing_data_policy": _EX},
             {"metric": "cfo_to_ni", "op": ">", "value": 0.7, "missing_data_policy": _EX},
+            {"metric": "fcf_yield", "op": ">", "value": 0, "missing_data_policy": _EX},
             {"metric": "pe", "op": "<", "value": 25, "missing_data_policy": _EX},
             {"metric": "pb", "op": "<", "value": 3, "missing_data_policy": _EX},
             {"metric": "market_cap", "op": ">", "value": 5e9, "missing_data_policy": _EX},
@@ -117,6 +157,7 @@ BUILTIN_PRESETS: list[dict] = [
         "style_tag": "garp",
         "quant_rules": [
             {"metric": "roe", "op": ">", "value": 15, "missing_data_policy": _EX},
+            {"metric": "roic", "op": ">", "value": 10, "missing_data_policy": _EX},
             {"metric": "net_margin", "op": ">", "value": 12, "missing_data_policy": _EX},
             {"metric": "debt_to_equity", "op": "<", "value": 55, "missing_data_policy": _EX},
             {"metric": "cfo_to_ni", "op": ">", "value": 0.8, "missing_data_policy": _EX},

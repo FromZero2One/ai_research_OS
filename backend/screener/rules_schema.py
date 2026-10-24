@@ -32,6 +32,13 @@ FINANCIAL_METRICS: frozenset[str] = frozenset(
         "quick_ratio",
         "revenue_growth",
         "net_income_growth",
+        "roic",
+        "interest_coverage",
+        "cash_ratio",
+        "fcff",
+        "cfo_to_operating_profit",
+        "tax_rate",
+        "interest_debt_ratio",
     }
 )
 

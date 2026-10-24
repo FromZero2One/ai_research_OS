@@ -136,20 +136,26 @@ _METRIC_CN = {
     "total_assets": "总资产", "total_liabilities": "总负债", "eps": "每股收益",
     "cfo_to_ni": "现金流/净利润", "cfo_to_revenue": "现金流/营收",
     "accrual_ratio": "应计比率", "pe": "PE", "pb": "PB", "ps": "PS",
+    "roic": "ROIC", "interest_coverage": "利息保障",
+    "cash_ratio": "现金比率", "fcff": "自由现金流",
+    "cfo_to_operating_profit": "现金流/营业利润", "tax_rate": "税率",
+    "interest_debt_ratio": "有息负债率", "peg": "PEG", "fcf_yield": "FCF收益率",
 }
 
 _MONEY_METRICS = frozenset({
     "market_cap", "operating_cash_flow", "revenue", "net_income",
-    "total_assets", "total_liabilities",
+    "total_assets", "total_liabilities", "fcff",
 })
 _PERCENT_METRICS = frozenset({
     "roe", "gross_margin", "net_margin", "debt_to_equity",
     "revenue_growth", "net_income_growth", "turnover",
     "cfo_to_revenue", "accrual_ratio",
+    "roic", "tax_rate", "interest_debt_ratio", "fcf_yield",
 })
 _RATIO_METRICS = frozenset({
     "current_ratio", "quick_ratio", "asset_turnover",
     "inventory_turnover", "receivables_turnover", "cfo_to_ni",
+    "interest_coverage", "cash_ratio", "cfo_to_operating_profit", "peg",
 })
 # 比率类指标的常见区间；越界提示 LLM 标注异常，避免把一次性损益当成经营信号
 _ANOMALY_BOUNDS = {"net_margin": (-100.0, 100.0), "gross_margin": (-100.0, 100.0), "roe": (-100.0, 100.0)}

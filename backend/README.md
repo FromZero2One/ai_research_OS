@@ -39,9 +39,9 @@ Company → Market + Document → Knowledge(RAG) → AI → Research → Portfol
 → ③ LLM 逐只深判候选（单只失败隔离，结果落 `ScreenerJudgement` 供后续回测）
 → ④ Markdown 报告落 `screener/reports/`。
 
-**presets（v1.5）**：预设标准库驱动，零 LLM 翻译。指标定义在 `screener/seeds.py`（24 个标准化指标，含 PE/PB/PS 派生估值与 TTM 现金流质量）+ 6 套内置预设（核心资产/高成长/深度价值/GARP/周期反转 + 金融行业专属「金融价值」，只读；用户可自建）。触发时传 `preset_ids` + `combine`（union/intersection/flatten），规则纯确定性组装（`compose.py`），报告标注每只候选命中的预设（`[预设名]` 前缀 + snapshot `hits`/`presets`）。前端 `/screener` 有模式切换 + PresetManager 抽屉。
+**presets（v1.5）**：预设标准库驱动，零 LLM 翻译。指标定义在 `screener/seeds.py`（33 个标准化指标，含 PE/PB/PS 派生估值、TTM 现金流质量与 ROIC/FCFF/利息保障等因子）+ 6 套内置预设（核心资产/高成长/深度价值/GARP/周期反转 + 金融行业专属「金融价值」，只读；用户可自建）。触发时传 `preset_ids` + `combine`（union/intersection/flatten），规则纯确定性组装（`compose.py`），报告标注每只候选命中的预设（`[预设名]` 前缀 + snapshot `hits`/`presets`）。前端 `/screener` 有模式切换 + PresetManager 抽屉。
 
-估值与质量指标由 `screener/valuation.py` 即时派生：PE/PS 优先 TTM（上年年报 + 本期累计 − 上年同期；历史期缺失回退单期年化），PB = 市值 / (总资产−总负债)；盈利质量 = TTM 经营现金流/净利润、TTM 经营现金流/营收、应计比率。历史期可用 `scripts/backfill_financial_periods.py` 回补（如 2025Q1–Q4）。深判已接入知识库检索并对无证据命中做确定性降级；无定性标准时跳过 LLM。财务数据由 `core/financial_sync.py` 在工作日 3:15 定时刷新（`FINANCIAL_DATA_SCHEDULE`）。
+估值与质量指标由 `screener/valuation.py` 即时派生：PE/PS 优先 TTM（上年年报 + 本期累计 − 上年同期；历史期缺失回退单期年化），PB = 市值 / (总资产−总负债)；盈利质量 = TTM 经营现金流/净利润、TTM 经营现金流/营收、应计比率；PEG = PE / 净利同比，FCF 收益率 = FCFF / 总市值。F10 主要指标另提供 ROIC、利息保障倍数、现金比率、FCFF、现金流/营业利润、实际税率、有息负债率。历史期可用 `scripts/backfill_financial_periods.py` 回补（如 2025Q1–Q4）。深判已接入知识库检索并对无证据命中做确定性降级；无定性标准时跳过 LLM。财务数据由 `core/financial_sync.py` 在工作日 3:15 定时刷新（`FINANCIAL_DATA_SCHEDULE`）。
 
 股票池入口统一做风险卫生过滤：ST/*ST/退市、停牌/无行情、换手率低于 `SCREENER_MIN_TURNOVER`、总市值低于 `SCREENER_MIN_MARKET_CAP`；报告附「股票池卫生过滤」统计。
 
@@ -49,14 +49,14 @@ Company → Market + Document → Knowledge(RAG) → AI → Research → Portfol
 
 行业相对排名：候选在其行业内计算 ROE/营收增长/净利增长/现金流质量/PE/PB 分位（金融行业用 PE/PB/ROE），综合为 `industry_score`；排序在筛选得分之后、市值之前使用；单行业候选上限 `SCREENER_MAX_PER_INDUSTRY`（默认 8）。报告与深判上下文展示行业分位。
 
-LLM 只在深判参与，筛选执行确定性。迁移 `b5d2f8a3c6e1` → `c8e1b7d4f2a9` → `b7c8d9e0f1a2` → `c1d2e3f4a5b6` → `d2e3f4a5b6c7` → `e3f4a5b6c7d8` → `f4a5b6c7d8e9` → `a5b6c7d8e9f0`，schema `screener`。
+LLM 只在深判参与，筛选执行确定性。迁移 `b5d2f8a3c6e1` → `c8e1b7d4f2a9` → `b7c8d9e0f1a2` → `c1d2e3f4a5b6` → `d2e3f4a5b6c7` → `e3f4a5b6c7d8` → `f4a5b6c7d8e9` → `a5b6c7d8e9f0` → `b6c7d8e9f0a1`，schema `screener`。
 
 ### 预设回测（2026-10-23 MVP）
 
 用历史数据验证预设的历史表现（`POST /screener/backtests`，body: `preset_id` + `years` 1-10；`GET /screener/backtests/{id}` 查结果）。
 
 - **状态机**：`pending → running → completed/failed`（`screener.backtest_runs` 表），经持久任务 `screener_backtest` 后台执行，同时刻至多一个进行中（409）
-- **数据**：日线走外部 MySQL 前复权库（`BACKTEST_MYSQL_URL`，仅存 .env），**逐只「边拉边灌」**——单票一次查询（~1200 行）立即落库 commit，本地行数即进度、≥200 根视为完整可断点续传、单票网络错误重试 3 次；同票同日重复行去重、(ticker,date) 唯一约束幂等；历史财务缺失报告期按需经 `ingest_marketwide_yjbb` 补拉（SAVEPOINT 单期隔离）；财务指标带 `announcement_date`，回测按公告日 <= 调仓日过滤（缺失公告日的历史行回退旧口径）；票池优先本地活跃公司，为空时取外部库区间 distinct symbol（含退市票，缓解幸存者偏差）
+- **数据**：日线走外部 MySQL 前复权库（`BACKTEST_MYSQL_URL`，仅存 .env），**逐只「边拉边灌」**——单票一次查询（~1200 行）立即落库 commit，本地行数即进度、≥200 根视为完整可断点续传、单票网络错误重试 3 次；同票同日重复行去重、(ticker,date) 唯一约束幂等；历史财务缺失报告期按需经 `ingest_marketwide_yjbb` + `ingest_marketwide_main_finance` 补拉（SAVEPOINT 隔离）；财务指标带 `announcement_date`，回测按公告日 <= 调仓日过滤（缺失公告日的历史行回退旧口径）；票池优先本地活跃公司，为空时取外部库区间 distinct symbol（含退市票，缓解幸存者偏差）
 - **口径**（`screener/backtest.py` 纯函数）：调仓日 = 各披露截止日（Q1 4-30 / Q2 8-31 / Q3 10-31 / 年报次年 4-30）后首个交易日；**4 月调仓统一用上一年年报**，无未来函数；收益一律前复权 close；停牌（成交量为 0）按不可交易记 0 并标注；近似市值 = 调仓日收盘价 × 当前总股本；**已计佣金/卖出印花税/单边滑点**（`BACKTEST_COMMISSION_RATE` / `BACKTEST_STAMP_DUTY_RATE` / `BACKTEST_SLIPPAGE_RATE`）
 - **产出**：result JSON `{summary: {total_return, cagr, max_drawdown, win_rate, ...}, yearly: [...]}` + Markdown 报告落 `screener/reports/`（含免责声明）
 - 已知近似：外部库无历史股本 → 市值为近似值；财务可见性有公告日的按公告日过滤，缺失公告日的按披露截止日近似；涨跌停不可交易未单独建模。报告内均已声明。
@@ -226,4 +226,4 @@ APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工�
 ```bash
 make test        # pytest，专用 airesearch_test 库 + 隔离 Qdrant 集合
 ```
-当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **258 passed**。
+当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **261 passed**。

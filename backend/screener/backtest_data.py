@@ -232,6 +232,13 @@ async def _ingest_yjbb_for_period(db: AsyncSession, date_str: str) -> int:
     return await ingest_marketwide_yjbb(db, date_str)
 
 
+async def _ingest_main_finance_for_period(db: AsyncSession, date_str: str) -> int:
+    """单报告期 F10 主要指标入库（ROIC/FCFF/利息保障等因子）。"""
+    from screener.ingest import ingest_marketwide_main_finance
+
+    return await ingest_marketwide_main_finance(db, date_str)
+
+
 async def ensure_financial_periods(db: AsyncSession, periods: list[tuple[int, str]]) -> int:
     """对缺失的报告期补拉财务数据；单期失败 SAVEPOINT 隔离不阻塞其他期。
 
@@ -243,14 +250,21 @@ async def ensure_financial_periods(db: AsyncSession, periods: list[tuple[int, st
     ok = 0
     for year, period in sorted(missing):
         date_str = _period_date_str(year, period)
-        try:
-            await db.flush()
-            async with db.begin_nested():
-                await _ingest_yjbb_for_period(db, date_str)
+        ingested = False
+        for label, loader in (
+            ("yjbb", _ingest_yjbb_for_period),
+            ("F10 主要指标", _ingest_main_finance_for_period),
+        ):
+            try:
+                await db.flush()
+                async with db.begin_nested():
+                    await loader(db, date_str)
+                ingested = True
+                logger.info("回测历史财务补拉完成 %s（%s）", date_str, label)
+            except Exception as e:  # noqa: BLE001 — 单类失败降级
+                logger.warning("回测历史财务补拉失败 %s（%s）: %s", date_str, label, e)
+        if ingested:
             ok += 1
-            logger.info("回测历史财务补拉完成 %s", date_str)
-        except Exception as e:  # noqa: BLE001 — 单期失败降级
-            logger.warning("回测历史财务补拉失败 %s: %s", date_str, e)
     return ok
 
 

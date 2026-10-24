@@ -89,6 +89,7 @@ async def test_presets_mode_end_to_end(test_session: AsyncSession, screener_env,
     for t in ("600519", "300750"):
         for metric, value in (
             ("roe", 20.0),
+            ("roic", 15.0),
             ("net_margin", 30.0),
             # cfo_to_ni > 0.8：5e10 / 5e10 = 1.0
             ("operating_cash_flow", 5e10),
@@ -169,6 +170,7 @@ async def test_quant_only_preset_skips_llm(
     for t in ("600519", "300750"):
         for metric, value in (
             ("roe", 20.0),
+            ("roic", 15.0),
             ("net_margin", 30.0),
             ("operating_cash_flow", 5e10),
             ("debt_to_equity", 30.0),

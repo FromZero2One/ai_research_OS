@@ -219,6 +219,14 @@ MAIN_FINANCE_ROW_MAP: dict[str, str] = {
     "receivables_turnover": "YSZKZZL",
     "revenue_growth": "TOTALOPERATEREVETZ",
     "net_income_growth": "PARENTNETPROFITTZ",
+    # 因子深度（F10 主要指标额外字段）
+    "roic": "ROIC",
+    "interest_coverage": "INTEREST_COVERAGE_RATIO",
+    "cash_ratio": "CASH_RATIO",
+    "fcff": "FCFF_BACK",
+    "cfo_to_operating_profit": "NCO_OP",
+    "tax_rate": "TAXRATE",
+    "interest_debt_ratio": "INTEREST_DEBT_RATIO",
 }
 
 
@@ -559,6 +567,10 @@ _UNIT_MAP = {
     "debt_to_equity": "%", "current_ratio": "倍", "quick_ratio": "倍",
     "asset_turnover": "次", "inventory_turnover": "次", "receivables_turnover": "次",
     "revenue_growth": "%", "net_income_growth": "%",
+    "roic": "%", "interest_coverage": "倍", "cash_ratio": "倍",
+    "fcff": "元", "cfo_to_operating_profit": "倍",
+    "tax_rate": "%", "interest_debt_ratio": "%",
+    "peg": "倍", "fcf_yield": "%",
 }
 
 

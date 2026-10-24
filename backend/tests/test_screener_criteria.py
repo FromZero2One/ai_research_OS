@@ -89,6 +89,11 @@ def test_known_metrics_exclude_unavailable_ones():
     assert {"roe", "market_cap", "operating_cash_flow"} <= KNOWN_METRICS
     assert {"pe", "pb", "ps"} <= KNOWN_METRICS
     assert {"cfo_to_ni", "cfo_to_revenue", "accrual_ratio"} <= KNOWN_METRICS
+    assert {
+        "roic", "interest_coverage", "cash_ratio", "fcff",
+        "cfo_to_operating_profit", "tax_rate", "interest_debt_ratio",
+        "peg", "fcf_yield",
+    } <= KNOWN_METRICS
 
 
 def test_validate_money_unit_mistake_rejected():

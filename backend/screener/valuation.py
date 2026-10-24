@@ -19,9 +19,14 @@ from __future__ import annotations
 
 from market.domain import FinancialMetricEntry
 
-VALUATION_METRICS: frozenset[str] = frozenset({"pe", "pb", "ps"})
+VALUATION_METRICS: frozenset[str] = frozenset(
+    {"pe", "pb", "ps", "peg", "fcf_yield"}
+)
 VALUATION_INPUTS: frozenset[str] = frozenset(
-    {"net_income", "revenue", "total_assets", "total_liabilities"}
+    {
+        "net_income", "revenue", "total_assets", "total_liabilities",
+        "net_income_growth", "fcff",
+    }
 )
 QUALITY_METRICS: frozenset[str] = frozenset(
     {"cfo_to_ni", "cfo_to_revenue", "accrual_ratio"}
@@ -34,6 +39,8 @@ _VALUATION_INPUT_MAP: dict[str, frozenset[str]] = {
     "pe": frozenset({"net_income"}),
     "pb": frozenset({"total_assets", "total_liabilities"}),
     "ps": frozenset({"revenue"}),
+    "peg": frozenset({"net_income", "net_income_growth"}),
+    "fcf_yield": frozenset({"fcff"}),
 }
 _QUALITY_INPUT_MAP: dict[str, frozenset[str]] = {
     "cfo_to_ni": frozenset({"operating_cash_flow", "net_income"}),
@@ -139,6 +146,14 @@ def derive_valuation(
         equity = assets - liabilities
         if equity > 0:
             result["pb"] = market_cap / equity
+
+    growth, _ = _metric_latest(financials, "net_income_growth")
+    if result["pe"] is not None and growth is not None and growth > 0:
+        result["peg"] = result["pe"] / growth
+
+    fcff, _ = _metric_latest(financials, "fcff")
+    if fcff is not None:
+        result["fcf_yield"] = fcff / market_cap * 100
     return result
 
 

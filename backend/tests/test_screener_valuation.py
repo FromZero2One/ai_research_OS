@@ -5,6 +5,7 @@ from __future__ import annotations
 from market.domain import FinancialMetricEntry
 from screener.valuation import (
     QUALITY_INPUTS,
+    VALUATION_METRICS,
     annualization_factor,
     derive_quality,
     derive_valuation,
@@ -56,7 +57,25 @@ class TestDeriveValuation:
 
     def test_missing_market_cap(self):
         values = derive_valuation({}, [_e("net_income", 5e8)])
-        assert values == {"pe": None, "pb": None, "ps": None}
+        assert values == {metric: None for metric in VALUATION_METRICS}
+
+    def test_peg_and_fcf_yield(self):
+        financials = [
+            _e("net_income", 5e8, "Q2", 2026),
+            _e("net_income_growth", 20.0, "Q2", 2026),
+            _e("fcff", 1e9, "Q2", 2026),
+        ]
+        values = derive_valuation({"market_cap": 1e10}, financials)
+        # PE = 1e10 / (5e8*2) = 10；PEG = 10 / 20 = 0.5
+        assert values["peg"] == 0.5
+        assert values["fcf_yield"] == 10.0
+
+    def test_peg_missing_when_growth_non_positive(self):
+        values = derive_valuation(
+            {"market_cap": 1e10},
+            [_e("net_income", 5e8), _e("net_income_growth", -10.0)],
+        )
+        assert values["peg"] is None
 
     def test_uses_latest_period(self):
         financials = [
@@ -128,6 +147,10 @@ class TestRequiredDataMetrics:
 
     def test_ps_loads_revenue(self):
         assert required_data_metrics({"ps"}) == {"revenue"}
+
+    def test_peg_and_fcf_yield_inputs(self):
+        assert required_data_metrics({"peg"}) == {"net_income", "net_income_growth"}
+        assert required_data_metrics({"fcf_yield"}) == {"fcff"}
 
     def test_quality_loads_precise_inputs(self):
         assert required_data_metrics({"cfo_to_ni"}) == {

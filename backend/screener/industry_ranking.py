@@ -13,7 +13,7 @@ from screener.screening import _metric_value
 from screener.valuation import derive_quality, derive_valuation
 
 INDUSTRIAL_RANK_METRICS = (
-    "roe", "revenue_growth", "net_income_growth", "cfo_to_ni", "pe", "pb",
+    "roe", "roic", "revenue_growth", "net_income_growth", "cfo_to_ni", "pe", "pb",
 )
 FINANCIAL_RANK_METRICS = ("pb", "pe", "roe")
 LOWER_IS_BETTER = frozenset({"pe", "pb"})

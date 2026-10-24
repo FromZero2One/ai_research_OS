@@ -75,7 +75,7 @@ async def _reload_financials(
 
 _SNAPSHOT_METRICS = frozenset({"price", "turnover", "market_cap"})
 _RANKING_METRICS = frozenset(
-    {"roe", "revenue_growth", "net_income_growth", "cfo_to_ni", "pe", "pb"}
+    {"roe", "roic", "revenue_growth", "net_income_growth", "cfo_to_ni", "pe", "pb"}
 )
 _JUDGE_SNAPSHOT_FIELDS = (
     "price", "turnover", "market_cap", "score", "hits", "presets",
@@ -151,6 +151,8 @@ _MAIN_FINANCE_METRICS = frozenset({
     "eps", "current_ratio", "quick_ratio", "asset_turnover",
     "inventory_turnover", "receivables_turnover",
     "revenue_growth", "net_income_growth",
+    "roic", "interest_coverage", "cash_ratio", "fcff",
+    "cfo_to_operating_profit", "tax_rate", "interest_debt_ratio",
 })
 _BS_CF_METRICS = frozenset({
     "total_assets", "total_liabilities", "debt_to_equity", "operating_cash_flow",

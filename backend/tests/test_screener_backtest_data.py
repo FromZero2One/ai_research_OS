@@ -191,8 +191,12 @@ class TestEnsureFinancialPeriods:
             called.append((int(date_str[:4]), bd._period_from_date_str(date_str)))
             return 1
 
+        async def _noop_main(db, date_str: str) -> int:
+            return 0
+
         monkeypatch.setattr(bd, "_missing_periods", _missing)
         monkeypatch.setattr(bd, "_ingest_yjbb_for_period", _ingest)
+        monkeypatch.setattr(bd, "_ingest_main_finance_for_period", _noop_main)
 
         await ensure_financial_periods(test_session, [(2024, "Q3"), (2024, "Q4")])
         assert called == [(2024, "Q4")]
@@ -212,8 +216,12 @@ class TestEnsureFinancialPeriods:
             called.append(date_str)
             return 1
 
+        async def _noop_main(db, date_str: str) -> int:
+            return 0
+
         monkeypatch.setattr(bd, "_missing_periods", _missing)
         monkeypatch.setattr(bd, "_ingest_yjbb_for_period", _ingest)
+        monkeypatch.setattr(bd, "_ingest_main_finance_for_period", _noop_main)
 
         await ensure_financial_periods(test_session, [(2024, "Q4"), (2025, "Q1")])
         assert called == ["20250331"]
