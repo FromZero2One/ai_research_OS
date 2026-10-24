@@ -151,6 +151,66 @@ class TestRunBacktest:
 
 
 class TestBacktestAPI:
+    def test_handler_registered_at_startup(self, client):
+        """回测持久任务 handler 必须在 worker 启动前注册（曾因延迟导入失败）。"""
+        from core.task_manager import _task_handlers
+
+        assert "screener_backtest" in _task_handlers
+
+    async def test_handler_parses_uuid(self, monkeypatch):
+        """后台 handler 必须能把字符串 run_id 转为 UUID（曾 NameError: uuid）。"""
+        import uuid as _uuid
+        from contextlib import asynccontextmanager
+
+        import screener.backtest_service as bs
+
+        class _Session:
+            async def commit(self):
+                return None
+
+        @asynccontextmanager
+        async def _fake_session():
+            yield _Session()
+
+        monkeypatch.setattr("core.database.managed_session", _fake_session)
+        seen: dict = {}
+
+        async def _fake_run(session, run_id):
+            seen["run_id"] = run_id
+
+        monkeypatch.setattr(bs, "run_backtest", _fake_run)
+        run_id = "00000000-0000-0000-0000-000000000001"
+        await bs._handle_backtest_run({"run_id": run_id})
+        assert seen["run_id"] == _uuid.UUID(run_id)
+
+    async def test_stale_pending_run_is_recovered(
+        self, client, test_session: AsyncSession
+    ):
+        """无对应任务的陈旧 pending run 不应永久阻塞新回测。"""
+        preset = CriteriaPreset(
+            name="陈旧预设", description="d", style_tag="stale",
+            is_builtin=False, is_active=True,
+            quant_rules=[], qualitative=[], suggested_pool="all",
+        )
+        test_session.add(preset)
+        await test_session.flush()
+        stale = ScreenerBacktestRun(
+            preset_id=preset.id, years=1, status="pending"
+        )
+        test_session.add(stale)
+        await test_session.commit()
+
+        resp = client.post(
+            "/api/v1/screener/backtests",
+            json={"preset_id": str(preset.id), "years": 1},
+        )
+        assert resp.status_code == 201, resp.text
+
+        refreshed = await test_session.get(ScreenerBacktestRun, stale.id)
+        await test_session.refresh(refreshed)
+        assert refreshed.status == "failed"
+
+
     async def test_post_and_get(self, client, backtest_env, test_session: AsyncSession):
         """POST 建 run 返回 201；未知预设 → 422。"""
         preset = CriteriaPreset(

@@ -65,6 +65,7 @@ LLM 只在深判参与，筛选执行确定性。迁移 `b5d2f8a3c6e1` → `c8e1
 - **产出**：result JSON `{summary: {total_return, cagr, bench_cagr, excess_cagr, max_drawdown, annual_volatility, sharpe, sortino, calmar, win_rate, split_sample, ...}, yearly: [...]}` + Markdown 报告落 `screener/reports/`（含免责声明）。风险指标按季度收益年化（×√4），无风险利率由 `BACKTEST_RISK_FREE_RATE` 配置。
 - **分段稳健性**：`split_sample` 把调仓期按时间对半切分，分别给出年化/基准/超额/回撤/胜率与 `consistent_excess`（两段是否都跑赢）；报告新增「分段稳健性」表。期数 <4 不输出。注意：回测不做参数优化，对半切分只是稳健性观察，不等同严格样本外验证。
 - **API/UI**：`GET /screener/backtests`（最近 50 次，含预设名与 summary）、`GET /screener/backtests/{id}`、`GET /screener/backtests/{id}/report`。前端选股页「预设回测」卡片可选预设/年数启动回测（后台任务），展示汇总指标、分段表与逐年明细。
+- **运行前提**：`BACKTEST_MYSQL_URL` 必须在 `backend/.env` 配置，否则后台任务会以“未配置，无法拉取历史日线”失败。回测 handler 在 app lifespan 启动 worker 前显式注册，避免 `No handler registered`。
 - 已知近似：外部库无历史股本 → 市值为近似值；财务可见性有公告日的按公告日过滤，缺失公告日的按披露截止日近似；涨跌停不可交易未单独建模。报告内均已声明。
 
 ### 定时筛选与变化日报（2026-10-24）
@@ -261,4 +262,4 @@ APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工�
 ```bash
 make test        # pytest，专用 airesearch_test 库 + 隔离 Qdrant 集合
 ```
-当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **305 passed**。
+当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **308 passed**。

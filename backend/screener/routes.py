@@ -185,7 +185,29 @@ async def trigger_backtest(data: BacktestParams, db: AsyncSession = Depends(get_
         )
     ).scalar_one_or_none()
     if active:
-        return JSONResponse(status_code=409, content={"error": "已有回测任务进行中，请等待完成后再触发"})
+        # 崩溃/handler 缺失可能留下永远 pending 的 run：对应任务已结束则先收尾
+        from core.task_manager import TaskRecord
+
+        task = (
+            await db.execute(
+                select(TaskRecord)
+                .where(
+                    TaskRecord.task_type == "screener_backtest",
+                    TaskRecord.task_key == f"backtest:{active.id}",
+                )
+                .order_by(TaskRecord.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if task is None or task.status in ("failed", "completed"):
+            active.status = "failed"
+            active.error = active.error or "回测任务未执行完成（handler 缺失或进程中断）"
+            active.finished_at = datetime.now(UTC).isoformat()
+            await db.flush()
+        else:
+            return JSONResponse(
+                status_code=409, content={"error": "已有回测任务进行中，请等待完成后再触发"}
+            )
 
     run = ScreenerBacktestRun(preset_id=data.preset_id, years=data.years, status="pending")
     db.add(run)
