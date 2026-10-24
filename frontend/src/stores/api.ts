@@ -661,6 +661,39 @@ export function useScreenerRunDiff(id: MaybeRefOrGetter<string | null>) {
     computed(() => (toValue(id) ? `/screener/runs/${toValue(id)}/diff` : '')),
   )
 }
+
+export interface ScreenerHorizonStats {
+  count: number
+  avg_return: number | null
+  hit_rate: number | null
+}
+export interface ScreenerStockPerformance {
+  ticker: string
+  name: string
+  industry: string | null
+  entry_date: string | null
+  entry_price: number | null
+  current_return: number | null
+  horizons: Record<string, number | null>
+  status: string
+}
+export interface ScreenerPerformance {
+  run_id: string
+  run_created_at: string | null
+  entry_rule: string
+  status: string
+  recommended_count: number
+  with_entry_price: number
+  summary: Record<string, ScreenerHorizonStats>
+  stocks: ScreenerStockPerformance[]
+  message?: string
+}
+export function useScreenerRunPerformance(id: MaybeRefOrGetter<string | null>) {
+  return useGet<ScreenerPerformance>(
+    computed(() => ['screener-performance', toValue(id) ?? '']),
+    computed(() => (toValue(id) ? `/screener/runs/${toValue(id)}/performance` : '')),
+  )
+}
 export function useScreenerRules() {
   return useGet<{ rules: Record<string, any> | null; criteria_hash?: string }>(['screener-rules'], '/screener/rules')
 }

@@ -273,6 +273,17 @@ async def get_diff(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     return {"diff": markdown, "has_previous": has_previous}
 
 
+@router.get("/runs/{run_id}/performance")
+async def get_performance(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """推荐后表现：T+1 收盘买入，1/3/6/12 月等权收益与胜率。"""
+    from screener.performance_service import build_run_performance
+
+    try:
+        return await build_run_performance(db, run_id)
+    except ValueError as e:
+        raise NotFoundError("ScreenerRun", str(run_id)) from e
+
+
 @router.get("/criteria")
 async def get_criteria():
     """读取标准文档。"""

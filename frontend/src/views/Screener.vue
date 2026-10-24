@@ -10,6 +10,7 @@ import {
   useScreenerPresets,
   useScreenerRun,
   useScreenerRunDiff,
+  useScreenerRunPerformance,
   useScreenerRunReport,
   useScreenerRuns,
   useTriggerScreenerRun,
@@ -212,6 +213,28 @@ const diffHtml = computed(() => {
 function viewDiff(run: ScreenerRunSummary) {
   viewingDiffRunId.value = run.id
 }
+
+// ── 推荐后表现 ──
+const viewingPerfRunId = ref<string | null>(null)
+const { data: perfData } = useScreenerRunPerformance(viewingPerfRunId)
+const perf = computed(() => perfData.value)
+const perfSummaryRows = computed(() => {
+  const summary = perf.value?.summary || {}
+  const labels: Record<string, string> = {
+    '1m': '1 个月', '3m': '3 个月', '6m': '6 个月', '12m': '12 个月', current: '当前',
+  }
+  return Object.entries(labels).map(([key, label]) => ({
+    key, label, ...(summary[key] || { count: 0, avg_return: null, hit_rate: null }),
+  }))
+})
+
+function formatPct(value?: number | null): string {
+  return value === null || value === undefined ? '-' : `${(value * 100).toFixed(2)}%`
+}
+
+function viewPerformance(run: ScreenerRunSummary) {
+  viewingPerfRunId.value = run.id
+}
 </script>
 
 <template>
@@ -347,6 +370,11 @@ function viewDiff(run: ScreenerRunSummary) {
                 <el-button size="small" link @click.stop="viewDiff(row)">日报</el-button>
               </template>
             </el-table-column>
+            <el-table-column label="表现" width="70">
+              <template #default="{ row }">
+                <el-button size="small" link @click.stop="viewPerformance(row)">表现</el-button>
+              </template>
+            </el-table-column>
           </el-table>
         </el-card>
       </el-col>
@@ -375,6 +403,53 @@ function viewDiff(run: ScreenerRunSummary) {
         </div>
       </template>
       <div class="report-md" v-html="diffHtml" />
+    </el-card>
+
+    <el-card v-if="viewingPerfRunId" class="mt-3">
+      <template #header>
+        <div class="card-header">
+          <span>推荐后表现</span>
+          <el-button size="small" link @click="viewingPerfRunId = null">关闭</el-button>
+        </div>
+      </template>
+      <template v-if="perf">
+        <div class="text-secondary" style="font-size: 12px; margin-bottom: 8px">
+          推荐 {{ perf.recommended_count }} 只 · 有买入价 {{ perf.with_entry_price }} 只 · {{ perf.entry_rule }}
+        </div>
+        <el-table :data="perfSummaryRows" size="small">
+          <el-table-column label="期限" prop="label" width="90" />
+          <el-table-column label="样本数" prop="count" width="80" />
+          <el-table-column label="平均收益" width="110">
+            <template #default="{ row }">{{ formatPct(row.avg_return) }}</template>
+          </el-table-column>
+          <el-table-column label="胜率" width="100">
+            <template #default="{ row }">{{ formatPct(row.hit_rate) }}</template>
+          </el-table-column>
+        </el-table>
+        <el-table :data="perf.stocks" size="small" class="mt-2">
+          <el-table-column label="代码" prop="ticker" width="80" />
+          <el-table-column label="名称" prop="name" width="100" />
+          <el-table-column label="行业" prop="industry" width="100" />
+          <el-table-column label="买入日" prop="entry_date" width="110" />
+          <el-table-column label="买入价" prop="entry_price" width="90" />
+          <el-table-column label="当前" width="90">
+            <template #default="{ row }">{{ formatPct(row.current_return) }}</template>
+          </el-table-column>
+          <el-table-column label="1M" width="80">
+            <template #default="{ row }">{{ formatPct(row.horizons?.['1m']) }}</template>
+          </el-table-column>
+          <el-table-column label="3M" width="80">
+            <template #default="{ row }">{{ formatPct(row.horizons?.['3m']) }}</template>
+          </el-table-column>
+          <el-table-column label="6M" width="80">
+            <template #default="{ row }">{{ formatPct(row.horizons?.['6m']) }}</template>
+          </el-table-column>
+          <el-table-column label="12M" width="80">
+            <template #default="{ row }">{{ formatPct(row.horizons?.['12m']) }}</template>
+          </el-table-column>
+        </el-table>
+        <div v-if="perf.message" class="text-secondary mt-2">{{ perf.message }}</div>
+      </template>
     </el-card>
   </div>
 </template>
