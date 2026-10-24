@@ -236,6 +236,7 @@ async def get_run(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
         "judgements": [
             {
                 "ticker": j.ticker, "name": j.name, "recommend": j.recommend,
+                "verdict": j.verdict,
                 "reasons": j.reasons, "criteria_hits": j.criteria_hits,
                 "confidence": j.confidence, "snapshot": j.snapshot,
                 "status": j.status, "error": j.error,

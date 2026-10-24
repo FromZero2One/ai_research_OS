@@ -49,7 +49,7 @@ Company → Market + Document → Knowledge(RAG) → AI → Research → Portfol
 
 行业相对排名：候选在其行业内计算 ROE/营收增长/净利增长/现金流质量/PE/PB 分位（金融行业用 PE/PB/ROE），综合为 `industry_score`；排序在筛选得分之后、市值之前使用；单行业候选上限 `SCREENER_MAX_PER_INDUSTRY`（默认 8）。报告与深判上下文展示行业分位。
 
-LLM 只在深判参与，筛选执行确定性。迁移 `b5d2f8a3c6e1` → `c8e1b7d4f2a9` → `b7c8d9e0f1a2` → `c1d2e3f4a5b6` → `d2e3f4a5b6c7` → `e3f4a5b6c7d8` → `f4a5b6c7d8e9`，schema `screener`。
+LLM 只在深判参与，筛选执行确定性。迁移 `b5d2f8a3c6e1` → `c8e1b7d4f2a9` → `b7c8d9e0f1a2` → `c1d2e3f4a5b6` → `d2e3f4a5b6c7` → `e3f4a5b6c7d8` → `f4a5b6c7d8e9` → `a5b6c7d8e9f0`，schema `screener`。
 
 ### 预设回测（2026-10-23 MVP）
 
@@ -66,6 +66,12 @@ LLM 只在深判参与，筛选执行确定性。迁移 `b5d2f8a3c6e1` → `c8e1
 `core/screener_schedule.py` 在工作日 16:30（收盘后）按 `SCREENER_SCHEDULE_PRESETS`（默认 `core`）依次运行预设；已有进行中的 run 时跳过。每轮完成后与「相同 mode/combine/preset_ids（freeform 用 criteria_hash）」的上一轮 completed run 对比，只输出变化：新推荐/掉出推荐/新进候选/移出候选，Markdown 落到 `screener/reports/YYYY-MM-DD-diff-<run8>.md`，并写 `screener.diff` 事件。
 
 API：`GET /api/v1/screener/runs/{run_id}/diff` 返回变化日报 Markdown 与 `has_previous`；前端历史运行表新增「日报」按钮。手动触发调度：`POST /api/v1/scheduler/run/screener_schedule`。
+
+### 三态结论与置信度（2026-10-24）
+
+`ScreenerJudgement.verdict` 区分四种结论：`recommend` / `reject` / `insufficient` / `failed`。证据守卫降级、资料不足或命中“数据不足”原因时记为 `insufficient`；显式不满足标准记为 `reject`。报告拆分为「未通过标准（未推荐）」与「数据不足（未推荐）」两个分区，API 同步透出 `verdict`。
+
+`SCREENER_MIN_CONFIDENCE`（默认 0，即不启用）大于 0 时，置信度低于阈值的推荐会自动转为 `insufficient`。
 
 ### LLM 深判评测（2026-10-24）
 
@@ -187,6 +193,7 @@ PYTHONPATH=. python scripts/seed_data.py
 | 选股 | `SCREENER_MIN_TURNOVER` | 0.05（%） | — |
 | | `SCREENER_MIN_MARKET_CAP` | 1e9（元） | — |
 | | `SCREENER_MAX_PER_INDUSTRY` | 8（单行业候选上限） | — |
+| | `SCREENER_MIN_CONFIDENCE` | 0（低于阈值转“数据不足”） | — |
 | 安全 | `SECRET_KEY` | 每次启动随机生成 | — |
 
 > **默认是 Ollama，本机跑 DeepSeek**：代码里 `LLM_PROVIDER` 默认 `ollama`，本机 `.env` 设为 `openai` + DeepSeek（`deepseek-chat`，OpenAI 兼容端点 `https://api.deepseek.com/v1`）；light tier（证据分类/事实抽取）同样走云端。
@@ -219,4 +226,4 @@ APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工�
 ```bash
 make test        # pytest，专用 airesearch_test 库 + 隔离 Qdrant 集合
 ```
-当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **257 passed**。
+当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **258 passed**。

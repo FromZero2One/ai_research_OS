@@ -10,6 +10,7 @@ import asyncio
 import json
 import re
 
+from core.config import settings
 from core.interfaces import LLM, LLMMessage, LLMResponse
 from core.logging import logger
 
@@ -118,6 +119,7 @@ def _apply_evidence_guard(judgement: dict, snippets: list[str]) -> dict:
         **judgement,
         "criteria_hits": guarded,
         "recommend": False,
+        "verdict": "insufficient",
         "confidence": min(float(judgement.get("confidence") or 0.0), 0.4),
         "reasons": reasons,
     }
@@ -332,7 +334,9 @@ async def judge_one(
         except (json.JSONDecodeError, AttributeError, AssertionError) as e:
             last_error = f"LLM 输出解析失败: {e}"
             continue
-        return _apply_evidence_guard(out, snippets)
+        out = _apply_evidence_guard(out, snippets)
+        out.setdefault("verdict", "recommend" if out.get("recommend") else "reject")
+        return out
     raise ValueError(last_error)
 
 
@@ -385,6 +389,7 @@ def _failed_judgement(cand: dict, error: str) -> dict:
         "ticker": cand["ticker"],
         "name": cand["name"],
         "recommend": None,
+        "verdict": "failed",
         "reasons": [],
         "criteria_hits": [],
         "confidence": None,
@@ -417,10 +422,35 @@ async def _judge_single(
         fin = {k: v[1] for k, v in best.items()} if best else None
     try:
         judgement = await judge_one(llm, cand, criteria or [criteria_text], knowledge=knowledge, financials=fin)
+        recommend = bool(judgement["recommend"])
+        text = " ".join(
+            [str(r) for r in (judgement.get("reasons") or [])]
+            + [
+                str(h.get("evidence") or "")
+                for h in (judgement.get("criteria_hits") or [])
+            ]
+        )
+        verdict = judgement.get("verdict") or ("recommend" if recommend else "reject")
+        if not recommend and ("数据不足" in text or "无资料" in text):
+            verdict = "insufficient"
+        threshold = settings.SCREENER_MIN_CONFIDENCE
+        confidence = float(judgement.get("confidence") or 0.0)
+        if verdict == "recommend" and threshold > 0 and confidence < threshold:
+            judgement = {
+                **judgement,
+                "recommend": False,
+                "reasons": [
+                    f"置信度 {confidence:.2f} 低于阈值 {threshold:.2f}",
+                    *(judgement.get("reasons") or []),
+                ],
+            }
+            recommend = False
+            verdict = "insufficient"
         return {
             "ticker": cand["ticker"],
             "name": cand["name"],
-            "recommend": judgement["recommend"],
+            "recommend": recommend,
+            "verdict": verdict,
             "reasons": judgement.get("reasons", []),
             "criteria_hits": judgement.get("criteria_hits", []),
             "confidence": judgement.get("confidence"),

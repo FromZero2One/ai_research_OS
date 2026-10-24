@@ -111,7 +111,18 @@ def build_report(
 ) -> str:
     """生成选股报告 Markdown。"""
     recommended = [j for j in judgements if j.get("status") == "ok" and j.get("recommend") is True]
-    rejected = [j for j in judgements if j.get("status") == "ok" and j.get("recommend") is False]
+    insufficient = [
+        j for j in judgements
+        if j.get("status") == "ok"
+        and j.get("recommend") is False
+        and j.get("verdict") == "insufficient"
+    ]
+    rejected = [
+        j for j in judgements
+        if j.get("status") == "ok"
+        and j.get("recommend") is False
+        and j.get("verdict") != "insufficient"
+    ]
     failed = [j for j in judgements if j.get("status") == "failed"]
 
     lines: list[str] = []
@@ -121,7 +132,7 @@ def build_report(
     lines.append("")
     lines.append(
         f"- 候选数：{run.get('candidate_count', 0)} ｜ 推荐数：{len(recommended)} ｜ "
-        f"深判失败：{len(failed)}"
+        f"数据不足：{len(insufficient)} ｜ 深判失败：{len(failed)}"
     )
     if financial_asof:
         lines.append(f"- 财务数据截至：{financial_asof}")
@@ -255,13 +266,23 @@ def build_report(
                 lines.append(f"- **{item}**：本次候选无相关判断记录")
     lines.append("")
 
-    lines.append("## 附：候选但未推荐")
+    lines.append("## 附：未通过标准（未推荐）")
     lines.append("")
     if not rejected:
         lines.append("无")
     else:
         for j in rejected:
             reason = "；".join((j.get("reasons") or [])[:2]) or "未通过定性判断"
+            lines.append(f"- {j['name']}（{j['ticker']}）：{reason}")
+    lines.append("")
+
+    lines.append("## 附：数据不足（未推荐）")
+    lines.append("")
+    if not insufficient:
+        lines.append("无")
+    else:
+        for j in insufficient:
+            reason = "；".join((j.get("reasons") or [])[:2]) or "证据不足，无法判断"
             lines.append(f"- {j['name']}（{j['ticker']}）：{reason}")
     lines.append("")
 

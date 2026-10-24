@@ -120,6 +120,7 @@ def _auto_pass_judgement(candidate: dict) -> dict:
         "ticker": candidate["ticker"],
         "name": candidate.get("name"),
         "recommend": True,
+        "verdict": "recommend",
         "reasons": ["通过全部量化规则（该标准无定性条目，未调用 LLM 深判）"],
         "criteria_hits": [],
         "confidence": 1.0,

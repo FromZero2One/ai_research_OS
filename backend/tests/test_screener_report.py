@@ -79,6 +79,16 @@ class TestBuildReport:
         assert "ST/*ST/退市：2 只" in report
         assert "小市值" in report and "3 只" in report
 
+    def test_insufficient_section(self):
+        j = {
+            **JUDGEMENTS[1],
+            "verdict": "insufficient",
+            "reasons": ["无资料证据，无法验证护城河"],
+        }
+        report = build_report(RUN, [j], RUN["criteria_text"], [])
+        assert "数据不足（未推荐）" in report
+        assert "无资料证据" in report
+
     def test_failed_judgement_listed(self):
         report = build_report(RUN, JUDGEMENTS, RUN["criteria_text"], [])
         assert "000001" in report

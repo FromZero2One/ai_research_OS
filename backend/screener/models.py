@@ -87,6 +87,8 @@ class ScreenerJudgement(Base, UUIDMixin, TimestampMixin):
     ticker: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     recommend: Mapped[bool | None] = mapped_column(nullable=True)
+    # recommend | reject | insufficient | failed — 区分“不符合”和“数据不足”
+    verdict: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
     reasons: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     criteria_hits: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)

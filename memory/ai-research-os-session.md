@@ -11,6 +11,7 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-10-24（三态结论 + 置信度）**: `ScreenerJudgement.verdict` 新增 recommend/reject/insufficient/failed（迁移 `a5b6c7d8e9f0`）；证据守卫/资料不足/低置信度 → insufficient，显式不满足 → reject；报告拆分「未通过标准」与「数据不足」，API 透出 verdict；新增 `SCREENER_MIN_CONFIDENCE`（默认 0）。screener + financial_sync 258 passed。实跑临时护城河预设：7 候选全部 insufficient、0 推荐，报告两个分区正常。
 - **2026-10-24（LLM 深判评测）**: 新增 `screener/eval/judge_cases.jsonl`（10 用例：无资料文档类、财务可验证、带资料引用、混合标准）+ `screener/judge_eval.py` + `scripts/eval_judge.py`；指标 JSON 合法率/推荐匹配/证据违规/自动降级/平均耗时，报告落 `screener/reports/eval-judge-*.md`。本地 qwen3.5-q4 实跑：10/10 JSON 合法、7/7 推荐匹配、0 证据违规、平均 9.1s。screener + financial_sync 257 passed。知识库仍为 0 文档，评测使用受控片段，不依赖生产知识库。
 - **2026-10-24（行业相对排名）**: 新增 `screener/industry_ranking.py`：候选在行业内计算 ROE/营收增长/净利增长/现金流质量/PE/PB 分位（金融行业用 PE/PB/ROE），综合 `industry_score`；排序改为 得分 → 行业分位 → 市值；新增 `cap_by_industry` 单行业上限（`SCREENER_MAX_PER_INDUSTRY`，默认 8）；报告/深判上下文展示行业分位。screener + financial_sync 251 passed。实跑核心资产 13 候选，电子 5/医药 3/有色 2/其他 3，行业分位正常写入报告。
 - **2026-10-24（推荐后表现跟踪）**: 新增 `screener/performance.py` 纯函数（1/3/6/12 月 + 当前收益）与 `performance_service.py`（T+1 收盘买入、等权汇总平均收益/胜率/样本数）；API `GET /screener/runs/{id}/performance`；前端历史运行表新增「表现」按钮与汇总/个股表；日线覆盖不足标记 `no_entry_price`。screener + financial_sync 245 passed。实跑 2026-10-22 运行：21 推荐，当前仅 4 只有本地日线（采集进行中），收益 0（10/23 为最新交易日）。
@@ -96,7 +97,7 @@ metadata:
 - LLM：DeepSeek 云端（.env OPENAI_* 已配，key 已 gitignore）；light tier 同走云端；本机无 ollama
 - Embedding 仍指向本机 Ollama（未安装）→ 文档上传/知识检索的稠密向量不可用，BM25 兜底；pytest 有 5 项因此失败
 - akshare 走独立 `akshare_mcp` venv 子进程（`AKSHARE_MCP_DIR` 指向旧机器路径，**本机需改 .env 并确认 venv 存在**，否则 A 股采集失败但不崩）
-- 迁移 head：`f4a5b6c7d8e9`（财务公告日 PIT）
+- 迁移 head：`a5b6c7d8e9f0`（深判三态 verdict）
 - pytest 需先起 docker postgres；测试库 airesearch_test 由 conftest 用 create_all 重建（**改模型后旧测试库不会自动加列，需 DROP DATABASE airesearch_test 重建**）；`tests/test_session` fixture 为服务级测试专用（勿用 managed_session，会写进开发库）
 
 ## 相关文档

@@ -57,7 +57,7 @@ A personal AI-powered investment research assistant. Company → Knowledge → A
 | **AI Center** | Prompt mgmt, LLM orchestration, summarization | DeepSeek V4 Flash (默认) / Ollama / OpenAI 兼容 |
 | **Research Center** | Question → Evidence → Report → Decision → Thesis | LangGraph-ready |
 | **Portfolio Center** | 关注公司（并入公司中心）、持仓、投资日志（后端） | PostgreSQL |
-| **Screener** | 预设标准库选股：24 指标（TTM 估值 + 现金流质量）+ 6 内置预设 + 股票池卫生 + 行业隔离/相对排名 + 组合模式 + 定时筛选/变化日报 + 推荐后表现跟踪 + LLM 深判评测（2026-10-24） | AKShare + LLM 深判 |
+| **Screener** | 预设标准库选股：24 指标（TTM 估值 + 现金流质量）+ 6 内置预设 + 股票池卫生 + 行业隔离/相对排名 + 三态结论 + 组合模式 + 定时筛选/变化日报 + 推荐后表现跟踪 + LLM 深判评测（2026-10-24） | AKShare + LLM 深判 |
 
 > **Screener 数据管道（2026-10-22）**：全市场快照走新浪源（东财风控应对）；财务三表（业绩/资产负债/现金流）均为市场级一次调用（~5000 只/期），不再逐只拉取；流动/速动/周转/成长率走东财 F10 主要指标（`RPT_F10_FINANCE_MAINFINADATA`）分页补采。已知缺口见 Roadmap。
 
@@ -143,9 +143,9 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 | 研究中心 | ~95% | 全链路 + LLM 证据分类（含定量/定性双轨）+ 多周期比对 + 报告可视化 + [ev:id] 引用回溯 + structured_facts 交叉验证 |
 | 投资组合 | ~40% | 自选已并入公司；持仓/日志后端就绪，前端随 V2 |
 | 系统/调度 | ~85% | 调度/观察/持久任务/事件/新鲜度可用 |
-| 智能选股 | ~95% | 24 指标（TTM 估值 + 现金流质量）+ 6 内置预设；股票池卫生 + 行业隔离/相对排名；深判知识库/证据守卫 + 评测器；预设回测；定时筛选 + 变化日报 + 推荐后表现跟踪；财务数据工作日定时更新 |
+| 智能选股 | ~95% | 24 指标（TTM 估值 + 现金流质量）+ 6 内置预设；股票池卫生 + 行业隔离/相对排名；深判知识库/证据守卫 + 三态结论 + 评测器；预设回测；定时筛选 + 变化日报 + 推荐后表现跟踪；财务数据工作日定时更新 |
 
-总体：V1.1 目标基本达成，后端 **391 passed / 2 failed / 2 skipped**（2 项失败为既有 research 证据继承依赖本地 LLM 结构化输出，与选股改动无关）；screener + financial_sync 专项 **257 passed**；前端 vue-tsc/build 通过。改动文件 ruff 通过（仓库仍保留历史 E501 债务）。
+总体：V1.1 目标基本达成，后端 **391 passed / 2 failed / 2 skipped**（2 项失败为既有 research 证据继承依赖本地 LLM 结构化输出，与选股改动无关）；screener + financial_sync 专项 **258 passed**；前端 vue-tsc/build 通过。改动文件 ruff 通过（仓库仍保留历史 E501 债务）。
 已知缺口：美股真实行情、持仓/日志前端、Market.vue 覆盖网格列数动态化（当前硬编码 5 列）。下一步（证据继承/差异日报）详见 [memory/ai-research-os-session.md](memory/ai-research-os-session.md)。
 
 ## API (when backend is running)

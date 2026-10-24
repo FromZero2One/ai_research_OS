@@ -119,6 +119,7 @@ class TestJudgeOne:
         }
         out = await judge_one(FakeLLM([_json_text(payload)]), CAND, ["无重大违规"], knowledge=EmptyKnowledge())
         assert out["recommend"] is False
+        assert out["verdict"] == "insufficient"
         assert out["criteria_hits"][0]["hit"] is False
         assert any("自动判定" in r for r in out["reasons"])
 
@@ -133,6 +134,7 @@ class TestJudgeOne:
         out = await judge_one(FakeLLM([_json_text(payload)]), CAND, ["现金充裕"], knowledge=EmptyKnowledge())
         assert out["criteria_hits"][0]["hit"] is False
         assert out["recommend"] is False
+        assert out["verdict"] == "insufficient"
 
     async def test_snippet_hit_requires_citation(self):
         """有资料片段时，hit=true 的 evidence 必须引用 [n]。"""
@@ -155,6 +157,7 @@ class TestJudgeOne:
         out = await judge_one(FakeLLM([_json_text(payload)]), CAND, ["存在护城河"], knowledge=SnippetKnowledge())
         assert out["criteria_hits"][0]["hit"] is True
         assert out["recommend"] is True
+        assert out["verdict"] == "recommend"
 
     async def test_retry_raises_token_budget_and_asks_for_compact_output(self):
         """截断重试不能原样重发：第二轮要放大 max_tokens 并追加压缩提示。"""
