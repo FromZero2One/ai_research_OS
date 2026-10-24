@@ -115,6 +115,8 @@ ALL_PROXY= all_proxy= PYTHONPATH=. ./.venv/Scripts/python.exe -X utf8 scripts/ev
 
 **组合持久化（2026-10-24）**：请求体加 `save: true` / `name` 可把参数与结果保存到 `screener.portfolios`（JSONB）并返回 `portfolio_id`；`GET /api/v1/screener/runs/{run_id}/portfolios` 列某轮已保存组合，`GET/DELETE /api/v1/screener/portfolios/{portfolio_id}` 查看/删除，`GET /api/v1/screener/portfolios` 列全部。前端组合面板新增「保存」按钮与已保存组合标签（点击载入、关闭删除）。迁移 `d8e9f0a1b2c3` 建表，并把 `cancelling` 纳入「同一时刻仅一个活跃 run」的唯一索引。
 
+**组合再平衡（2026-10-24）**：`POST /api/v1/screener/portfolios/{portfolio_id}/rebalance`（body `tolerance` 默认 0.01、`lot_size` 默认 100）按最新收盘价估算持仓市值，与保存时的目标权重比较，返回每只当前/目标权重、漂移、`buy/sell/hold`、股数与金额建议。漂移在容忍度内持有；买入按整手向下取整（不足一手标记 `lot_blocked`）；缺最新价回退保存价并标记 `stale_price`、不给交易建议。前端载入已保存组合后可「计算再平衡」并查看建议表。
+
 ### 推荐后表现（2026-10-24）
 
 `GET /api/v1/screener/runs/{run_id}/performance`：按 **T+1 收盘价**（运行日之后首个交易日）作为买入价，计算每只推荐股在 1/3/6/12 个月的收益与当前收益；等权汇总平均收益、胜率、样本数；同时拉沪深300同期限收益，汇总增加基准与超额（基准不可用时自动省略）。前端历史运行表新增「表现」按钮。日线覆盖不足的票标记 `no_entry_price`；随着行情采集推进覆盖率会提升。
@@ -272,4 +274,4 @@ APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工�
 ```bash
 make test        # pytest，专用 airesearch_test 库 + 隔离 Qdrant 集合
 ```
-当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **319 passed**。
+当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **324 passed**。

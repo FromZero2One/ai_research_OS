@@ -15,6 +15,7 @@ import {
   useDeleteScreenerPortfolio,
   usePushScreenerToResearch,
   usePushScreenerToWatchlist,
+  useRebalanceScreenerPortfolio,
   useScreenerPortfolio,
   useScreenerPortfolios,
   useScreenerRun,
@@ -32,6 +33,7 @@ import {
   useTriggerScreenerRunPresets,
   type ScreenerJudgement,
   type ScreenerPreset,
+  type ScreenerRebalanceResult,
   type ScreenerRunSummary,
   type ScreenerSavedPortfolio,
 } from '@/stores/api'
@@ -405,6 +407,8 @@ const portfolioParams = ref({
 function viewPortfolio(run: ScreenerRunSummary) {
   portfolioRunId.value = run.id
   portfolioResult.value = null
+  loadedPortfolioId.value = null
+  rebalanceResult.value = null
 }
 
 const handoffRunId = ref<string | null>(null)
@@ -462,6 +466,8 @@ async function pushToResearch(run: ScreenerRunSummary) {
 async function buildPortfolio() {
   try {
     portfolioResult.value = await portfolioMutation.mutateAsync({ ...portfolioParams.value })
+    loadedPortfolioId.value = null
+    rebalanceResult.value = null
   } catch (e: any) {
     ElMessage.error(e.message || '组合构建失败')
   }
@@ -470,6 +476,21 @@ async function buildPortfolio() {
 const { data: savedPortfoliosData, refetch: refetchSavedPortfolios } =
   useScreenerPortfolios(portfolioRunId)
 const deletePortfolioMutation = useDeleteScreenerPortfolio()
+const loadedPortfolioId = ref<string | null>(null)
+const rebalanceMutation = useRebalanceScreenerPortfolio()
+const rebalanceResult = ref<ScreenerRebalanceResult | null>(null)
+async function runRebalance() {
+  if (!loadedPortfolioId.value) return
+  try {
+    rebalanceResult.value = await rebalanceMutation.mutateAsync({
+      portfolio_id: loadedPortfolioId.value,
+      tolerance: 0.01,
+      lot_size: 100,
+    })
+  } catch (e: any) {
+    ElMessage.error(e.message || '再平衡计算失败')
+  }
+}
 
 async function savePortfolio() {
   if (!portfolioResult.value) return
@@ -485,6 +506,8 @@ async function savePortfolio() {
       name: value || null,
     })
     portfolioResult.value = saved
+    loadedPortfolioId.value = (saved as any).portfolio_id || null
+    rebalanceResult.value = null
     ElMessage.success('组合已保存')
     await refetchSavedPortfolios()
   } catch (e: any) {
@@ -495,6 +518,8 @@ async function savePortfolio() {
 
 function loadSavedPortfolio(p: ScreenerSavedPortfolio) {
   portfolioResult.value = { ...p.result, run_id: portfolioRunId.value || p.run_id }
+  loadedPortfolioId.value = p.id
+  rebalanceResult.value = null
   portfolioParams.value = {
     capital: p.params.capital,
     method: p.params.method,
@@ -510,6 +535,10 @@ async function removeSavedPortfolio(p: ScreenerSavedPortfolio) {
       type: 'warning',
     })
     await deletePortfolioMutation.mutateAsync(p.id)
+    if (loadedPortfolioId.value === p.id) {
+      loadedPortfolioId.value = null
+      rebalanceResult.value = null
+    }
     ElMessage.success('已删除')
   } catch (e: any) {
     if (e === 'cancel' || e === 'close') return
@@ -1005,6 +1034,54 @@ async function removeSavedPortfolio(p: ScreenerSavedPortfolio) {
             <template #default="{ row }">{{ row.amount.toLocaleString('zh-CN', { maximumFractionDigits: 0 }) }}</template>
           </el-table-column>
         </el-table>
+        <div v-if="loadedPortfolioId" class="mt-2 flex items-center gap-2">
+          <el-button
+            size="small" type="primary" plain
+            :loading="rebalanceMutation.isPending.value"
+            @click="runRebalance"
+          >计算再平衡</el-button>
+          <span class="text-xs text-secondary">按最新收盘价，保留原目标权重；漂移 ≤1% 视为持有，买入按 100 股一手</span>
+        </div>
+        <template v-if="rebalanceResult">
+          <div class="text-secondary" style="font-size: 12px; margin-top: 8px">
+            组合市值 {{ rebalanceResult.total_value.toLocaleString('zh-CN', { maximumFractionDigits: 0 }) }}
+            （现金 {{ formatPct(rebalanceResult.cash_weight) }}） ·
+            买入 {{ rebalanceResult.summary.buys }} · 卖出 {{ rebalanceResult.summary.sells }} ·
+            持有 {{ rebalanceResult.summary.holds }}
+          </div>
+          <el-table :data="rebalanceResult.holdings" size="small" class="mt-2">
+            <el-table-column label="代码" prop="ticker" width="80" />
+            <el-table-column label="名称" prop="name" width="100" />
+            <el-table-column label="现价" width="80">
+              <template #default="{ row }">
+                {{ row.current_price ?? '-' }}
+                <el-tag v-if="row.stale_price" size="small" type="info">旧价</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="当前/目标" width="110">
+              <template #default="{ row }">
+                {{ formatPct(row.current_weight) }} → {{ formatPct(row.target_weight) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="漂移" width="80">
+              <template #default="{ row }">{{ formatPct(row.drift) }}</template>
+            </el-table-column>
+            <el-table-column label="动作" width="80">
+              <template #default="{ row }">
+                <el-tag
+                  size="small"
+                  :type="row.action === 'buy' ? 'danger' : row.action === 'sell' ? 'success' : 'info'"
+                >{{ row.action === 'buy' ? '买入' : row.action === 'sell' ? '卖出' : '持有' }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="股数" width="90">
+              <template #default="{ row }">{{ row.shares_delta }}</template>
+            </el-table-column>
+            <el-table-column label="金额" width="120">
+              <template #default="{ row }">{{ row.amount_delta.toLocaleString('zh-CN', { maximumFractionDigits: 0 }) }}</template>
+            </el-table-column>
+          </el-table>
+        </template>
       </template>
     </el-card>
 

@@ -11,6 +11,7 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-10-24（组合再平衡）**: 新增 `screener/rebalance.py` 纯函数 + `POST /screener/portfolios/{pid}/rebalance`：按最新收盘价估算市值，与保存时的目标权重比较，输出漂移/买卖动作/股数/金额；漂移 ≤tolerance 持有，买入按整手向下取整（不足一手 `lot_blocked`），缺价回退保存价并标记 `stale_price` 且不交易。前端载入已保存组合后可「计算再平衡」。screener + financial_sync 324 passed。
 - **2026-10-24（表现快照）**: 新表 `screener.performance_snapshots`（run_id/as_of 唯一，迁移 `e9f0a1b2c3d4`）：`POST /runs/{id}/performance/snapshot` 计算并保存当日快照（幂等覆盖），`GET /runs/{id}/performance/history` 查历史；`core/performance_schedule.py` 按 `PERFORMANCE_SNAPSHOT_SCHEDULE`（工作日 17:10）自动为最近 30 天运行记录，注册任务 `screener_performance_snapshot`。前端表现面板新增「记录快照」与历史快照表。screener + financial_sync 319 passed。
 - **2026-10-24（数据质量面板 + 运行筛选）**: 新增 `GET /screener/data-quality`：最新财务期、7 个关键指标覆盖、A 股公司行情覆盖（≥200 根日线）、最新行情日期、知识库文档/切片数，以及知识库空/行情覆盖 <50%/财务库空告警。前端选股页新增「数据质量」卡片；历史运行增加 全部/进行中/已完成/失败/已取消 筛选。screener + financial_sync 318 passed。
 - **2026-10-24（运行明细 + 逐只操作）**: 新增 `screener/actions.py` `add_to_watchlist`（推荐股/指定 ticker → `Company.is_active=True`，幂等，返回 added/already/missing，写 `screener.watchlist_added` 事件）与 `POST /screener/runs/{id}/watchlist`；前端历史表新增「明细」入口，明细面板展示逐只结论/置信度/行业/价格/理由，并对推荐股提供「送入研究」「自选」。screener + financial_sync 317 passed。
@@ -61,7 +62,7 @@ metadata:
 | AI 中心 | ~75% | 模板/摘要/提取/Token 用量统计；AI 工作流已移除（单用户用不上） |
 | 研究中心 | ~92% | 全链路 + plan_type 四模板 + LLM 证据分类 + 多周期/同业比对 + 报告可视化 |
 | 投资组合 | ~40% | 自选已并入公司；持仓/日志仅后端，前端待做 |
-| 智能选股 | ~97% | 42 指标（TTM 估值 + 现金流质量 + 因子深度 + 银行/保险专属）+ 8 内置预设；股票池卫生 + 行业隔离/相对排名；深判知识库/证据守卫 + 三态结论 + 评测器；预设回测；定时筛选 + 变化日报/失败告警 Webhook + 推荐后表现 + 组合构建 + 组合保存 + 回测分段稳健性 + 表现快照 + 送入研究 + 运行取消 + CSV 导出 + 近似命中；财务数据工作日定时更新（2026-10-24） |
+| 智能选股 | ~97% | 42 指标（TTM 估值 + 现金流质量 + 因子深度 + 银行/保险专属）+ 8 内置预设；股票池卫生 + 行业隔离/相对排名；深判知识库/证据守卫 + 三态结论 + 评测器；预设回测；定时筛选 + 变化日报/失败告警 Webhook + 推荐后表现 + 组合构建 + 组合保存 + 回测分段稳健性 + 表现快照 + 组合再平衡 + 送入研究 + 运行取消 + CSV 导出 + 近似命中；财务数据工作日定时更新（2026-10-24） |
 | 系统/调度 | ~85% | 调度/观察/任务/事件/新鲜度/覆盖矩阵/Token 用量卡片 |
 
 总体：V1.1 达成，V2 按分析师优先级推进中（见下）。

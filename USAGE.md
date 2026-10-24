@@ -605,6 +605,7 @@ POST /api/v1/screener/schedule/run          # 后台立即运行一轮定时选�
 POST /api/v1/screener/runs/{id}/portfolio   # 组合构建（Body 加 {"save": true, "name": "..."} 可保存）
 GET  /api/v1/screener/runs/{id}/portfolios  # 某轮已保存组合
 GET  /api/v1/screener/portfolios/{pid}      # 组合详情（DELETE 删除）
+POST /api/v1/screener/portfolios/{pid}/rebalance # 按最新价计算漂移与买卖建议
 POST /api/v1/screener/runs/{id}/performance/snapshot  # 记录当日表现快照（同日幂等）
 GET  /api/v1/screener/runs/{id}/performance/history   # 历史表现快照
 GET  /api/v1/screener/data-quality          # 财务期/指标覆盖/行情覆盖/知识库状态与告警

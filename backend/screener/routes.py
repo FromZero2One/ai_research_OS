@@ -93,6 +93,13 @@ class WatchlistParams(BaseModel):
     limit: int = Field(default=50, ge=1, le=500)
 
 
+class RebalanceParams(BaseModel):
+    """POST /portfolios/{id}/rebalance body。"""
+
+    tolerance: float = Field(default=0.01, ge=0, le=0.5)
+    lot_size: int = Field(default=100, ge=1, le=1000)
+
+
 def _preset_json(p: CriteriaPreset) -> dict:
     return {
         "id": str(p.id), "name": p.name, "description": p.description,
@@ -788,6 +795,61 @@ async def get_saved_portfolio(
     if row is None:
         raise NotFoundError("ScreenerPortfolio", str(portfolio_id))
     return portfolio_json(row)
+
+
+@router.post("/portfolios/{portfolio_id}/rebalance")
+async def rebalance_saved_portfolio(
+    portfolio_id: uuid.UUID,
+    params: RebalanceParams,
+    db: AsyncSession = Depends(get_db),
+):
+    """按最新收盘价计算已保存组合的漂移与买卖建议。"""
+    from sqlalchemy import and_, func
+
+    from market.models import StockPrice
+    from screener.portfolio_store import get_portfolio
+    from screener.rebalance import compute_rebalance
+
+    row = await get_portfolio(db, portfolio_id)
+    if row is None:
+        raise NotFoundError("ScreenerPortfolio", str(portfolio_id))
+    result = row.result or {}
+    holdings = result.get("holdings") or []
+    if not holdings:
+        return JSONResponse(status_code=422, content={"error": "组合没有持仓记录"})
+
+    tickers = [h.get("ticker") for h in holdings if h.get("ticker")]
+    sub = (
+        select(StockPrice.ticker, func.max(StockPrice.date).label("d"))
+        .where(StockPrice.ticker.in_(tickers))
+        .group_by(StockPrice.ticker)
+        .subquery()
+    )
+    price_rows = (
+        await db.execute(
+            select(StockPrice.ticker, StockPrice.close).join(
+                sub,
+                and_(
+                    StockPrice.ticker == sub.c.ticker,
+                    StockPrice.date == sub.c.d,
+                ),
+            )
+        )
+    ).all()
+    prices = {ticker: float(close) for ticker, close in price_rows if close is not None}
+
+    computed = compute_rebalance(
+        holdings,
+        prices,
+        cash=float(result.get("cash") or 0.0),
+        tolerance=params.tolerance,
+        lot_size=params.lot_size,
+    )
+    return {
+        "portfolio_id": str(row.id),
+        "name": row.name,
+        **computed,
+    }
 
 
 @router.delete("/portfolios/{portfolio_id}", status_code=204)

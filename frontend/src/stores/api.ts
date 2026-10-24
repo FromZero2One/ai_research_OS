@@ -818,6 +818,48 @@ export function useScreenerPortfolio(id: MaybeRefOrGetter<string | null>) {
       }),
   })
 }
+export interface ScreenerRebalanceHolding {
+  ticker: string
+  name: string | null
+  industry: string | null
+  entry_price: number | null
+  current_price: number | null
+  shares: number
+  current_value: number
+  current_weight: number
+  target_weight: number
+  drift: number
+  action: 'buy' | 'sell' | 'hold'
+  amount_delta: number
+  shares_delta: number
+  stale_price: boolean
+  lot_blocked: boolean
+}
+export interface ScreenerRebalanceResult {
+  portfolio_id: string
+  name: string | null
+  total_value: number
+  invested_value: number
+  cash: number
+  cash_weight: number
+  tolerance: number
+  lot_size: number
+  holdings: ScreenerRebalanceHolding[]
+  summary: { buys: number; sells: number; holds: number }
+}
+export function useRebalanceScreenerPortfolio() {
+  return useMutation<
+    ScreenerRebalanceResult,
+    Error,
+    { portfolio_id: string; tolerance?: number; lot_size?: number }
+  >({
+    mutationFn: ({ portfolio_id, ...body }) =>
+      fetchApi(`/screener/portfolios/${portfolio_id}/rebalance`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+  })
+}
 export function useScreenerPortfolios(id: MaybeRefOrGetter<string | null>) {
   return useGet<{ portfolios: ScreenerSavedPortfolio[] }>(
     computed(() => ['screener-portfolios', toValue(id) ?? '']),
