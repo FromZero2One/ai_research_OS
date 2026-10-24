@@ -64,6 +64,16 @@ class BacktestParams(BaseModel):
     years: int = Field(default=5, ge=1, le=10)
 
 
+class PortfolioParams(BaseModel):
+    """POST /runs/{id}/portfolio body。"""
+
+    capital: float = Field(default=1_000_000.0, gt=0)
+    method: str = "equal"
+    max_weight: float = Field(default=0.15, gt=0, le=1)
+    max_industry_weight: float = Field(default=0.35, gt=0, le=1)
+    max_holdings: int = Field(default=20, ge=1, le=100)
+
+
 def _preset_json(p: CriteriaPreset) -> dict:
     return {
         "id": str(p.id), "name": p.name, "description": p.description,
@@ -283,6 +293,56 @@ async def get_performance(run_id: uuid.UUID, db: AsyncSession = Depends(get_db))
         return await build_run_performance(db, run_id)
     except ValueError as e:
         raise NotFoundError("ScreenerRun", str(run_id)) from e
+
+
+@router.post("/runs/{run_id}/portfolio")
+async def build_portfolio(
+    run_id: uuid.UUID,
+    params: PortfolioParams,
+    db: AsyncSession = Depends(get_db),
+):
+    """推荐股 → 资金分配（单票/行业上限，约束冲突时保留现金）。"""
+    from screener.portfolio import construct_portfolio
+
+    run = (
+        await db.execute(select(ScreenerRun).where(ScreenerRun.id == run_id))
+    ).scalar_one_or_none()
+    if run is None:
+        raise NotFoundError("ScreenerRun", str(run_id))
+    judgements = (
+        await db.execute(
+            select(ScreenerJudgement).where(
+                ScreenerJudgement.run_id == run.id,
+                ScreenerJudgement.status == "ok",
+                ScreenerJudgement.recommend.is_(True),
+            )
+        )
+    ).scalars().all()
+    candidates = []
+    for j in judgements:
+        snapshot = j.snapshot or {}
+        candidates.append(
+            {
+                "ticker": j.ticker,
+                "name": j.name,
+                "industry": snapshot.get("industry"),
+                "price": snapshot.get("price"),
+                "score": snapshot.get("score"),
+                "confidence": j.confidence,
+            }
+        )
+    try:
+        result = construct_portfolio(
+            candidates,
+            capital=params.capital,
+            method=params.method,
+            max_weight=params.max_weight,
+            max_industry_weight=params.max_industry_weight,
+            max_holdings=params.max_holdings,
+        )
+    except ValueError as e:
+        return JSONResponse(status_code=422, content={"error": str(e)})
+    return {"run_id": str(run.id), **result}
 
 
 @router.get("/criteria")

@@ -694,6 +694,43 @@ export function useScreenerRunPerformance(id: MaybeRefOrGetter<string | null>) {
     computed(() => (toValue(id) ? `/screener/runs/${toValue(id)}/performance` : '')),
   )
 }
+
+export interface ScreenerPortfolioHolding {
+  ticker: string
+  name: string | null
+  industry: string | null
+  price: number | null
+  score: number | null
+  confidence: number | null
+  weight: number
+  amount: number
+}
+export interface ScreenerPortfolioResult {
+  run_id: string
+  method: string
+  capital: number
+  invested: number
+  cash: number
+  cash_weight: number
+  holdings: ScreenerPortfolioHolding[]
+  warnings: string[]
+}
+export interface ScreenerPortfolioParams {
+  capital: number
+  method: string
+  max_weight: number
+  max_industry_weight: number
+  max_holdings: number
+}
+export function useScreenerPortfolio(id: MaybeRefOrGetter<string | null>) {
+  return useMutation<ScreenerPortfolioResult, Error, ScreenerPortfolioParams>({
+    mutationFn: (payload) =>
+      fetchApi(`/screener/runs/${toValue(id) ?? ''}/portfolio`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+  })
+}
 export function useScreenerRules() {
   return useGet<{ rules: Record<string, any> | null; criteria_hash?: string }>(['screener-rules'], '/screener/rules')
 }

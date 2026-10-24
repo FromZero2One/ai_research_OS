@@ -8,11 +8,13 @@ import {
   useScreenerCriteria,
   useScreenerMetrics,
   useScreenerPresets,
+  useScreenerPortfolio,
   useScreenerRun,
   useScreenerRunDiff,
   useScreenerRunPerformance,
   useScreenerRunReport,
   useScreenerRuns,
+  type ScreenerPortfolioResult,
   useTriggerScreenerRun,
   useTriggerScreenerRunPresets,
   type ScreenerPreset,
@@ -236,6 +238,31 @@ function formatPct(value?: number | null): string {
 function viewPerformance(run: ScreenerRunSummary) {
   viewingPerfRunId.value = run.id
 }
+
+// ── 组合构建 ──
+const portfolioRunId = ref<string | null>(null)
+const portfolioMutation = useScreenerPortfolio(portfolioRunId)
+const portfolioResult = ref<ScreenerPortfolioResult | null>(null)
+const portfolioParams = ref({
+  capital: 1_000_000,
+  method: 'equal',
+  max_weight: 0.15,
+  max_industry_weight: 0.35,
+  max_holdings: 20,
+})
+
+function viewPortfolio(run: ScreenerRunSummary) {
+  portfolioRunId.value = run.id
+  portfolioResult.value = null
+}
+
+async function buildPortfolio() {
+  try {
+    portfolioResult.value = await portfolioMutation.mutateAsync({ ...portfolioParams.value })
+  } catch (e: any) {
+    ElMessage.error(e.message || '组合构建失败')
+  }
+}
 </script>
 
 <template>
@@ -376,6 +403,11 @@ function viewPerformance(run: ScreenerRunSummary) {
                 <el-button size="small" link @click.stop="viewPerformance(row)">表现</el-button>
               </template>
             </el-table-column>
+            <el-table-column label="组合" width="70">
+              <template #default="{ row }">
+                <el-button size="small" link @click.stop="viewPortfolio(row)">组合</el-button>
+              </template>
+            </el-table-column>
           </el-table>
         </el-card>
       </el-col>
@@ -404,6 +436,61 @@ function viewPerformance(run: ScreenerRunSummary) {
         </div>
       </template>
       <div class="report-md" v-html="diffHtml" />
+    </el-card>
+
+    <el-card v-if="portfolioRunId" class="mt-3">
+      <template #header>
+        <div class="card-header">
+          <span>组合构建</span>
+          <el-button size="small" link @click="portfolioRunId = null">关闭</el-button>
+        </div>
+      </template>
+      <el-form :inline="true" size="small">
+        <el-form-item label="资金">
+          <el-input-number v-model="portfolioParams.capital" :min="1000" :step="100000" />
+        </el-form-item>
+        <el-form-item label="权重">
+          <el-select v-model="portfolioParams.method" style="width: 120px">
+            <el-option value="equal" label="等权" />
+            <el-option value="score" label="筛选得分" />
+            <el-option value="confidence" label="置信度" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="单票上限">
+          <el-input-number v-model="portfolioParams.max_weight" :min="0.01" :max="1" :step="0.01" />
+        </el-form-item>
+        <el-form-item label="行业上限">
+          <el-input-number v-model="portfolioParams.max_industry_weight" :min="0.01" :max="1" :step="0.05" />
+        </el-form-item>
+        <el-form-item label="最多持仓">
+          <el-input-number v-model="portfolioParams.max_holdings" :min="1" :max="100" />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :loading="portfolioMutation.isPending.value" @click="buildPortfolio">构建</el-button>
+        </el-form-item>
+      </el-form>
+      <template v-if="portfolioResult">
+        <div class="text-secondary" style="font-size: 12px; margin: 8px 0">
+          投入 {{ portfolioResult.invested.toLocaleString('zh-CN', { maximumFractionDigits: 0 }) }} ·
+          现金 {{ portfolioResult.cash.toLocaleString('zh-CN', { maximumFractionDigits: 0 }) }}
+          （{{ formatPct(portfolioResult.cash_weight) }}）
+        </div>
+        <div v-for="w in portfolioResult.warnings" :key="w" class="text-secondary" style="font-size: 12px">
+          ⚠ {{ w }}
+        </div>
+        <el-table :data="portfolioResult.holdings" size="small" class="mt-2">
+          <el-table-column label="代码" prop="ticker" width="80" />
+          <el-table-column label="名称" prop="name" width="100" />
+          <el-table-column label="行业" prop="industry" width="100" />
+          <el-table-column label="价格" prop="price" width="80" />
+          <el-table-column label="权重" width="90">
+            <template #default="{ row }">{{ formatPct(row.weight) }}</template>
+          </el-table-column>
+          <el-table-column label="金额" width="120">
+            <template #default="{ row }">{{ row.amount.toLocaleString('zh-CN', { maximumFractionDigits: 0 }) }}</template>
+          </el-table-column>
+        </el-table>
+      </template>
     </el-card>
 
     <el-card v-if="viewingPerfRunId" class="mt-3">

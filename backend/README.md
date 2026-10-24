@@ -86,6 +86,10 @@ ALL_PROXY= all_proxy= PYTHONPATH=. ./.venv/Scripts/python.exe -X utf8 scripts/ev
 
 本地 qwen3.5-q4 基线：JSON 合法率 100%、推荐匹配 7/7、证据违规 0、平均 9.1s。
 
+### 组合构建（2026-10-24）
+
+`POST /api/v1/screener/runs/{run_id}/portfolio`：把该轮**推荐股**按资金分配成组合。参数：`capital`、`method`（equal/score/confidence）、`max_weight`、`max_industry_weight`、`max_holdings`。约束冲突时只向下收缩权重，剩余保留现金（不做杠杆），返回 `holdings`（代码/名称/行业/价格/权重/金额）、`invested`、`cash` 与 `warnings`。前端历史运行表新增「组合」按钮。
+
 ### 推荐后表现（2026-10-24）
 
 `GET /api/v1/screener/runs/{run_id}/performance`：按 **T+1 收盘价**（运行日之后首个交易日）作为买入价，计算每只推荐股在 1/3/6/12 个月的收益与当前收益；等权汇总平均收益、胜率、样本数。前端历史运行表新增「表现」按钮。日线覆盖不足的票标记 `no_entry_price`；随着行情采集推进覆盖率会提升。
@@ -228,4 +232,4 @@ APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工�
 ```bash
 make test        # pytest，专用 airesearch_test 库 + 隔离 Qdrant 集合
 ```
-当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **268 passed**。
+当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **275 passed**。
