@@ -15,7 +15,9 @@ import {
   useScreenerRunDiff,
   useScreenerRunPerformance,
   useScreenerRunReport,
+  useRunScreenerSchedule,
   useScreenerRuns,
+  useScreenerSchedule,
   type ScreenerPortfolioResult,
   useTriggerScreenerRun,
   useTriggerScreenerRunPresets,
@@ -70,6 +72,24 @@ const running = computed(() =>
   || activeStatus.value === 'cancelling'
   || (runsData.value?.runs || []).some((r) => ['pending', 'screening', 'judging', 'cancelling'].includes(r.status)),
 )
+
+const { data: scheduleData } = useScreenerSchedule()
+const runScheduleMutation = useRunScreenerSchedule()
+const nextScheduleRun = computed(() => {
+  const raw = scheduleData.value?.job?.next_run
+  return raw ? formatLocalTime(raw) : '-'
+})
+async function runScheduleNow() {
+  try {
+    await runScheduleMutation.mutateAsync()
+    ElMessage.success('定时选股已加入后台队列，完成后可在历史运行查看')
+  } catch (e: any) {
+    ElMessage.error(e.message || '触发失败')
+  }
+}
+function exportRun(run: ScreenerRunSummary) {
+  window.open(`/api/screener/runs/${run.id}/export`, '_blank')
+}
 
 const cancelRunId = ref<string | null>(null)
 const cancelMutation = useCancelScreenerRun()
@@ -407,6 +427,38 @@ async function buildPortfolio() {
         </el-card>
 
         <el-card class="mt-3">
+          <template #header>
+            <div class="card-header">
+              <span>定时任务</span>
+              <el-tag size="small" :type="scheduleData?.scheduler_running ? 'success' : 'info'">
+                {{ scheduleData?.scheduler_running ? '调度器运行中' : '调度器未运行' }}
+              </el-tag>
+            </div>
+          </template>
+          <div v-if="scheduleData" class="schedule-grid">
+            <div><span class="text-secondary">计划：</span>{{ scheduleData.schedule }}</div>
+            <div><span class="text-secondary">预设：</span>{{ scheduleData.presets.join('、') || '-' }}</div>
+            <div><span class="text-secondary">下次：</span>{{ nextScheduleRun }}</div>
+            <div>
+              <span class="text-secondary">通知：</span>
+              <template v-if="scheduleData.webhook.enabled">
+                已启用（{{ scheduleData.webhook.format }}，
+                {{ scheduleData.webhook.notify_on === 'always' ? '每轮' : '有变化时' }}）
+              </template>
+              <template v-else>未配置 Webhook</template>
+            </div>
+          </div>
+          <div class="mt-2 flex items-center gap-2">
+            <el-button
+              size="small" type="primary" plain
+              :loading="runScheduleMutation.isPending.value"
+              @click="runScheduleNow"
+            >立即运行定时选股</el-button>
+            <span class="text-xs text-secondary">后台执行；失败会推送告警（已配置 Webhook 时）</span>
+          </div>
+        </el-card>
+
+        <el-card class="mt-3">
           <template #header><span>历史运行</span></template>
           <el-table :data="runsData?.runs || []" size="small" @row-click="viewReport">
             <el-table-column label="时间" width="160">
@@ -421,9 +473,10 @@ async function buildPortfolio() {
             </el-table-column>
             <el-table-column label="候选" prop="candidate_count" width="70" />
             <el-table-column label="推荐" prop="result_count" width="70" />
-            <el-table-column label="报告" width="80">
+            <el-table-column label="报告" width="110">
               <template #default="{ row }">
                 <el-button v-if="row.report_path" size="small" link type="primary" @click.stop="viewReport(row)">查看</el-button>
+                <el-button size="small" link @click.stop="exportRun(row)">CSV</el-button>
               </template>
             </el-table-column>
             <el-table-column label="变化" width="70">
@@ -603,6 +656,7 @@ async function buildPortfolio() {
 
 <style scoped>
 .card-header { display: flex; justify-content: space-between; align-items: center; }
+.schedule-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; font-size: 13px; }
 .run-status { margin-top: 12px; display: flex; align-items: center; gap: 12px; }
 .run-error { margin-top: 8px; color: var(--danger); font-size: 13px; white-space: pre-wrap; }
 .preset-section { margin-bottom: 14px; }

@@ -69,6 +69,21 @@ def format_diff_text(
     return "\n".join(lines)
 
 
+def format_failure_text(run: dict) -> str:
+    """运行失败告警（手动/定时共用）。"""
+    criteria = " ".join(str(run.get("criteria_text") or "").split())[:120] or "-"
+    error = " ".join(str(run.get("error") or "未知原因").split())[:300]
+    return "\n".join(
+        [
+            "【智能选股】运行失败",
+            f"标准：{criteria}",
+            f"Run：{str(run.get('id', '-'))[:8]}",
+            f"时间：{_fmt_ts(run.get('finished_at'))}",
+            f"错误：{error}",
+        ]
+    )
+
+
 def build_webhook_payload(text: str, fmt: str = "generic", **meta) -> dict:
     """按机器人平台拼装请求体；未知格式回退通用 JSON。"""
     fmt = (fmt or "generic").lower()

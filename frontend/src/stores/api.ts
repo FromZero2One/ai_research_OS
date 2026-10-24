@@ -639,6 +639,30 @@ export function useScreenerRun(id: MaybeRefOrGetter<string | null>, opts?: { pol
 export function useTriggerScreenerRun(invalidateKeys: string[][] = [['screener-runs']]) {
   return useCreate<{ id: string; status: string }>('/screener/runs', invalidateKeys)
 }
+export interface ScreenerScheduleInfo {
+  scheduler_running: boolean
+  job: { id: string; next_run: string | null; trigger: string } | null
+  schedule: string
+  presets: string[]
+  webhook: { enabled: boolean; format: string; notify_on: string }
+}
+export function useScreenerSchedule() {
+  return useGet<ScreenerScheduleInfo>(
+    ['screener-schedule'],
+    '/screener/schedule',
+    { refetchInterval: 30_000 },
+  )
+}
+export function useRunScreenerSchedule() {
+  const qc = useQueryClient()
+  return useMutation<{ status: string; task_id: string; task_key: string }, Error, void>({
+    mutationFn: () => fetchApi('/screener/schedule/run', { method: 'POST' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['screener-runs'] })
+      qc.invalidateQueries({ queryKey: ['scheduler-status'] })
+    },
+  })
+}
 export function useCancelScreenerRun() {
   const qc = useQueryClient()
   return useMutation<{ id: string; status: string }, Error, string>({

@@ -74,6 +74,12 @@ API：`GET /api/v1/screener/runs/{run_id}/diff` 返回变化日报 Markdown 与 
 **取消运行（2026-10-24）**：`POST /api/v1/screener/runs/{run_id}/cancel` 将进行中的运行置为 `cancelling` 并设置进程内取消事件；worker 在阶段边界以及每只深判开始前检查，命中后停止剩余 LLM 调用、清空未完成结果并把状态落为 `cancelled`（不生成报告）。排队中的运行在 worker 启动时直接收尾；已结束的运行返回 409，重复取消幂等。前端历史运行表对进行中的行显示「取消」按钮。取消是 cooperative 的：已在途的单次 LLM 请求会在完成或取消信号到达后尽快返回。
 **Webhook 通知（2026-10-24）**：配置 `SCREENER_WEBHOOK_URL` 后，定时任务在变化日报生成后推送摘要（新推荐/掉出推荐/新进候选/移出候选 + 股票名单 + 日报路径）。`SCREENER_WEBHOOK_FORMAT` 支持 `wecom` / `feishu` / `dingtalk` / `generic`（默认通用 JSON，群机器人直接选前者）。`SCREENER_WEBHOOK_NOTIFY_ON=changes`（默认）仅在有变化时发送，`always` 每轮都发；业务错误码（如企微 `errcode!=0`）按失败记录，通知失败不会中断定时任务。发送结果在调度返回的 `notification` 字段中可见。
 
+**失败告警（2026-10-24）**：同一 Webhook 也用于运行失败告警——手动/定时 run 失败（`screener.failed`）以及定时任务自身异常都会推送「标准 / Run / 时间 / 错误」摘要；未配置 URL 时静默跳过，告警失败不影响运行结果。
+
+**调度状态与手动运行（2026-10-24）**：`GET /api/v1/screener/schedule` 返回 cron、定时预设、下次运行时间、Webhook 配置；`POST /api/v1/screener/schedule/run` 以持久任务 `screener_schedule` 后台执行一轮定时选股（不阻塞 HTTP，重复提交返回 409）。前端选股页「定时任务」卡片展示这些信息并提供「立即运行定时选股」。调度配置本身仍来自环境变量（`SCREENER_SCHEDULE` / `SCREENER_SCHEDULE_PRESETS`），UI 只读。
+
+**结果导出（2026-10-24）**：`GET /api/v1/screener/runs/{run_id}/export` 导出该轮全部判断为 CSV（UTF-8 BOM，Excel 直接打开），含结论/推荐/置信度/行业/价格/市值/初筛得分/命中预设/理由/标准命中/错误；前端历史运行表「CSV」按钮。
+
 ### 三态结论与置信度（2026-10-24）
 
 `ScreenerJudgement.verdict` 区分四种结论：`recommend` / `reject` / `insufficient` / `failed`。证据守卫降级、资料不足或命中“数据不足”原因时记为 `insufficient`；显式不满足标准记为 `reject`。报告拆分为「未通过标准（未推荐）」与「数据不足（未推荐）」两个分区，API 同步透出 `verdict`。
@@ -251,4 +257,4 @@ APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工�
 ```bash
 make test        # pytest，专用 airesearch_test 库 + 隔离 Qdrant 集合
 ```
-当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **294 passed**。
+当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **298 passed**。

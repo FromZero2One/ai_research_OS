@@ -598,6 +598,9 @@ POST /api/v1/screener/runs                 # Body: {"mode": "presets", "pool": "
 GET  /api/v1/screener/runs/{id}            # 运行详情（含逐只判断）
 GET  /api/v1/screener/runs/{id}/report     # Markdown 报告
 POST /api/v1/screener/runs/{id}/cancel      # 取消进行中的筛选（阶段边界/逐只深判前生效）
+GET  /api/v1/screener/runs/{id}/export      # 导出该轮判断为 CSV
+GET  /api/v1/screener/schedule              # 定时快照（cron/预设/下次运行/Webhook 状态）
+POST /api/v1/screener/schedule/run          # 后台立即运行一轮定时选股
 POST /api/v1/screener/runs/{id}/to-research # 推荐股 → 研究中心会话（Body 可选 {"tickers": [...], "limit": 5}）
 ```
 

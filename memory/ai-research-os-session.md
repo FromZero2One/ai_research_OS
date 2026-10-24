@@ -11,6 +11,7 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-10-24（失败告警 + 调度状态/立即运行 + CSV 导出）**: run 失败（手动/定时）与定时任务自身异常经同一 Webhook 推送失败摘要；新增 `GET /screener/schedule`（cron/预设/下次运行/Webhook 只读状态）、`POST /screener/schedule/run`（持久任务 `screener_schedule`，202/409，不阻塞 HTTP）、`GET /screener/runs/{id}/export`（UTF-8 BOM CSV）。前端选股页新增「定时任务」卡片（状态/下次运行/立即运行）与历史运行「CSV」按钮。screener + financial_sync 298 passed。
 - **2026-10-24（近似命中）**: 报告新增「附：近似命中（仅差 1 条规则）」：`screening.evaluate_near_misses` 找出恰好失败 1 条规则且无缺失数据的票（按市值降序前 10），union 模式经 `compose.evaluate_near_misses_by_preset` 逐预设判断去重并标注预设；不影响候选池/推荐。`_rule_hit` 重构出 `_rule_value` 复用指标取值。测试补近似命中与报告分区。
 - **2026-10-24（运行取消）**: 新增 `POST /screener/runs/{id}/cancel` + `screener/cancel.py` 进程内取消事件；状态机新增 `cancelling`/`cancelled`。worker 在行情拉取后、财务补采后、进入深判前、每只深判开始前、报告生成前检查取消；`judge_candidates(should_stop=...)` 取消剩余 asyncio 任务。排队中的 run 启动时直接收尾；已结束 run 取消返回 409、重复取消幂等。前端历史运行表新增「取消」按钮，状态映射补 cancelling/cancelled。screener + financial_sync 292 passed。
 - **2026-10-24（变化日报 Webhook）**: 新增 `screener/notify.py`：定时选股变化日报生成后推送群机器人摘要（企微/飞书/钉钉/通用 JSON），配置 `SCREENER_WEBHOOK_URL`/`SCREENER_WEBHOOK_FORMAT`/`SCREENER_WEBHOOK_NOTIFY_ON`（changes|always）；业务错误码与网络异常只记日志、不阻断调度。`build_run_diff_data` 额外返回变化详情供通知使用，原 `build_run_diff` 签名不变。screener + financial_sync 287 passed。
@@ -53,7 +54,7 @@ metadata:
 | AI 中心 | ~75% | 模板/摘要/提取/Token 用量统计；AI 工作流已移除（单用户用不上） |
 | 研究中心 | ~92% | 全链路 + plan_type 四模板 + LLM 证据分类 + 多周期/同业比对 + 报告可视化 |
 | 投资组合 | ~40% | 自选已并入公司；持仓/日志仅后端，前端待做 |
-| 智能选股 | ~95% | 42 指标（TTM 估值 + 现金流质量 + 因子深度 + 银行/保险专属）+ 8 内置预设；股票池卫生 + 行业隔离/相对排名；深判知识库/证据守卫 + 三态结论 + 评测器；预设回测；定时筛选 + 变化日报 + 推荐后表现跟踪 + 组合构建；财务数据工作日定时更新（2026-10-24） |
+| 智能选股 | ~97% | 42 指标（TTM 估值 + 现金流质量 + 因子深度 + 银行/保险专属）+ 8 内置预设；股票池卫生 + 行业隔离/相对排名；深判知识库/证据守卫 + 三态结论 + 评测器；预设回测；定时筛选 + 变化日报/失败告警 Webhook + 推荐后表现 + 组合构建 + 送入研究 + 运行取消 + CSV 导出 + 近似命中；财务数据工作日定时更新（2026-10-24） |
 | 系统/调度 | ~85% | 调度/观察/任务/事件/新鲜度/覆盖矩阵/Token 用量卡片 |
 
 总体：V1.1 达成，V2 按分析师优先级推进中（见下）。

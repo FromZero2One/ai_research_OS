@@ -154,6 +154,32 @@ class TestTriggerAndRun:
         assert resp.status_code == 404
 
 
+class TestExportAndSchedule:
+    def test_export_csv(self, client: TestClient, screener_env):
+        run = _run_screener_run(client, client.post("/api/v1/screener/runs").json())
+        resp = client.get(f"/api/v1/screener/runs/{run['id']}/export")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/csv")
+        assert "attachment" in resp.headers["content-disposition"]
+        text = resp.content.decode("utf-8-sig")
+        assert text.startswith("代码,名称,结论,推荐")
+        assert "300750" in text and "宁德时代" in text
+
+    def test_schedule_status(self, client: TestClient):
+        resp = client.get("/api/v1/screener/schedule")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "schedule" in data and "presets" in data
+        assert "enabled" in data["webhook"]
+
+    def test_schedule_run_queues_task(self, client: TestClient):
+        resp = client.post("/api/v1/screener/schedule/run")
+        assert resp.status_code == 202
+        data = resp.json()
+        assert data["status"] == "queued"
+        assert data["task_id"]
+
+
 class TestCriteriaEndpoints:
     def test_get_criteria(self, client: TestClient):
         resp = client.get("/api/v1/screener/criteria")

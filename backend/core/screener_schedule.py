@@ -139,5 +139,31 @@ async def scheduled_screener_update() -> dict:
             except Exception as e:  # noqa: BLE001 — 单个预设失败不阻断其余
                 logger.warning("定时选股 %s 失败: %s", tag, e)
                 results[tag] = {"status": "failed", "error": str(e)[:300]}
+                try:
+                    from screener.notify import format_failure_text, send_screener_webhook
+
+                    await send_screener_webhook(
+                        format_failure_text(
+                            {
+                                "id": "-",
+                                "criteria_text": f"定时选股预设：{tag}",
+                                "error": str(e),
+                            }
+                        ),
+                        event="schedule_failed",
+                        preset=tag,
+                    )
+                except Exception as notify_error:  # noqa: BLE001
+                    logger.warning("定时选股失败告警异常: %s", notify_error)
 
     return {"presets": results}
+
+
+async def _handle_screener_schedule(payload: dict) -> dict:
+    """持久任务 handler：手动“立即运行定时选股”走后台 worker。"""
+    return await scheduled_screener_update()
+
+
+from core.task_manager import register_handler  # noqa: E402
+
+register_handler("screener_schedule", _handle_screener_schedule)

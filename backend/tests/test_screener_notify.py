@@ -10,6 +10,7 @@ from core.config import settings
 from screener.notify import (
     build_webhook_payload,
     format_diff_text,
+    format_failure_text,
     send_screener_webhook,
     should_notify,
 )
@@ -54,6 +55,21 @@ def test_format_diff_text_handles_empty_diff():
     text = format_diff_text("核心资产", _RUN, {"counts": {}})
     assert "新推荐 0｜掉出推荐 0" in text
     assert "新推荐：" not in text
+
+
+def test_format_failure_text():
+    text = format_failure_text(
+        {
+            "id": "abcdef123456",
+            "criteria_text": "预设组合：核心资产\n投资逻辑：ROE 高",
+            "error": "数据源超时",
+            "finished_at": datetime(2026, 10, 24, 9, 0, tzinfo=UTC),
+        }
+    )
+    assert "运行失败" in text
+    assert "预设组合：核心资产 投资逻辑：ROE 高" in text
+    assert "abcdef12" in text
+    assert "数据源超时" in text
 
 
 def test_build_webhook_payload_formats():

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -290,6 +293,94 @@ async def get_run(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
             for j in judgements
         ],
     }
+
+
+@router.get("/runs/{run_id}/export")
+async def export_run(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """导出该轮全部判断为 CSV（UTF-8 BOM，Excel 可直接打开）。"""
+    run = (
+        await db.execute(select(ScreenerRun).where(ScreenerRun.id == run_id))
+    ).scalar_one_or_none()
+    if run is None:
+        raise NotFoundError("ScreenerRun", str(run_id))
+    judgements = (
+        await db.execute(
+            select(ScreenerJudgement)
+            .where(ScreenerJudgement.run_id == run_id)
+            .order_by(ScreenerJudgement.created_at)
+        )
+    ).scalars().all()
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "代码", "名称", "结论", "推荐", "置信度", "行业", "现价", "总市值",
+        "初筛得分", "命中预设", "理由", "标准命中", "状态", "错误",
+    ])
+    for j in judgements:
+        snap = j.snapshot or {}
+        recommend = "" if j.recommend is None else ("是" if j.recommend else "否")
+        hits = "；".join(
+            f"{h.get('criterion', '')}:{'命中' if h.get('hit') else '未命中'}"
+            for h in (j.criteria_hits or [])
+        )
+        writer.writerow([
+            j.ticker, j.name or "", j.verdict or "", recommend,
+            "" if j.confidence is None else j.confidence,
+            snap.get("industry") or "", snap.get("price") or "",
+            snap.get("market_cap") or "", snap.get("score") or "",
+            "、".join(snap.get("presets") or []),
+            "；".join(j.reasons or []), hits, j.status, j.error or "",
+        ])
+
+    filename = f"screener-run-{str(run.id)[:8]}.csv"
+    return Response(
+        content="﻿" + buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/schedule")
+async def get_schedule():
+    """定时选股配置与调度状态（配置项只读，来自环境变量）。"""
+    from core.config import settings
+    from core.scheduler import get_scheduler_status
+
+    status = get_scheduler_status()
+    job = next(
+        (j for j in status.get("jobs", []) if j.get("id") == "screener_schedule"),
+        None,
+    )
+    return {
+        "scheduler_running": status.get("running", False),
+        "job": job,
+        "schedule": settings.SCREENER_SCHEDULE,
+        "presets": [
+            t.strip()
+            for t in (settings.SCREENER_SCHEDULE_PRESETS or "").split(",")
+            if t.strip()
+        ],
+        "webhook": {
+            "enabled": bool(settings.SCREENER_WEBHOOK_URL),
+            "format": settings.SCREENER_WEBHOOK_FORMAT,
+            "notify_on": settings.SCREENER_WEBHOOK_NOTIFY_ON,
+        },
+    }
+
+
+@router.post("/schedule/run", status_code=202)
+async def run_schedule_now(db: AsyncSession = Depends(get_db)):
+    """把“立即运行定时选股”投递为持久后台任务，避免请求长时间阻塞。"""
+    from core.task_manager import create_task
+
+    key = f"screener-schedule:{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}"
+    task = await create_task("screener_schedule", key, {}, db=db)
+    if task is None:
+        return JSONResponse(
+            status_code=409, content={"error": "定时选股任务已在运行"}
+        )
+    return {"status": "queued", "task_id": str(task.id), "task_key": key}
 
 
 @router.get("/runs/{run_id}/report")
