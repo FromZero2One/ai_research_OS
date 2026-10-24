@@ -67,6 +67,17 @@ LLM 只在深判参与，筛选执行确定性。迁移 `b5d2f8a3c6e1` → `c8e1
 
 API：`GET /api/v1/screener/runs/{run_id}/diff` 返回变化日报 Markdown 与 `has_previous`；前端历史运行表新增「日报」按钮。手动触发调度：`POST /api/v1/scheduler/run/screener_schedule`。
 
+### LLM 深判评测（2026-10-24）
+
+`screener/eval/judge_cases.jsonl` 内置 10 个标注用例：无资料文档类标准、财务可验证标准、带资料片段且要求引用、混合标准。`scripts/eval_judge.py` 调用真实 LLM 跑 `judge_one`，输出 JSON 合法率、推荐判定匹配率、证据纪律违规数、自动降级数与平均耗时，报告落 `screener/reports/eval-judge-*.md`。
+
+```bash
+cd backend
+ALL_PROXY= all_proxy= PYTHONPATH=. ./.venv/Scripts/python.exe -X utf8 scripts/eval_judge.py
+```
+
+本地 qwen3.5-q4 基线：JSON 合法率 100%、推荐匹配 7/7、证据违规 0、平均 9.1s。
+
 ### 推荐后表现（2026-10-24）
 
 `GET /api/v1/screener/runs/{run_id}/performance`：按 **T+1 收盘价**（运行日之后首个交易日）作为买入价，计算每只推荐股在 1/3/6/12 个月的收益与当前收益；等权汇总平均收益、胜率、样本数。前端历史运行表新增「表现」按钮。日线覆盖不足的票标记 `no_entry_price`；随着行情采集推进覆盖率会提升。
@@ -208,4 +219,4 @@ APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工�
 ```bash
 make test        # pytest，专用 airesearch_test 库 + 隔离 Qdrant 集合
 ```
-当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **251 passed**。
+当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **257 passed**。
