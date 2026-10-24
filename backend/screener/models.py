@@ -21,7 +21,9 @@ class ScreenerRun(Base, UUIDMixin, TimestampMixin):
             "uq_screener_runs_active",
             "status",
             unique=True,
-            postgresql_where=text("status IN ('pending', 'screening', 'judging')"),
+            postgresql_where=text(
+                "status IN ('pending', 'screening', 'judging', 'cancelling')"
+            ),
         ),
         {"schema": "screener"},
     )
@@ -126,3 +128,20 @@ class ScreenerBacktestRun(Base, UUIDMixin, TimestampMixin):
     report_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     started_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
     finished_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class ScreenerPortfolio(Base, UUIDMixin, TimestampMixin):
+    """保存下来的组合方案（参数 + 构建结果），供历史查看与再平衡对照。"""
+
+    __tablename__ = "portfolios"
+    __table_args__ = {"schema": "screener"}
+
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("screener.screener_runs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    params: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    result: Mapped[dict] = mapped_column(JSONB, nullable=False)

@@ -53,7 +53,7 @@ Company → Market + Document → Knowledge(RAG) → AI → Research → Portfol
 
 行业专属指标（F10）：银行侧净息差、不良贷款/贷款总额、不良率、拨备率、一级资本充足率；保险侧净投资收益率、已赚保费、偿付能力充足率。SW 一级行业把保险与券商同归“非银金融”，服务层用 F10 保费/贷款字段进一步区分 `financial_type`，银行/保险预设据此只筛对应子行业。
 
-LLM 只在深判参与，筛选执行确定性。迁移 `b5d2f8a3c6e1` → `c8e1b7d4f2a9` → `b7c8d9e0f1a2` → `c1d2e3f4a5b6` → `d2e3f4a5b6c7` → `e3f4a5b6c7d8` → `f4a5b6c7d8e9` → `a5b6c7d8e9f0` → `b6c7d8e9f0a1` → `c7d8e9f0a1b2`，schema `screener`。
+LLM 只在深判参与，筛选执行确定性。迁移 `b5d2f8a3c6e1` → `c8e1b7d4f2a9` → `b7c8d9e0f1a2` → `c1d2e3f4a5b6` → `d2e3f4a5b6c7` → `e3f4a5b6c7d8` → `f4a5b6c7d8e9` → `a5b6c7d8e9f0` → `b6c7d8e9f0a1` → `c7d8e9f0a1b2` → `d8e9f0a1b2c3`，schema `screener`。
 
 ### 预设回测（2026-10-23 MVP）
 
@@ -106,6 +106,8 @@ ALL_PROXY= all_proxy= PYTHONPATH=. ./.venv/Scripts/python.exe -X utf8 scripts/ev
 ### 组合构建（2026-10-24）
 
 `POST /api/v1/screener/runs/{run_id}/portfolio`：把该轮**推荐股**按资金分配成组合。参数：`capital`、`method`（equal/score/confidence）、`max_weight`、`max_industry_weight`、`max_holdings`。约束冲突时只向下收缩权重，剩余保留现金（不做杠杆），返回 `holdings`（代码/名称/行业/价格/权重/金额）、`invested`、`cash` 与 `warnings`。前端历史运行表新增「组合」按钮。
+
+**组合持久化（2026-10-24）**：请求体加 `save: true` / `name` 可把参数与结果保存到 `screener.portfolios`（JSONB）并返回 `portfolio_id`；`GET /api/v1/screener/runs/{run_id}/portfolios` 列某轮已保存组合，`GET/DELETE /api/v1/screener/portfolios/{portfolio_id}` 查看/删除，`GET /api/v1/screener/portfolios` 列全部。前端组合面板新增「保存」按钮与已保存组合标签（点击载入、关闭删除）。迁移 `d8e9f0a1b2c3` 建表，并把 `cancelling` 纳入「同一时刻仅一个活跃 run」的唯一索引。
 
 ### 推荐后表现（2026-10-24）
 
@@ -257,4 +259,4 @@ APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工�
 ```bash
 make test        # pytest，专用 airesearch_test 库 + 隔离 Qdrant 集合
 ```
-当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **298 passed**。
+当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **300 passed**。

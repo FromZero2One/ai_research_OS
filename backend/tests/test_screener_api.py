@@ -180,6 +180,58 @@ class TestExportAndSchedule:
         assert data["task_id"]
 
 
+class TestSavedPortfolios:
+    @staticmethod
+    def _body(**overrides) -> dict:
+        body = {
+            "capital": 1_000_000,
+            "method": "equal",
+            "max_weight": 0.2,
+            "max_industry_weight": 0.5,
+            "max_holdings": 10,
+        }
+        body.update(overrides)
+        return body
+
+    def test_save_list_get_delete(self, client: TestClient, screener_env):
+        run = _run_screener_run(client, client.post("/api/v1/screener/runs").json())
+        resp = client.post(
+            f"/api/v1/screener/runs/{run['id']}/portfolio",
+            json=self._body(save=True, name="测试组合"),
+        )
+        assert resp.status_code == 200, resp.text
+        saved = resp.json()
+        assert saved["portfolio_id"]
+        assert saved["name"] == "测试组合"
+        portfolio_id = saved["portfolio_id"]
+
+        listed = client.get(f"/api/v1/screener/runs/{run['id']}/portfolios")
+        assert listed.status_code == 200
+        rows = listed.json()["portfolios"]
+        assert len(rows) == 1
+        assert rows[0]["id"] == portfolio_id
+        assert rows[0]["result"]["holdings"]
+
+        detail = client.get(f"/api/v1/screener/portfolios/{portfolio_id}")
+        assert detail.status_code == 200
+        assert detail.json()["params"]["capital"] == 1_000_000
+
+        assert client.get("/api/v1/screener/portfolios").status_code == 200
+        deleted = client.delete(f"/api/v1/screener/portfolios/{portfolio_id}")
+        assert deleted.status_code == 204
+        assert client.get(f"/api/v1/screener/portfolios/{portfolio_id}").status_code == 404
+
+    def test_compute_without_save_not_persisted(self, client: TestClient, screener_env):
+        run = _run_screener_run(client, client.post("/api/v1/screener/runs").json())
+        resp = client.post(
+            f"/api/v1/screener/runs/{run['id']}/portfolio", json=self._body()
+        )
+        assert resp.status_code == 200
+        assert "portfolio_id" not in resp.json()
+        listed = client.get(f"/api/v1/screener/runs/{run['id']}/portfolios").json()
+        assert listed["portfolios"] == []
+
+
 class TestCriteriaEndpoints:
     def test_get_criteria(self, client: TestClient):
         resp = client.get("/api/v1/screener/criteria")

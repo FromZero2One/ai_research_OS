@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import {
@@ -9,8 +9,10 @@ import {
   useScreenerCriteria,
   useScreenerMetrics,
   useScreenerPresets,
+  useDeleteScreenerPortfolio,
   usePushScreenerToResearch,
   useScreenerPortfolio,
+  useScreenerPortfolios,
   useScreenerRun,
   useScreenerRunDiff,
   useScreenerRunPerformance,
@@ -23,6 +25,7 @@ import {
   useTriggerScreenerRunPresets,
   type ScreenerPreset,
   type ScreenerRunSummary,
+  type ScreenerSavedPortfolio,
 } from '@/stores/api'
 import PresetManager from '@/components/PresetManager.vue'
 
@@ -316,6 +319,56 @@ async function buildPortfolio() {
     ElMessage.error(e.message || '组合构建失败')
   }
 }
+
+const { data: savedPortfoliosData, refetch: refetchSavedPortfolios } =
+  useScreenerPortfolios(portfolioRunId)
+const deletePortfolioMutation = useDeleteScreenerPortfolio()
+
+async function savePortfolio() {
+  if (!portfolioResult.value) return
+  try {
+    const { value } = await ElMessageBox.prompt('组合名称（可留空）', '保存组合', {
+      inputValue: `组合 ${new Date().toLocaleDateString('zh-CN')}`,
+      confirmButtonText: '保存',
+      cancelButtonText: '取消',
+    })
+    const saved = await portfolioMutation.mutateAsync({
+      ...portfolioParams.value,
+      save: true,
+      name: value || null,
+    })
+    portfolioResult.value = saved
+    ElMessage.success('组合已保存')
+    await refetchSavedPortfolios()
+  } catch (e: any) {
+    if (e === 'cancel' || e === 'close') return
+    ElMessage.error(e.message || '保存失败')
+  }
+}
+
+function loadSavedPortfolio(p: ScreenerSavedPortfolio) {
+  portfolioResult.value = { ...p.result, run_id: portfolioRunId.value || p.run_id }
+  portfolioParams.value = {
+    capital: p.params.capital,
+    method: p.params.method,
+    max_weight: p.params.max_weight,
+    max_industry_weight: p.params.max_industry_weight,
+    max_holdings: p.params.max_holdings,
+  }
+}
+
+async function removeSavedPortfolio(p: ScreenerSavedPortfolio) {
+  try {
+    await ElMessageBox.confirm(`删除组合「${p.name || p.id.slice(0, 8)}」？`, '确认删除', {
+      type: 'warning',
+    })
+    await deletePortfolioMutation.mutateAsync(p.id)
+    ElMessage.success('已删除')
+  } catch (e: any) {
+    if (e === 'cancel' || e === 'close') return
+    ElMessage.error(e.message || '删除失败')
+  }
+}
 </script>
 
 <template>
@@ -573,8 +626,21 @@ async function buildPortfolio() {
         </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="portfolioMutation.isPending.value" @click="buildPortfolio">构建</el-button>
+          <el-button :disabled="!portfolioResult" @click="savePortfolio">保存</el-button>
         </el-form-item>
       </el-form>
+      <div v-if="savedPortfoliosData?.portfolios?.length" class="saved-portfolios">
+        <span class="text-secondary" style="font-size: 12px">已保存：</span>
+        <el-tag
+          v-for="p in savedPortfoliosData.portfolios" :key="p.id"
+          size="small" closable
+          @click="loadSavedPortfolio(p)"
+          @close="removeSavedPortfolio(p)"
+        >
+          {{ p.name || p.id.slice(0, 8) }}
+          <span v-if="p.created_at"> · {{ formatLocalTime(p.created_at) }}</span>
+        </el-tag>
+      </div>
       <template v-if="portfolioResult">
         <div class="text-secondary" style="font-size: 12px; margin: 8px 0">
           投入 {{ portfolioResult.invested.toLocaleString('zh-CN', { maximumFractionDigits: 0 }) }} ·
@@ -657,6 +723,8 @@ async function buildPortfolio() {
 <style scoped>
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .schedule-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; font-size: 13px; }
+.saved-portfolios { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 8px; }
+.saved-portfolios .el-tag { cursor: pointer; }
 .run-status { margin-top: 12px; display: flex; align-items: center; gap: 12px; }
 .run-error { margin-top: 8px; color: var(--danger); font-size: 13px; white-space: pre-wrap; }
 .preset-section { margin-bottom: 14px; }

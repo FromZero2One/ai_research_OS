@@ -763,6 +763,16 @@ export interface ScreenerPortfolioParams {
   max_weight: number
   max_industry_weight: number
   max_holdings: number
+  save?: boolean
+  name?: string | null
+}
+export interface ScreenerSavedPortfolio {
+  id: string
+  run_id: string
+  name: string | null
+  params: ScreenerPortfolioParams
+  result: ScreenerPortfolioResult
+  created_at: string | null
 }
 export function useScreenerPortfolio(id: MaybeRefOrGetter<string | null>) {
   return useMutation<ScreenerPortfolioResult, Error, ScreenerPortfolioParams>({
@@ -771,6 +781,22 @@ export function useScreenerPortfolio(id: MaybeRefOrGetter<string | null>) {
         method: 'POST',
         body: JSON.stringify(payload),
       }),
+  })
+}
+export function useScreenerPortfolios(id: MaybeRefOrGetter<string | null>) {
+  return useGet<{ portfolios: ScreenerSavedPortfolio[] }>(
+    computed(() => ['screener-portfolios', toValue(id) ?? '']),
+    computed(() =>
+      toValue(id) ? `/screener/runs/${toValue(id)}/portfolios` : ''
+    ),
+  )
+}
+export function useDeleteScreenerPortfolio() {
+  const qc = useQueryClient()
+  return useMutation<void, Error, string>({
+    mutationFn: (portfolioId) =>
+      fetchApi(`/screener/portfolios/${portfolioId}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['screener-portfolios'] }),
   })
 }
 

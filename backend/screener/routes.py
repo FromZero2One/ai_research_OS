@@ -75,6 +75,8 @@ class PortfolioParams(BaseModel):
     max_weight: float = Field(default=0.15, gt=0, le=1)
     max_industry_weight: float = Field(default=0.35, gt=0, le=1)
     max_holdings: int = Field(default=20, ge=1, le=100)
+    save: bool = False
+    name: str | None = Field(default=None, max_length=128)
 
 
 class ToResearchParams(BaseModel):
@@ -469,7 +471,76 @@ async def build_portfolio(
         )
     except ValueError as e:
         return JSONResponse(status_code=422, content={"error": str(e)})
-    return {"run_id": str(run.id), **result}
+
+    payload = {"run_id": str(run.id), **result}
+    if params.save:
+        from screener.portfolio_store import save_portfolio
+
+        row = await save_portfolio(
+            db,
+            run.id,
+            {
+                "capital": params.capital,
+                "method": params.method,
+                "max_weight": params.max_weight,
+                "max_industry_weight": params.max_industry_weight,
+                "max_holdings": params.max_holdings,
+            },
+            result,
+            name=params.name,
+        )
+        await db.commit()
+        payload["portfolio_id"] = str(row.id)
+        payload["name"] = row.name
+    return payload
+
+
+@router.get("/portfolios")
+async def list_all_portfolios(db: AsyncSession = Depends(get_db)):
+    """全部已保存组合（最新在前）。"""
+    from screener.portfolio_store import list_portfolios, portfolio_json
+
+    rows = await list_portfolios(db)
+    return {"portfolios": [portfolio_json(p) for p in rows]}
+
+
+@router.get("/runs/{run_id}/portfolios")
+async def list_run_portfolios(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """某轮运行下已保存的组合方案。"""
+    from screener.portfolio_store import list_portfolios, portfolio_json
+
+    run = (
+        await db.execute(select(ScreenerRun).where(ScreenerRun.id == run_id))
+    ).scalar_one_or_none()
+    if run is None:
+        raise NotFoundError("ScreenerRun", str(run_id))
+    rows = await list_portfolios(db, run_id)
+    return {"portfolios": [portfolio_json(p) for p in rows]}
+
+
+@router.get("/portfolios/{portfolio_id}")
+async def get_saved_portfolio(
+    portfolio_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+):
+    """已保存组合详情。"""
+    from screener.portfolio_store import get_portfolio, portfolio_json
+
+    row = await get_portfolio(db, portfolio_id)
+    if row is None:
+        raise NotFoundError("ScreenerPortfolio", str(portfolio_id))
+    return portfolio_json(row)
+
+
+@router.delete("/portfolios/{portfolio_id}", status_code=204)
+async def remove_saved_portfolio(
+    portfolio_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+):
+    """删除已保存组合。"""
+    from screener.portfolio_store import delete_portfolio
+
+    if not await delete_portfolio(db, portfolio_id):
+        raise NotFoundError("ScreenerPortfolio", str(portfolio_id))
+    await db.commit()
 
 
 @router.post("/runs/{run_id}/to-research")

@@ -201,6 +201,7 @@ ALL_TABLES = [
     "screener.screener_runs",
     "screener.screener_rules",
     "screener.backtest_runs",
+    "screener.portfolios",
 ]
 
 
