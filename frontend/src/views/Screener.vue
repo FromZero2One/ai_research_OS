@@ -9,6 +9,7 @@ import {
   useScreenerBacktest,
   useScreenerBacktests,
   useScreenerCriteria,
+  useScreenerDataQuality,
   useScreenerMetrics,
   useScreenerPresets,
   useDeleteScreenerPortfolio,
@@ -149,6 +150,19 @@ async function startBacktest() {
     ElMessage.error(e.message || '回测启动失败')
   }
 }
+
+const { data: dataQuality } = useScreenerDataQuality()
+const runFilter = ref('all')
+const filteredRuns = computed(() => {
+  const runs = runsData.value?.runs || []
+  if (runFilter.value === 'all') return runs
+  if (runFilter.value === 'active') {
+    return runs.filter((r) =>
+      ['pending', 'screening', 'judging', 'cancelling'].includes(r.status)
+    )
+  }
+  return runs.filter((r) => r.status === runFilter.value)
+})
 
 const { data: scheduleData } = useScreenerSchedule()
 const runScheduleMutation = useRunScreenerSchedule()
@@ -634,6 +648,38 @@ async function removeSavedPortfolio(p: ScreenerSavedPortfolio) {
         <el-card class="mt-3">
           <template #header>
             <div class="card-header">
+              <span>数据质量</span>
+              <el-tag
+                v-if="dataQuality" size="small"
+                :type="dataQuality.warnings.length ? 'warning' : 'success'"
+              >{{ dataQuality.warnings.length ? `${dataQuality.warnings.length} 项提示` : '正常' }}</el-tag>
+            </div>
+          </template>
+          <template v-if="dataQuality">
+            <div class="dq-grid">
+              <div><span class="text-secondary">财务期：</span>{{ dataQuality.financial.period || '-' }}（{{ dataQuality.financial.tickers }} 只）</div>
+              <div>
+                <span class="text-secondary">行情覆盖：</span>
+                {{ dataQuality.prices.tickers_with_200_bars }}/{{ dataQuality.prices.companies }} 只
+                （{{ formatPct(dataQuality.prices.coverage) }}）
+              </div>
+              <div><span class="text-secondary">知识库：</span>{{ dataQuality.knowledge.indexed_documents }} 文档 / {{ dataQuality.knowledge.chunks }} 切片</div>
+              <div><span class="text-secondary">最新行情：</span>{{ dataQuality.prices.last_price_date || '-' }}</div>
+            </div>
+            <div class="dq-metrics">
+              <el-tag
+                v-for="(m, key) in dataQuality.financial.metrics" :key="key" size="small"
+                :type="m.coverage >= 0.8 ? 'success' : m.coverage >= 0.5 ? 'warning' : 'danger'"
+              >{{ metricNames.get(key) || key }} {{ formatPct(m.coverage) }}</el-tag>
+            </div>
+            <div v-for="w in dataQuality.warnings" :key="w" class="run-error">⚠ {{ w }}</div>
+          </template>
+          <el-empty v-else description="加载中..." :image-size="40" />
+        </el-card>
+
+        <el-card class="mt-3">
+          <template #header>
+            <div class="card-header">
               <span>预设回测</span>
               <el-tag
                 v-if="backtestData"
@@ -719,8 +765,19 @@ async function removeSavedPortfolio(p: ScreenerSavedPortfolio) {
         </el-card>
 
         <el-card class="mt-3">
-          <template #header><span>历史运行</span></template>
-          <el-table :data="runsData?.runs || []" size="small" @row-click="viewReport">
+          <template #header>
+            <div class="card-header">
+              <span>历史运行</span>
+              <el-radio-group v-model="runFilter" size="small">
+                <el-radio-button value="all">全部</el-radio-button>
+                <el-radio-button value="active">进行中</el-radio-button>
+                <el-radio-button value="completed">已完成</el-radio-button>
+                <el-radio-button value="failed">失败</el-radio-button>
+                <el-radio-button value="cancelled">已取消</el-radio-button>
+              </el-radio-group>
+            </div>
+          </template>
+          <el-table :data="filteredRuns" size="small" @row-click="viewReport">
             <el-table-column label="时间" width="160">
               <template #default="{ row }">{{ formatLocalTime(row.created_at) }}</template>
             </el-table-column>
@@ -996,6 +1053,8 @@ async function removeSavedPortfolio(p: ScreenerSavedPortfolio) {
 <style scoped>
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .schedule-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; font-size: 13px; }
+.dq-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; font-size: 13px; }
+.dq-metrics { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .backtest-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 4px 0 8px; font-size: 13px; }
 .backtest-metric { padding: 6px 8px; border-radius: 6px; background: var(--bg-tertiary); }
 .saved-portfolios { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 8px; }

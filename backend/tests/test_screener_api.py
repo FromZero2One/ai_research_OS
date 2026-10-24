@@ -205,6 +205,16 @@ class TestExportAndSchedule:
         )
         assert bad.status_code == 422
 
+    def test_data_quality(self, client: TestClient):
+        resp = client.get("/api/v1/screener/data-quality")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "financial" in data and "prices" in data and "knowledge" in data
+        assert isinstance(data["warnings"], list)
+        # 测试库被清空 → 财务库为空，应给出告警
+        assert data["financial"]["period"] is None
+        assert any("财务" in w for w in data["warnings"])
+
     def test_schedule_status(self, client: TestClient):
         resp = client.get("/api/v1/screener/schedule")
         assert resp.status_code == 200

@@ -102,6 +102,133 @@ def _preset_json(p: CriteriaPreset) -> dict:
     }
 
 
+_DQ_METRICS = (
+    "roe", "revenue", "net_income", "operating_cash_flow",
+    "total_assets", "roic", "fcff",
+)
+_PERIOD_RANK = {"Q1": 1, "Q2": 2, "Semi": 2, "Q3": 3, "Q4": 4, "Annual": 4}
+
+
+@router.get("/data-quality")
+async def data_quality(db: AsyncSession = Depends(get_db)):
+    """选股前置数据质量：最新财务期/指标覆盖、行情覆盖、知识库状态与告警。"""
+    from sqlalchemy import func, select as sa_select
+
+    from company.models import Company
+    from document.models import Document, DocumentChunk
+    from market.models import FinancialMetric, StockPrice
+
+    periods = (
+        await db.execute(
+            sa_select(FinancialMetric.fiscal_year, FinancialMetric.fiscal_period).distinct()
+        )
+    ).all()
+    latest = max(
+        periods,
+        key=lambda p: (p[0], _PERIOD_RANK.get(p[1], 0)),
+        default=None,
+    )
+    financial: dict = {"period": None, "tickers": 0, "metrics": {}}
+    if latest is not None:
+        year, period = latest
+        financial["period"] = f"{year}{period}"
+        financial["tickers"] = int(
+            (
+                await db.execute(
+                    sa_select(func.count(func.distinct(FinancialMetric.ticker))).where(
+                        FinancialMetric.fiscal_year == year,
+                        FinancialMetric.fiscal_period == period,
+                    )
+                )
+            ).scalar()
+            or 0
+        )
+        counts = dict(
+            (
+                await db.execute(
+                    sa_select(
+                        FinancialMetric.metric_name,
+                        func.count(func.distinct(FinancialMetric.ticker)),
+                    )
+                    .where(
+                        FinancialMetric.fiscal_year == year,
+                        FinancialMetric.fiscal_period == period,
+                        FinancialMetric.metric_name.in_(_DQ_METRICS),
+                    )
+                    .group_by(FinancialMetric.metric_name)
+                )
+            ).all()
+        )
+        total = financial["tickers"] or 1
+        financial["metrics"] = {
+            key: {
+                "count": int(counts.get(key, 0)),
+                "coverage": round(counts.get(key, 0) / total, 4),
+            }
+            for key in _DQ_METRICS
+        }
+
+    a_share = Company.ticker.op("~")(r"^(60|00)")
+    company_count = int(
+        (
+            await db.execute(
+                sa_select(func.count()).select_from(Company).where(a_share)
+            )
+        ).scalar()
+        or 0
+    )
+    bar_subq = (
+        sa_select(StockPrice.ticker)
+        .group_by(StockPrice.ticker)
+        .having(func.count() >= 200)
+        .subquery()
+    )
+    bars_count = int(
+        (await db.execute(sa_select(func.count()).select_from(bar_subq))).scalar() or 0
+    )
+    last_price_date = (
+        await db.execute(sa_select(func.max(StockPrice.date)))
+    ).scalar()
+
+    indexed_docs = int(
+        (
+            await db.execute(
+                sa_select(func.count())
+                .select_from(Document)
+                .where(Document.is_indexed.is_(True))
+            )
+        ).scalar()
+        or 0
+    )
+    chunks = int(
+        (await db.execute(sa_select(func.count()).select_from(DocumentChunk))).scalar() or 0
+    )
+
+    price_coverage = round(bars_count / company_count, 4) if company_count else 0.0
+    warnings: list[str] = []
+    if indexed_docs == 0:
+        warnings.append("知识库为空：含定性标准的预设会判为“数据不足”")
+    if company_count and price_coverage < 0.5:
+        warnings.append(
+            f"行情覆盖偏低（{bars_count}/{company_count} 只具备 ≥200 根日线），"
+            "推荐后表现与回测样本会不足"
+        )
+    if latest is None:
+        warnings.append("财务指标库为空：无法执行量化初筛")
+
+    return {
+        "financial": financial,
+        "prices": {
+            "companies": company_count,
+            "tickers_with_200_bars": bars_count,
+            "coverage": price_coverage,
+            "last_price_date": last_price_date.isoformat() if last_price_date else None,
+        },
+        "knowledge": {"indexed_documents": indexed_docs, "chunks": chunks},
+        "warnings": warnings,
+    }
+
+
 @router.get("/metrics")
 async def get_metrics(db: AsyncSession = Depends(get_db)):
     """指标定义库（按 category, key 排序，前端按分类分组）。"""

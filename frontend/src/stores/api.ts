@@ -808,6 +808,29 @@ export function useDeleteScreenerPortfolio() {
   })
 }
 
+export interface ScreenerDataQuality {
+  financial: {
+    period: string | null
+    tickers: number
+    metrics: Record<string, { count: number; coverage: number }>
+  }
+  prices: {
+    companies: number
+    tickers_with_200_bars: number
+    coverage: number
+    last_price_date: string | null
+  }
+  knowledge: { indexed_documents: number; chunks: number }
+  warnings: string[]
+}
+export function useScreenerDataQuality() {
+  return useGet<ScreenerDataQuality>(
+    ['screener-data-quality'],
+    '/screener/data-quality',
+    { refetchInterval: 60_000 },
+  )
+}
+
 export interface ScreenerBacktestRun {
   id: string
   preset_id: string

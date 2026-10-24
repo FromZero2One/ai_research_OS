@@ -11,6 +11,7 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-10-24（数据质量面板 + 运行筛选）**: 新增 `GET /screener/data-quality`：最新财务期、7 个关键指标覆盖、A 股公司行情覆盖（≥200 根日线）、最新行情日期、知识库文档/切片数，以及知识库空/行情覆盖 <50%/财务库空告警。前端选股页新增「数据质量」卡片；历史运行增加 全部/进行中/已完成/失败/已取消 筛选。screener + financial_sync 318 passed。
 - **2026-10-24（运行明细 + 逐只操作）**: 新增 `screener/actions.py` `add_to_watchlist`（推荐股/指定 ticker → `Company.is_active=True`，幂等，返回 added/already/missing，写 `screener.watchlist_added` 事件）与 `POST /screener/runs/{id}/watchlist`；前端历史表新增「明细」入口，明细面板展示逐只结论/置信度/行业/价格/理由，并对推荐股提供「送入研究」「自选」。screener + financial_sync 317 passed。
 - **2026-10-24（任意两轮对比）**: `build_run_diff_data`/`build_run_diff` 新增可选 `base_run_id`，日报可对比任意已完成的运行；默认仍自动找同口径上一轮。基线不存在 404、基线=当前 422（`ScreenerDiffError`）、基线未完成返回说明。前端日报面板新增基线下拉（排除当前轮）。screener + financial_sync 313 passed。
 - **2026-10-24（变化日报口径审计）**: `diff_service.rules_signature` 对 `run.rules` 做稳定哈希（忽略 `preset_names`），`_previous_run` 只匹配规则指纹一致的最近运行；同一 preset_ids 但规则被编辑时不再误用旧基线，日报标注「规则已变更，历史运行不可比」。screener + financial_sync 310 passed。

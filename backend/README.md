@@ -123,6 +123,8 @@ ALL_PROXY= all_proxy= PYTHONPATH=. ./.venv/Scripts/python.exe -X utf8 scripts/ev
 
 `POST /api/v1/screener/runs/{run_id}/to-research`：把该轮**推荐股**创建为研究中心会话（`screener/handoff.py`）。body 可选 `tickers`（只挑指定票）与 `limit`（默认 5，≤50）；不传则按深判置信度从高到低取前 `limit` 只。会话 `auto_plan=False`，tag 为 `["screener", run_id]`，metadata 记录 `screener_run_id` / `screener_ticker`；同一 run 下同一 ticker 重复调用会跳过。返回 `{run_id, created, skipped, requested}`。前端历史运行表新增「送入」按钮。
 
+**数据质量前置检查（2026-10-24）**：`GET /api/v1/screener/data-quality` 返回最新财务期与关键指标覆盖（ROE/营收/净利/经营现金流/总资产/ROIC/FCFF）、A 股公司行情覆盖（≥200 根日线）、最新行情日期、知识库文档/切片数，以及聚合告警（知识库为空、行情覆盖 <50%、财务库为空）。前端选股页「数据质量」卡片展示并高亮缺口；运行历史增加 全部/进行中/已完成/失败/已取消 筛选。
+
 **加入自选（2026-10-24）**：`POST /api/v1/screener/runs/{run_id}/watchlist`（body 可选 `tickers` / `limit`）把该轮推荐股或指定 ticker 置为 `Company.is_active=True`，返回 `{added, already, missing}`；重复加入幂等，无公司记录的票进 `missing`。前端「运行明细」面板可逐只「送入研究」/「自选」。
 
 **数据采集（2026-10-22 东财风控后）**：全市场快照走新浪 `Market_Center` 分页接口；财务三表均为市场级一次调用——业绩报表 `stock_yjbb_em`（含 eps/营收同比/净利同比）、资产负债表 `stock_zcfz_em`、现金流量表 `stock_xjll_em`，全部经 `_AKSHARE_PROLOGUE` 反风控头（浏览器 UA + 直连 + IPv4 + urllib3 重试）。流动/速动比率、资产/存货/应收周转率、eps 与成长率另走东财 F10 主要指标 `RPT_F10_FINANCE_MAINFINADATA`（`LD`/`SD`/`TOAZZL`/`CHZZL`/`YSZKZZL`），分页 500/页、只保留 A 股前缀。`stock_zcfz_em` 原始表没有 `CURRENT_RATIO` 列，旧实现的 `CURRENT_RATIO÷100` 不会生效；单只报表接口仅作兜底保留。
@@ -267,4 +269,4 @@ APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工�
 ```bash
 make test        # pytest，专用 airesearch_test 库 + 隔离 Qdrant 集合
 ```
-当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **317 passed**。
+当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **318 passed**。
