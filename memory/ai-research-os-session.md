@@ -11,6 +11,7 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-10-24（回测 PIT + 交易费用）**: `market.financial_metrics` 新增 `announcement_date`（迁移 `f4a5b6c7d8e9`），yjbb 解析“最新公告日期”；历史 2025Q1–2026Q2 公告日覆盖 46,443/46,448（99.99%，回补脚本 `scripts/backfill_announcement_dates.py`）；回测 `_load_financials_by_period` 按公告日 ≤ 调仓日过滤（缺失公告日回退旧口径）；`compute_holding_returns` 支持 `cost_buy/cost_sell`，服务层计佣金万三 + 卖出印花税 0.05% + 单边滑点 0.1%；成交量为 0 视为停牌不可交易；回测免责声明更新；screener + financial_sync 241 passed。
 - **2026-10-24（选股 P2：定时筛选 + 变化日报）**: 新增 `core/screener_schedule.py`，`SCREENER_SCHEDULE`（工作日 16:30）按 `SCREENER_SCHEDULE_PRESETS`（默认 core）运行预设，已有进行中 run 时跳过；每轮与同口径上一轮 completed run 对比（presets 用 mode/combine/preset_ids，freeform 用 criteria_hash），只输出新推荐/掉出推荐/新进候选/移出候选，Markdown 落 `screener/reports/*-diff-*.md` 并写 `screener.diff` 事件；API `GET /screener/runs/{id}/diff`；前端历史表新增「日报」按钮；手动触发 `POST /scheduler/run/screener_schedule`。screener + financial_sync 237 passed。实跑：core 13 候选，对比 17:52 基线无变化。
 - **2026-10-24（选股 P1：TTM + 盈利质量）**: `valuation.py` 新增 `ttm_value`（上年年报 + 本期累计 − 上年同期；历史期缺失回退单期年化），PE/PS 改用 TTM；新增 `cfo_to_ni`（TTM 现金流/净利润）、`cfo_to_revenue`、`accrual_ratio`（应计比率）三个质量指标；指标库 21→24；核心资产/GARP 加 `cfo_to_ni>0.8`、深度价值 `>0.7`、高成长 `>0.5`；回补 2025Q1–Q4 财务（`scripts/backfill_financial_periods.py`）；迁移 `e3f4a5b6c7d8`；screener 232 passed。实跑：核心资产候选 18→13；临时质量预设 `cfo_to_ni>1.2 & pe<20` 选出 50 只；茅台 cfo_to_ni 1.46、应计 -12.2%。
 - **2026-10-24（选股 P0：股票池卫生 + 行业隔离）**: ①`pool.py` 入口统一过滤 ST/*ST/退市、停牌/无行情、换手率<0.05%、市值<10亿，报告新增「股票池卫生过滤」统计（实跑排除 ST 196 只、停牌 3 只）；②新增 `market.stock_industry` 表（迁移 `c1d2e3f4a5b6`），申万一级 31 行业为主 + 新浪补缺，共 5,663 只（主板 2111/2111），候选携带 industry/sector，报告/深判上下文展示行业；③行业隔离：工业预设自动排除金融股，新增内置「金融价值」预设（pb<1.5、pe<10、roe>8、市值>100亿，迁移 `d2e3f4a5b6c7`），金融预设只选银行/非银金融；④screener 测试 226 passed。实跑：核心资产 18 候选全部 industrial；金融临时预设 50 候选全部银行/非银金融。
@@ -92,7 +93,7 @@ metadata:
 - LLM：DeepSeek 云端（.env OPENAI_* 已配，key 已 gitignore）；light tier 同走云端；本机无 ollama
 - Embedding 仍指向本机 Ollama（未安装）→ 文档上传/知识检索的稠密向量不可用，BM25 兜底；pytest 有 5 项因此失败
 - akshare 走独立 `akshare_mcp` venv 子进程（`AKSHARE_MCP_DIR` 指向旧机器路径，**本机需改 .env 并确认 venv 存在**，否则 A 股采集失败但不崩）
-- 迁移 head：`e3f4a5b6c7d8`（TTM 现金流质量指标 + 预设质量门槛）
+- 迁移 head：`f4a5b6c7d8e9`（财务公告日 PIT）
 - pytest 需先起 docker postgres；测试库 airesearch_test 由 conftest 用 create_all 重建（**改模型后旧测试库不会自动加列，需 DROP DATABASE airesearch_test 重建**）；`tests/test_session` fixture 为服务级测试专用（勿用 managed_session，会写进开发库）
 
 ## 相关文档

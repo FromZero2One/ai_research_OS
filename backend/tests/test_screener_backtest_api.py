@@ -121,7 +121,7 @@ class TestRunBacktest:
         assert done.report_path is not None
         report = open(done.report_path, encoding="utf-8").read()
         assert "预设回测报告" in report
-        assert "未计交易费用" in report
+        assert "已计交易费用" in report
         assert "市值为近似值" in report
 
     async def test_empty_daily_fails_run(self, test_session: AsyncSession, backtest_env, monkeypatch):

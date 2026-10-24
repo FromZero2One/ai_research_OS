@@ -96,6 +96,9 @@ class Settings(BaseSettings):
     # Backtest: external read-only MySQL for historical qfq daily bars
     # (mysql+pymysql://user:pass@host:3306/db). Empty disables the source.
     BACKTEST_MYSQL_URL: str = ""
+    BACKTEST_COMMISSION_RATE: float = 0.0003  # 单边佣金 万三
+    BACKTEST_STAMP_DUTY_RATE: float = 0.0005  # 卖出印花税 0.05%
+    BACKTEST_SLIPPAGE_RATE: float = 0.001  # 单边滑点 0.1%
 
     # --- Scheduling ---
     # Screener 股票池卫生（ST/停牌之外的最低交易门槛）

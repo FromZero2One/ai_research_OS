@@ -80,6 +80,18 @@ class TestComputeHoldingReturns:
         assert out[0]["return"] == pytest.approx(0.10)
         assert out[0]["suspended"] is False
 
+    def test_costs_applied_to_round_trip(self):
+        portfolio = [{"ticker": "600519", "name": "茅台"}]
+        out = compute_holding_returns(
+            portfolio,
+            buy_prices={"600519": 100.0},
+            sell_prices={"600519": 110.0},
+            cost_buy=0.0013,
+            cost_sell=0.0018,
+        )
+        expected = (110.0 * (1 - 0.0018)) / (100.0 * (1 + 0.0013)) - 1.0
+        assert out[0]["return"] == pytest.approx(expected)
+
     def test_suspended_stock_zero_return(self):
         """Review Focus 4：卖出价缺失（停牌）→ 收益 0 + suspended 标注。"""
         portfolio = [{"ticker": "600519", "name": "茅台"}]

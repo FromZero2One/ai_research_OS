@@ -56,6 +56,17 @@ def _num(v) -> float | None:
     return None if f is None or math.isnan(f) else f
 
 
+def _notice_date(row: dict) -> _date | None:
+    """业绩报表/财报原始行 → 公告日（Point-in-Time）。"""
+    raw = row.get("最新公告日期") or row.get("NOTICE_DATE") or row.get("公告日期")
+    if not raw:
+        return None
+    try:
+        return _date.fromisoformat(str(raw)[:10])
+    except (TypeError, ValueError):
+        return None
+
+
 def _fiscal(report_date: str) -> tuple[int, str]:
     """'2024-06-30 00:00:00' → (2024, 'Q2')。"""
     year = int(str(report_date)[:4])
@@ -83,12 +94,16 @@ def parse_zcfz_row(row: dict, fiscal_year: int, fiscal_period: str) -> list[Fina
     current_ratio：datacenter CURRENT_RATIO = 流动比率 × 100，除回 100 还原倍数。
     """
     entries: list[FinancialMetricEntry] = []
+    notice = _notice_date(row)
 
     def _add(metric: str, value: float | None) -> None:
         if value is not None:
             entries.append(
-                FinancialMetricEntry(fiscal_year=fiscal_year, fiscal_period=fiscal_period,
-                                     metric_name=metric, metric_value=value)
+                FinancialMetricEntry(
+                    fiscal_year=fiscal_year, fiscal_period=fiscal_period,
+                    metric_name=metric, metric_value=value,
+                    announcement_date=notice,
+                )
             )
 
     _add("total_assets", _num(row.get("资产-总资产")))
@@ -106,11 +121,15 @@ def parse_zcfz_row(row: dict, fiscal_year: int, fiscal_period: str) -> list[Fina
 def parse_xjll_row(row: dict, fiscal_year: int, fiscal_period: str) -> list[FinancialMetricEntry]:
     """全市场现金流量表行（stock_xjll_em 列）→ operating_cash_flow。"""
     v = _num(row.get("经营性现金流-现金流量净额"))
+    notice = _notice_date(row)
     if v is None:
         return []
     return [
-        FinancialMetricEntry(fiscal_year=fiscal_year, fiscal_period=fiscal_period,
-                             metric_name="operating_cash_flow", metric_value=v)
+        FinancialMetricEntry(
+            fiscal_year=fiscal_year, fiscal_period=fiscal_period,
+            metric_name="operating_cash_flow", metric_value=v,
+            announcement_date=notice,
+        )
     ]
 
 
@@ -126,6 +145,7 @@ def _parse_one_yjbb(
     row: dict, fiscal_year: int, fiscal_period: str, entries: list[FinancialMetricEntry]
 ) -> None:
     values: dict[str, float | None] = {}
+    notice = _notice_date(row)
     for metric, col in YJBB_ROW_MAP.items():
         v = _num(row.get(col))
         values[metric] = v
@@ -134,6 +154,7 @@ def _parse_one_yjbb(
                 FinancialMetricEntry(
                     fiscal_year=fiscal_year, fiscal_period=fiscal_period,
                     metric_name=metric, metric_value=v,
+                    announcement_date=notice,
                 )
             )
     # 净利率 = 净利润 / 营业总收入 × 100（单位对齐其他百分比指标）
@@ -143,6 +164,7 @@ def _parse_one_yjbb(
                 fiscal_year=fiscal_year, fiscal_period=fiscal_period,
                 metric_name="net_margin",
                 metric_value=values["net_income"] / values["revenue"] * 100,
+                announcement_date=notice,
             )
         )
     return entries
@@ -203,6 +225,7 @@ MAIN_FINANCE_ROW_MAP: dict[str, str] = {
 def parse_main_finance_row(row: dict, fiscal_year: int, fiscal_period: str) -> list[FinancialMetricEntry]:
     """F10 主要指标行 → eps / 流动比率 / 速动比率 / 周转率 / 成长率。"""
     entries: list[FinancialMetricEntry] = []
+    notice = _notice_date(row)
     for metric, column in MAIN_FINANCE_ROW_MAP.items():
         value = _num(row.get(column))
         if value is not None:
@@ -212,6 +235,7 @@ def parse_main_finance_row(row: dict, fiscal_year: int, fiscal_period: str) -> l
                     fiscal_period=fiscal_period,
                     metric_name=metric,
                     metric_value=value,
+                    announcement_date=notice,
                 )
             )
     return entries
@@ -578,6 +602,7 @@ async def upsert_metrics(db, ticker: str, entries: list) -> int:
                 metric_value=e.metric_value,
                 metric_unit=_UNIT_MAP.get(metric),
                 reported_at=now,
+                announcement_date=e.announcement_date,
             )
         )
     return len(unique)
@@ -635,6 +660,7 @@ async def upsert_metrics_batch(db, data: dict[str, list]) -> int:
             metric_value=e.metric_value,
             metric_unit=_UNIT_MAP.get(e.metric_name),
             reported_at=now,
+            announcement_date=e.announcement_date,
         )
         for (ticker, _y, _p, _m), e in unique.items()
     )

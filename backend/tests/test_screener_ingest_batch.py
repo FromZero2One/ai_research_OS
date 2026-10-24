@@ -8,6 +8,8 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import datetime as dt
+
 from market.domain import FinancialMetricEntry
 from market.models import FinancialMetric
 from screener.ingest import upsert_metrics_batch
@@ -49,6 +51,24 @@ class TestUpsertMetricsBatch:
         rows = (await test_session.execute(select(FinancialMetric).where(FinancialMetric.ticker == "600519"))).scalars().all()
         assert len(rows) == 1
         assert rows[0].metric_value == 26.09
+
+    async def test_announcement_date_persisted(self, test_session: AsyncSession):
+        data = {
+            "600519": [
+                FinancialMetricEntry(
+                    fiscal_year=2026, fiscal_period="Q2", metric_name="net_income",
+                    metric_value=5e8, announcement_date=dt.date(2026, 8, 25),
+                )
+            ]
+        }
+        await upsert_metrics_batch(test_session, data)
+        await test_session.flush()
+        row = (
+            await test_session.execute(
+                select(FinancialMetric).where(FinancialMetric.ticker == "600519")
+            )
+        ).scalar_one()
+        assert row.announcement_date == dt.date(2026, 8, 25)
 
     async def test_empty_data_noop(self, test_session: AsyncSession):
         assert await upsert_metrics_batch(test_session, {}) == 0

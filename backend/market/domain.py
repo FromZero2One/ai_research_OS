@@ -90,6 +90,7 @@ class FinancialMetricEntry:
     metric_name: str
     metric_value: float | None = None
     reported_at: datetime | None = None
+    announcement_date: date | None = None
 
     @classmethod
     def from_model(cls, model: Any) -> FinancialMetricEntry:
@@ -99,6 +100,7 @@ class FinancialMetricEntry:
             metric_name=model.metric_name,
             metric_value=model.metric_value,
             reported_at=model.reported_at,
+            announcement_date=getattr(model, "announcement_date", None),
         )
 
     @classmethod

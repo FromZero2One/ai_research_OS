@@ -2,7 +2,8 @@
 
 状态机：pending → running → completed/failed。无 LLM 调用。
 口径见 backtest.py / spec 2026-10-23：qfq 收盘价、年报口径（4 月用上一年 Q4）、
-近似市值 = 调仓日收盘价 × 当前总股本（报告声明）、未计交易费用。
+近似市值 = 调仓日收盘价 × 当前总股本（报告声明）、已计佣金/印花税/滑点、
+财务可见性按公告日过滤（缺失公告日回退披露截止日）。
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from collections import defaultdict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import settings
 from core.event_service import EventLogger
 from core.logging import logger
 from screener import backtest, backtest_data
@@ -32,9 +34,15 @@ def _now_iso() -> str:
 
 
 async def _load_financials_by_period(
-    db: AsyncSession, periods: list[tuple[int, str]]
+    db: AsyncSession,
+    periods: list[tuple[int, str]],
+    asof_by_period: dict[tuple[int, str], dt.date] | None = None,
 ) -> dict[tuple[int, str], dict[str, list]]:
-    """{(year, period): {ticker: [FinancialMetricEntry]}}（仅所需报告期）。"""
+    """{(year, period): {ticker: [FinancialMetricEntry]}}（仅所需报告期）。
+
+    Point-in-Time：若提供 asof_by_period，公告日晚于 asof 的指标不进入该期
+    数据；没有公告日的旧数据按原口径纳入（回测报告会声明）。
+    """
     from market.domain import FinancialMetricEntry
     from market.models import FinancialMetric
 
@@ -48,12 +56,27 @@ async def _load_financials_by_period(
                 )
             )
         ).scalars().all()
+
+        # 同票同期取最晚公告日（期末报告/更正），作为该票该期的可见日
+        announcements: dict[str, dt.date] = {}
+        for m in rows:
+            if m.announcement_date is None:
+                continue
+            previous = announcements.get(m.ticker)
+            if previous is None or m.announcement_date > previous:
+                announcements[m.ticker] = m.announcement_date
+
+        asof = (asof_by_period or {}).get((year, period))
         by_ticker: dict[str, list] = defaultdict(list)
         for m in rows:
+            announced = m.announcement_date or announcements.get(m.ticker)
+            if asof is not None and announced is not None and announced > asof:
+                continue
             by_ticker[m.ticker].append(
                 FinancialMetricEntry(
                     fiscal_year=m.fiscal_year, fiscal_period=m.fiscal_period,
                     metric_name=m.metric_name, metric_value=m.metric_value,
+                    announcement_date=m.announcement_date,
                 )
             )
         out[(year, period)] = dict(by_ticker)
@@ -126,6 +149,22 @@ async def _load_day_closes(
     return {t: c for t, c in rows if c is not None}
 
 
+async def _load_day_volumes(
+    db: AsyncSession, day: dt.date, tickers: list[str]
+) -> dict[str, float | None]:
+    """某交易日成交量（用于停牌/不可交易判断）。"""
+    from market.models import StockPrice
+
+    rows = (
+        await db.execute(
+            select(StockPrice.ticker, StockPrice.volume).where(
+                StockPrice.date == day, StockPrice.ticker.in_(tickers)
+            )
+        )
+    ).all()
+    return {t: v for t, v in rows}
+
+
 async def run_backtest(db: AsyncSession, run_id) -> ScreenerBacktestRun:
     """执行回测全流程。任何异常 → run 置 failed 后原样抛出。"""
     run = (
@@ -168,10 +207,16 @@ async def run_backtest(db: AsyncSession, run_id) -> ScreenerBacktestRun:
             raise ValueError("无价格日历（灌库后仍为空）")
         rebalance_dates = backtest.generate_rebalance_dates(price_dates, start, end)
 
-        # ② 历史财务：各调仓日前最近已披露报告期（年报口径）
+        # ② 历史财务：各调仓日前最近已披露报告期（年报口径）+ PIT 公告日过滤
         periods = sorted({backtest.pick_financial_period(d) for d in rebalance_dates})
         await ensure_financial_periods(db, periods)
-        financials_by_period = await _load_financials_by_period(db, periods)
+        asof_by_period: dict[tuple[int, str], dt.date] = {}
+        for d in rebalance_dates:
+            fp = backtest.pick_financial_period(d)
+            asof_by_period[fp] = min(asof_by_period.get(fp, d), d)
+        financials_by_period = await _load_financials_by_period(
+            db, periods, asof_by_period
+        )
 
         # ③ 近似市值用的当前总股本
         all_tickers = sorted(tickers)
@@ -208,9 +253,28 @@ async def run_backtest(db: AsyncSession, run_id) -> ScreenerBacktestRun:
 
             # 卖出日 = 下一调仓日；末期持有到最后一个交易日
             sell_date = rebalance_dates[i + 1] if i + 1 < len(rebalance_dates) else price_dates[-1]
-            buy_prices = await _load_day_closes(db, rdate, [c["ticker"] for c in portfolio])
-            sell_prices = await _load_day_closes(db, sell_date, [c["ticker"] for c in portfolio])
-            holdings = backtest.compute_holding_returns(portfolio, buy_prices, sell_prices)
+            held_tickers = [c["ticker"] for c in portfolio]
+            buy_prices = await _load_day_closes(db, rdate, held_tickers)
+            sell_prices = await _load_day_closes(db, sell_date, held_tickers)
+            buy_volumes = await _load_day_volumes(db, rdate, held_tickers)
+            sell_volumes = await _load_day_volumes(db, sell_date, held_tickers)
+            # 成交量为 0 → 停牌/不可交易（涨跌停未单独建模）
+            buy_prices = {
+                t: p for t, p in buy_prices.items() if (buy_volumes.get(t) or 0) > 0
+            }
+            sell_prices = {
+                t: p for t, p in sell_prices.items() if (sell_volumes.get(t) or 0) > 0
+            }
+            cost_buy = settings.BACKTEST_COMMISSION_RATE + settings.BACKTEST_SLIPPAGE_RATE
+            cost_sell = (
+                settings.BACKTEST_COMMISSION_RATE
+                + settings.BACKTEST_STAMP_DUTY_RATE
+                + settings.BACKTEST_SLIPPAGE_RATE
+            )
+            holdings = backtest.compute_holding_returns(
+                portfolio, buy_prices, sell_prices,
+                cost_buy=cost_buy, cost_sell=cost_sell,
+            )
             period_ret = sum(h["return"] for h in holdings) / len(holdings)
 
             # 基准同期收益
@@ -236,10 +300,15 @@ async def run_backtest(db: AsyncSession, run_id) -> ScreenerBacktestRun:
         result["start"] = start.isoformat()
         result["end"] = end.isoformat()
         result["disclaimers"] = [
-            "未计交易费用与滑点",
+            (
+                f"已计交易费用：佣金 {settings.BACKTEST_COMMISSION_RATE:.2%}、"
+                f"卖出印花税 {settings.BACKTEST_STAMP_DUTY_RATE:.2%}、"
+                f"单边滑点 {settings.BACKTEST_SLIPPAGE_RATE:.2%}"
+            ),
+            "停牌（成交量为 0）按不可交易处理；涨跌停不可交易未单独建模",
             "市值为近似值：调仓日收盘价 × 当前总股本",
             "存在幸存者偏差：已退市股票可能不在数据源中",
-            "财务数据按披露截止日近似可见性（实际披露日有早有晚）",
+            "财务可见性：有公告日的指标按公告日过滤；缺失公告日的按披露截止日近似",
         ]
         run.result = result
 

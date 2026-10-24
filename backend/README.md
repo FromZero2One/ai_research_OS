@@ -47,17 +47,17 @@ Company → Market + Document → Knowledge(RAG) → AI → Research → Portfol
 
 行业分类存 `market.stock_industry`（申万一级 31 个行业为主，新浪行业补缺；覆盖 5,663 只 A 股，主板 2,111/2,111）。选股候选携带 `industry`/`sector`，报告与深判上下文均展示行业。工业预设自动排除金融股（流动比率/毛利率/周转率口径不适用），`金融价值` 预设只筛选银行/非银金融。入库脚本：`scripts/ingest_industry_sw.py`（主）与 `scripts/ingest_industry_sina.py`（补缺）。
 
-LLM 只在深判参与，筛选执行确定性。迁移 `b5d2f8a3c6e1` → `c8e1b7d4f2a9` → `b7c8d9e0f1a2` → `c1d2e3f4a5b6` → `d2e3f4a5b6c7` → `e3f4a5b6c7d8`，schema `screener`。
+LLM 只在深判参与，筛选执行确定性。迁移 `b5d2f8a3c6e1` → `c8e1b7d4f2a9` → `b7c8d9e0f1a2` → `c1d2e3f4a5b6` → `d2e3f4a5b6c7` → `e3f4a5b6c7d8` → `f4a5b6c7d8e9`，schema `screener`。
 
 ### 预设回测（2026-10-23 MVP）
 
 用历史数据验证预设的历史表现（`POST /screener/backtests`，body: `preset_id` + `years` 1-10；`GET /screener/backtests/{id}` 查结果）。
 
 - **状态机**：`pending → running → completed/failed`（`screener.backtest_runs` 表），经持久任务 `screener_backtest` 后台执行，同时刻至多一个进行中（409）
-- **数据**：日线走外部 MySQL 前复权库（`BACKTEST_MYSQL_URL`，仅存 .env），**逐只「边拉边灌」**——单票一次查询（~1200 行）立即落库 commit，本地行数即进度、≥200 根视为完整可断点续传、单票网络错误重试 3 次；同票同日重复行去重、(ticker,date) 唯一约束幂等；历史财务缺失报告期按需经 `ingest_marketwide_yjbb` 补拉（SAVEPOINT 单期隔离）；票池优先本地活跃公司，为空时取外部库区间 distinct symbol（含退市票，缓解幸存者偏差）
-- **口径**（`screener/backtest.py` 纯函数）：调仓日 = 各披露截止日（Q1 4-30 / Q2 8-31 / Q3 10-31 / 年报次年 4-30）后首个交易日；**4 月调仓统一用上一年年报**，无未来函数；收益一律前复权 close；停牌（卖出价缺失）记 0 并标注；近似市值 = 调仓日收盘价 × 当前总股本；未计交易费用
+- **数据**：日线走外部 MySQL 前复权库（`BACKTEST_MYSQL_URL`，仅存 .env），**逐只「边拉边灌」**——单票一次查询（~1200 行）立即落库 commit，本地行数即进度、≥200 根视为完整可断点续传、单票网络错误重试 3 次；同票同日重复行去重、(ticker,date) 唯一约束幂等；历史财务缺失报告期按需经 `ingest_marketwide_yjbb` 补拉（SAVEPOINT 单期隔离）；财务指标带 `announcement_date`，回测按公告日 <= 调仓日过滤（缺失公告日的历史行回退旧口径）；票池优先本地活跃公司，为空时取外部库区间 distinct symbol（含退市票，缓解幸存者偏差）
+- **口径**（`screener/backtest.py` 纯函数）：调仓日 = 各披露截止日（Q1 4-30 / Q2 8-31 / Q3 10-31 / 年报次年 4-30）后首个交易日；**4 月调仓统一用上一年年报**，无未来函数；收益一律前复权 close；停牌（成交量为 0）按不可交易记 0 并标注；近似市值 = 调仓日收盘价 × 当前总股本；**已计佣金/卖出印花税/单边滑点**（`BACKTEST_COMMISSION_RATE` / `BACKTEST_STAMP_DUTY_RATE` / `BACKTEST_SLIPPAGE_RATE`）
 - **产出**：result JSON `{summary: {total_return, cagr, max_drawdown, win_rate, ...}, yearly: [...]}` + Markdown 报告落 `screener/reports/`（含免责声明）
-- 已知近似：外部库无历史股本 → 市值为近似值；财务可见性按披露截止日近似（实际披露有早有晚）；无费用建模。报告内均已声明。
+- 已知近似：外部库无历史股本 → 市值为近似值；财务可见性有公告日的按公告日过滤，缺失公告日的按披露截止日近似；涨跌停不可交易未单独建模。报告内均已声明。
 
 ### 定时筛选与变化日报（2026-10-24）
 
@@ -99,7 +99,7 @@ PostgreSQL 用 schema 做模块隔离，初始化 SQL 见 `docker/init.sql`：
 | Schema | 表 |
 |--------|-----|
 | `company` | companies, company_tags |
-| `market` | stock_prices, financial_metrics, valuation_history（估值历史，PE/PB 分位源）, stock_industry（申万/新浪行业）, data_freshness |
+| `market` | stock_prices, financial_metrics（含 announcement_date，PIT）, valuation_history（估值历史，PE/PB 分位源）, stock_industry（申万/新浪行业）, data_freshness |
 | `document` | documents, document_chunks（含 content_type：mda/risk/notes/announcement/other） |
 | `research` | research_sessions, research_evidences（含 content_nature：quantitative/qualitative）, research_reports |
 | `portfolio` | holdings, investment_journal |
@@ -164,6 +164,9 @@ PYTHONPATH=. python scripts/seed_data.py
 | | `FINANCIAL_DATA_SCHEDULE` | `15 3 * * 1-5` | — |
 | | `SCREENER_SCHEDULE` | `30 16 * * 1-5` | — |
 | | `SCREENER_SCHEDULE_PRESETS` | `core`（逗号分隔 style_tag） | — |
+| 回测 | `BACKTEST_COMMISSION_RATE` | 0.0003（单边万三） | — |
+| | `BACKTEST_STAMP_DUTY_RATE` | 0.0005（卖出） | — |
+| | `BACKTEST_SLIPPAGE_RATE` | 0.001（单边千一） | — |
 | 选股 | `SCREENER_MIN_TURNOVER` | 0.05（%） | — |
 | | `SCREENER_MIN_MARKET_CAP` | 1e9（元） | — |
 | 安全 | `SECRET_KEY` | 每次启动随机生成 | — |
@@ -198,4 +201,4 @@ APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工�
 ```bash
 make test        # pytest，专用 airesearch_test 库 + 隔离 Qdrant 集合
 ```
-当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **237 passed**。
+当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **241 passed**。

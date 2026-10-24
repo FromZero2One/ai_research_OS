@@ -87,8 +87,14 @@ def compute_holding_returns(
     portfolio: list[dict],
     buy_prices: dict[str, float],
     sell_prices: dict[str, float],
+    cost_buy: float = 0.0,
+    cost_sell: float = 0.0,
 ) -> list[dict]:
-    """组合各票买入→卖出的持有期收益。卖出价缺失（停牌）→ 0 + suspended。"""
+    """组合各票买入→卖出的持有期收益（含交易成本）。
+
+    cost_buy / cost_sell 为单边成本率（佣金 + 滑点；卖出再加印花税）。
+    买入价或卖出价缺失（停牌/不可交易）→ 收益 0 + suspended。
+    """
     out = []
     for cand in portfolio:
         ticker = cand["ticker"]
@@ -101,9 +107,14 @@ def compute_holding_returns(
             return_row = 0.0
             suspended = True
         else:
-            return_row = sell / buy - 1.0
+            net_buy = buy * (1.0 + cost_buy)
+            net_sell = sell * (1.0 - cost_sell)
+            return_row = net_sell / net_buy - 1.0
             suspended = False
-        out.append({**cand, "buy": buy, "sell": sell, "return": return_row, "suspended": suspended})
+        out.append({
+            **cand, "buy": buy, "sell": sell, "return": return_row,
+            "suspended": suspended,
+        })
     return out
 
 

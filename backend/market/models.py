@@ -118,6 +118,11 @@ class FinancialMetric(Base, UUIDMixin, TimestampMixin):
 
     reported_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
+    announcement_date: Mapped[date | None] = mapped_column(
+        Date, nullable=True, index=True
+    )
+    """公告日（Point-in-Time）：回测只使用公告日 <= 调仓日的数据。"""
+
 
 class DataFreshness(Base, UUIDMixin, TimestampMixin):
     """Per-ticker data freshness tracking — when was each data type last fetched.
