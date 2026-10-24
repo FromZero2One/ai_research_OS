@@ -11,6 +11,7 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-10-24（回测分段稳健性 + 回测 UI）**: `backtest.split_sample_stats` 把调仓期对半切分输出前半/后半年化、基准、超额、回撤、胜率与 `consistent_excess`（<4 期不输出）；`compute_nav_and_stats` 汇总新增 `split_sample`，Markdown 报告新增分段表与说明。新增 `GET /screener/backtests`（最近 50 次）与 `GET /screener/backtests/{id}/report`；前端选股页新增「预设回测」卡片（选预设/年数、后台启动、汇总指标、分段表、逐年明细）。screener + financial_sync 305 passed。
 - **2026-10-24（组合持久化）**: 新表 `screener.portfolios`（run_id/name/params/result JSONB，迁移 `d8e9f0a1b2c3`，同时把 `cancelling` 纳入活跃 run 唯一索引）；`POST /screener/runs/{id}/portfolio` 支持 `save`/`name`，新增 `GET /screener/runs/{id}/portfolios`、`GET/DELETE /screener/portfolios/{pid}`、`GET /screener/portfolios`；前端组合面板「保存」+ 已保存标签（载入/删除）。screener + financial_sync 300 passed。
 - **2026-10-24（失败告警 + 调度状态/立即运行 + CSV 导出）**: run 失败（手动/定时）与定时任务自身异常经同一 Webhook 推送失败摘要；新增 `GET /screener/schedule`（cron/预设/下次运行/Webhook 只读状态）、`POST /screener/schedule/run`（持久任务 `screener_schedule`，202/409，不阻塞 HTTP）、`GET /screener/runs/{id}/export`（UTF-8 BOM CSV）。前端选股页新增「定时任务」卡片（状态/下次运行/立即运行）与历史运行「CSV」按钮。screener + financial_sync 298 passed。
 - **2026-10-24（近似命中）**: 报告新增「附：近似命中（仅差 1 条规则）」：`screening.evaluate_near_misses` 找出恰好失败 1 条规则且无缺失数据的票（按市值降序前 10），union 模式经 `compose.evaluate_near_misses_by_preset` 逐预设判断去重并标注预设；不影响候选池/推荐。`_rule_hit` 重构出 `_rule_value` 复用指标取值。测试补近似命中与报告分区。
@@ -55,7 +56,7 @@ metadata:
 | AI 中心 | ~75% | 模板/摘要/提取/Token 用量统计；AI 工作流已移除（单用户用不上） |
 | 研究中心 | ~92% | 全链路 + plan_type 四模板 + LLM 证据分类 + 多周期/同业比对 + 报告可视化 |
 | 投资组合 | ~40% | 自选已并入公司；持仓/日志仅后端，前端待做 |
-| 智能选股 | ~97% | 42 指标（TTM 估值 + 现金流质量 + 因子深度 + 银行/保险专属）+ 8 内置预设；股票池卫生 + 行业隔离/相对排名；深判知识库/证据守卫 + 三态结论 + 评测器；预设回测；定时筛选 + 变化日报/失败告警 Webhook + 推荐后表现 + 组合构建 + 组合保存 + 送入研究 + 运行取消 + CSV 导出 + 近似命中；财务数据工作日定时更新（2026-10-24） |
+| 智能选股 | ~97% | 42 指标（TTM 估值 + 现金流质量 + 因子深度 + 银行/保险专属）+ 8 内置预设；股票池卫生 + 行业隔离/相对排名；深判知识库/证据守卫 + 三态结论 + 评测器；预设回测；定时筛选 + 变化日报/失败告警 Webhook + 推荐后表现 + 组合构建 + 组合保存 + 回测分段稳健性 + 送入研究 + 运行取消 + CSV 导出 + 近似命中；财务数据工作日定时更新（2026-10-24） |
 | 系统/调度 | ~85% | 调度/观察/任务/事件/新鲜度/覆盖矩阵/Token 用量卡片 |
 
 总体：V1.1 达成，V2 按分析师优先级推进中（见下）。

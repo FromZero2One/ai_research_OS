@@ -118,6 +118,62 @@ def compute_holding_returns(
     return out
 
 
+def _segment_stats(periods: list[dict]) -> dict:
+    """一段调仓期序列的净值/基准/回撤/胜率（分段稳健性用）。"""
+    nav = 1.0
+    bench_nav = 1.0
+    peak = 1.0
+    max_dd = 0.0
+    wins = 0
+    for p in periods:
+        nav *= 1.0 + p["return"]
+        bench_nav *= 1.0 + p["bench"]
+        peak = max(peak, nav)
+        if peak > 0:
+            max_dd = min(max_dd, nav / peak - 1.0)
+        if p["return"] > p["bench"]:
+            wins += 1
+    n = len(periods)
+    cagr = nav ** (4.0 / n) - 1.0 if n > 0 and nav > 0 else 0.0
+    bench_cagr = (
+        bench_nav ** (4.0 / n) - 1.0 if n > 0 and bench_nav > 0 else 0.0
+    )
+    return {
+        "periods_count": n,
+        "start": periods[0].get("rebalance_date") if periods else None,
+        "end": periods[-1].get("rebalance_date") if periods else None,
+        "total_return": nav - 1.0,
+        "bench_total_return": bench_nav - 1.0,
+        "cagr": cagr,
+        "bench_cagr": bench_cagr,
+        "excess_cagr": cagr - bench_cagr,
+        "max_drawdown": max_dd,
+        "win_rate": wins / n if n else 0.0,
+    }
+
+
+def split_sample_stats(periods: list[dict]) -> dict | None:
+    """样本对半切分（前半/后半）→ 稳健性观察。
+
+    本回测不做参数优化，因此这不是严格意义的样本外验证；它用于检查
+    超额收益是否只集中在某一段行情。期数 < 4 时不足以分段，返回 None。
+    """
+    n = len(periods)
+    if n < 4:
+        return None
+    mid = n // 2
+    first = _segment_stats(periods[:mid])
+    second = _segment_stats(periods[mid:])
+    return {
+        "first_half": first,
+        "second_half": second,
+        "consistent_excess": (
+            first["excess_cagr"] > 0 and second["excess_cagr"] > 0
+        ),
+        "disclaimer": "对半切分仅作稳健性观察；回测未做参数优化，不等同严格样本外验证。",
+    }
+
+
 def compute_nav_and_stats(
     periods: list[dict], risk_free_rate: float = 0.0
 ) -> dict:
@@ -187,5 +243,6 @@ def compute_nav_and_stats(
         "calmar": calmar,
         "win_rate": wins / n if n else 0.0,
         "periods_count": n,
+        "split_sample": split_sample_stats(periods),
         "yearly": yearly,
     }

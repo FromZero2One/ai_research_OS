@@ -143,3 +143,32 @@ class TestNavAndStats:
         assert stats["sharpe"] == 0.0
         assert stats["sortino"] == 0.0
         assert stats["calmar"] == 0.0
+
+    def test_split_sample_consistency(self):
+        """前半/后半均跑赢基准 → consistent_excess=True，期数正确切分。"""
+        periods = [
+            self._period(2021, 0.10, 0.05),
+            self._period(2022, 0.10, 0.05),
+            self._period(2023, 0.10, 0.05),
+            self._period(2024, 0.10, 0.05),
+        ]
+        split = compute_nav_and_stats(periods)["split_sample"]
+        assert split["first_half"]["periods_count"] == 2
+        assert split["second_half"]["periods_count"] == 2
+        assert split["first_half"]["excess_cagr"] > 0
+        assert split["second_half"]["excess_cagr"] > 0
+        assert split["consistent_excess"] is True
+
+    def test_split_sample_detects_second_half_underperformance(self):
+        periods = [
+            self._period(2021, 0.10, 0.0),
+            self._period(2022, 0.10, 0.0),
+            self._period(2023, 0.0, 0.10),
+            self._period(2024, 0.0, 0.10),
+        ]
+        split = compute_nav_and_stats(periods)["split_sample"]
+        assert split["consistent_excess"] is False
+
+    def test_split_sample_requires_four_periods(self):
+        periods = [self._period(2021, 0.1, 0.0)] * 3
+        assert compute_nav_and_stats(periods)["split_sample"] is None

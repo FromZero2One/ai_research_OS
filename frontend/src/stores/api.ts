@@ -800,6 +800,49 @@ export function useDeleteScreenerPortfolio() {
   })
 }
 
+export interface ScreenerBacktestRun {
+  id: string
+  preset_id: string
+  preset_name: string | null
+  years: number
+  status: string
+  error: string | null
+  summary: Record<string, any> | null
+  report_path: string | null
+  created_at: string | null
+  finished_at: string | null
+}
+export interface ScreenerBacktestDetail extends ScreenerBacktestRun {
+  result: { summary?: Record<string, any>; yearly?: any[]; start?: string; end?: string; disclaimers?: string[] } | null
+}
+export function useScreenerBacktests() {
+  return useGet<{ backtests: ScreenerBacktestRun[] }>(
+    ['screener-backtests'],
+    '/screener/backtests',
+  )
+}
+export function useTriggerScreenerBacktest() {
+  const qc = useQueryClient()
+  return useMutation<{ id: string; status: string }, Error, { preset_id: string; years: number }>({
+    mutationFn: (body) =>
+      fetchApi('/screener/backtests', { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['screener-backtests'] })
+      qc.invalidateQueries({ queryKey: ['screener-backtest', data.id] })
+    },
+  })
+}
+export function useScreenerBacktest(
+  id: MaybeRefOrGetter<string | null>,
+  opts?: { poll?: MaybeRefOrGetter<boolean> },
+) {
+  return useGet<ScreenerBacktestDetail>(
+    computed(() => ['screener-backtest', toValue(id) ?? '']),
+    computed(() => (toValue(id) ? `/screener/backtests/${toValue(id)}` : '')),
+    { refetchInterval: computed(() => (toValue(opts?.poll ?? false) ? 3_000 : false)) },
+  )
+}
+
 export interface ScreenerHandoffResult {
   run_id: string
   created: { session_id: string; ticker: string; name: string }[]

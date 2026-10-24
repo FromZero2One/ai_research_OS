@@ -6,6 +6,8 @@ import { marked } from 'marked'
 import {
   useSaveCriteria,
   useCancelScreenerRun,
+  useScreenerBacktest,
+  useScreenerBacktests,
   useScreenerCriteria,
   useScreenerMetrics,
   useScreenerPresets,
@@ -21,6 +23,7 @@ import {
   useScreenerRuns,
   useScreenerSchedule,
   type ScreenerPortfolioResult,
+  useTriggerScreenerBacktest,
   useTriggerScreenerRun,
   useTriggerScreenerRunPresets,
   type ScreenerPreset,
@@ -76,6 +79,75 @@ const running = computed(() =>
   || (runsData.value?.runs || []).some((r) => ['pending', 'screening', 'judging', 'cancelling'].includes(r.status)),
 )
 
+// ── 预设回测 ──
+const backtestPresetId = ref<string | null>(null)
+const backtestYears = ref(5)
+const backtestRunId = ref<string | null>(null)
+const backtestStatus = ref<string | null>(null)
+const triggerBacktestMutation = useTriggerScreenerBacktest()
+const { data: backtestList, refetch: refetchBacktests } = useScreenerBacktests()
+const { data: backtestData } = useScreenerBacktest(backtestRunId, {
+  poll: computed(() => ['pending', 'running'].includes(backtestStatus.value || '')),
+})
+watch(backtestData, (d) => {
+  backtestStatus.value = d?.status || null
+  if (d && (d.status === 'completed' || d.status === 'failed')) {
+    refetchBacktests()
+    if (d.status === 'completed') ElMessage.success('回测完成')
+    if (d.status === 'failed') ElMessage.error(`回测失败：${d.error || '未知原因'}`)
+  }
+})
+watch(backtestList, (v) => {
+  if (backtestRunId.value || !v?.backtests?.length) return
+  const latest = v.backtests[0]
+  backtestRunId.value = latest.id
+  backtestStatus.value = latest.status
+  if (latest.preset_id) backtestPresetId.value = latest.preset_id
+  backtestYears.value = latest.years
+}, { immediate: true })
+const backtestSummary = computed(() => backtestData.value?.result?.summary || null)
+const backtestSplit = computed(() => backtestSummary.value?.split_sample || null)
+const backtestYearly = computed(() => backtestData.value?.result?.yearly || [])
+const backtestMetricRows = computed(() => {
+  const s = backtestSummary.value
+  if (!s) return []
+  const pct = (v: number | null | undefined, signed = false) =>
+    v === null || v === undefined ? '-' : `${signed && v > 0 ? '+' : ''}${(v * 100).toFixed(2)}%`
+  return [
+    { label: '累计收益', value: pct(s.total_return) },
+    { label: '年化', value: pct(s.cagr) },
+    { label: '基准年化', value: pct(s.bench_cagr) },
+    { label: '年化超额', value: pct(s.excess_cagr, true) },
+    { label: '最大回撤', value: pct(s.max_drawdown) },
+    { label: 'Sharpe', value: Number(s.sharpe ?? 0).toFixed(2) },
+    { label: 'Sortino', value: Number(s.sortino ?? 0).toFixed(2) },
+    { label: '胜率', value: pct(s.win_rate) },
+  ]
+})
+const backtestStatusLabel: Record<string, { label: string; type: string }> = {
+  pending: { label: '排队中', type: 'info' },
+  running: { label: '回测中', type: 'warning' },
+  completed: { label: '已完成', type: 'success' },
+  failed: { label: '失败', type: 'danger' },
+}
+async function startBacktest() {
+  if (!backtestPresetId.value) {
+    ElMessage.warning('请选择预设')
+    return
+  }
+  try {
+    const task = await triggerBacktestMutation.mutateAsync({
+      preset_id: backtestPresetId.value,
+      years: backtestYears.value,
+    })
+    backtestRunId.value = task.id
+    backtestStatus.value = task.status
+    ElMessage.info('回测已启动，会在后台执行')
+  } catch (e: any) {
+    ElMessage.error(e.message || '回测启动失败')
+  }
+}
+
 const { data: scheduleData } = useScreenerSchedule()
 const runScheduleMutation = useRunScreenerSchedule()
 const nextScheduleRun = computed(() => {
@@ -130,6 +202,9 @@ async function handleTrigger() {
 const { data: presetsData } = useScreenerPresets()
 const presets = computed(() => presetsData.value?.presets || [])
 const activePresets = computed(() => presets.value.filter((p) => p.is_active))
+watch(activePresets, (ps) => {
+  if (!backtestPresetId.value && ps.length) backtestPresetId.value = ps[0].id
+}, { immediate: true })
 const triggerMode = ref<'presets' | 'freeform'>('presets')
 const selectedPresetIds = ref<string[]>([])
 const combineMode = ref<'union' | 'intersection' | 'flatten'>('union')
@@ -512,6 +587,93 @@ async function removeSavedPortfolio(p: ScreenerSavedPortfolio) {
         </el-card>
 
         <el-card class="mt-3">
+          <template #header>
+            <div class="card-header">
+              <span>预设回测</span>
+              <el-tag
+                v-if="backtestData"
+                size="small"
+                :type="(backtestStatusLabel[backtestData.status]?.type as any) || 'info'"
+              >{{ backtestStatusLabel[backtestData.status]?.label || backtestData.status }}</el-tag>
+            </div>
+          </template>
+          <el-form :inline="true" size="small">
+            <el-form-item label="预设">
+              <el-select v-model="backtestPresetId" style="width: 150px" placeholder="选择预设">
+                <el-option v-for="p in activePresets" :key="p.id" :value="p.id" :label="p.name" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="年数">
+              <el-input-number v-model="backtestYears" :min="1" :max="10" />
+            </el-form-item>
+            <el-form-item>
+              <el-button
+                type="primary" :loading="triggerBacktestMutation.isPending.value"
+                @click="startBacktest"
+              >开始回测</el-button>
+            </el-form-item>
+          </el-form>
+          <div v-if="backtestData?.error" class="run-error">{{ backtestData.error }}</div>
+          <template v-if="backtestSummary">
+            <div class="backtest-metrics">
+              <div v-for="m in backtestMetricRows" :key="m.label" class="backtest-metric">
+                <div class="text-secondary">{{ m.label }}</div>
+                <div class="font-medium">{{ m.value }}</div>
+              </div>
+            </div>
+            <template v-if="backtestSplit">
+              <div class="section-label mt-2">分段稳健性（前半 vs 后半）</div>
+              <el-table :data="[
+                { name: '前半', ...backtestSplit.first_half },
+                { name: '后半', ...backtestSplit.second_half },
+              ]" size="small">
+                <el-table-column label="区间" prop="name" width="60" />
+                <el-table-column label="期数" prop="periods_count" width="60" />
+                <el-table-column label="年化" width="80">
+                  <template #default="{ row }">{{ formatPct(row.cagr) }}</template>
+                </el-table-column>
+                <el-table-column label="基准年化" width="90">
+                  <template #default="{ row }">{{ formatPct(row.bench_cagr) }}</template>
+                </el-table-column>
+                <el-table-column label="超额" width="80">
+                  <template #default="{ row }">{{ formatPct(row.excess_cagr) }}</template>
+                </el-table-column>
+                <el-table-column label="回撤" width="80">
+                  <template #default="{ row }">{{ formatPct(row.max_drawdown) }}</template>
+                </el-table-column>
+                <el-table-column label="胜率" width="70">
+                  <template #default="{ row }">{{ formatPct(row.win_rate) }}</template>
+                </el-table-column>
+              </el-table>
+              <div class="text-xs text-secondary mt-1">
+                {{ backtestSplit.consistent_excess ? '两段均跑赢基准' : '超额并非两段都为正' }} ·
+                {{ backtestSplit.disclaimer }}
+              </div>
+            </template>
+            <div class="section-label mt-2">逐年明细</div>
+            <el-table :data="backtestYearly" size="small" max-height="220">
+              <el-table-column label="年度" prop="year" width="70" />
+              <el-table-column label="收益" width="80">
+                <template #default="{ row }">{{ formatPct(row.return) }}</template>
+              </el-table-column>
+              <el-table-column label="基准" width="80">
+                <template #default="{ row }">{{ formatPct(row.bench) }}</template>
+              </el-table-column>
+              <el-table-column label="超额" width="80">
+                <template #default="{ row }">{{ formatPct(row.excess) }}</template>
+              </el-table-column>
+              <el-table-column label="持仓数" width="70">
+                <template #default="{ row }">{{ row.holdings?.length ?? 0 }}</template>
+              </el-table-column>
+            </el-table>
+          </template>
+          <el-empty
+            v-else-if="!backtestData"
+            description="选择预设并运行回测" :image-size="40"
+          />
+        </el-card>
+
+        <el-card class="mt-3">
           <template #header><span>历史运行</span></template>
           <el-table :data="runsData?.runs || []" size="small" @row-click="viewReport">
             <el-table-column label="时间" width="160">
@@ -723,6 +885,8 @@ async function removeSavedPortfolio(p: ScreenerSavedPortfolio) {
 <style scoped>
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .schedule-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; font-size: 13px; }
+.backtest-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 4px 0 8px; font-size: 13px; }
+.backtest-metric { padding: 6px 8px; border-radius: 6px; background: var(--bg-tertiary); }
 .saved-portfolios { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 8px; }
 .saved-portfolios .el-tag { cursor: pointer; }
 .run-status { margin-top: 12px; display: flex; align-items: center; gap: 12px; }

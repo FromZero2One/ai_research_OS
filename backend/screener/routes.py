@@ -202,6 +202,65 @@ async def trigger_backtest(data: BacktestParams, db: AsyncSession = Depends(get_
     return {"id": str(run.id), "status": run.status}
 
 
+@router.get("/backtests")
+async def list_backtests(db: AsyncSession = Depends(get_db)):
+    """最近回测（最新在前，含预设名称与 summary）。"""
+    rows = (
+        await db.execute(
+            select(ScreenerBacktestRun)
+            .order_by(ScreenerBacktestRun.created_at.desc())
+            .limit(50)
+        )
+    ).scalars().all()
+    names = {
+        p.id: p.name
+        for p in (
+            await db.execute(
+                select(CriteriaPreset).where(
+                    CriteriaPreset.id.in_([r.preset_id for r in rows])
+                )
+            )
+        ).scalars().all()
+    } if rows else {}
+    return {
+        "backtests": [
+            {
+                "id": str(r.id),
+                "preset_id": str(r.preset_id),
+                "preset_name": names.get(r.preset_id),
+                "years": r.years,
+                "status": r.status,
+                "error": r.error,
+                "summary": (r.result or {}).get("summary") if r.result else None,
+                "report_path": r.report_path,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "finished_at": r.finished_at,
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.get("/backtests/{run_id}/report")
+async def get_backtest_report(
+    run_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+):
+    """回测 Markdown 报告原文。"""
+    run = (
+        await db.execute(
+            select(ScreenerBacktestRun).where(ScreenerBacktestRun.id == run_id)
+        )
+    ).scalar_one_or_none()
+    if run is None or not run.report_path:
+        raise NotFoundError("ScreenerBacktestRun", str(run_id))
+    from pathlib import Path
+
+    path = Path(run.report_path)
+    if not path.exists():
+        raise NotFoundError("ScreenerBacktestRun", str(run_id))
+    return {"report": path.read_text(encoding="utf-8")}
+
+
 @router.get("/backtests/{run_id}")
 async def get_backtest(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     """回测详情（含 result JSON 与报告路径）。"""

@@ -29,6 +29,28 @@ def build_backtest_report(run_id: str, preset_name: str, result: dict) -> str:
     lines.append(f"- Calmar：{summary.get('calmar', 0):.2f}")
     lines.append(f"- 年度胜率（超额>0 占比）：{summary.get('win_rate', 0):.0%}")
     lines.append("")
+
+    split = summary.get("split_sample")
+    if split:
+        lines.append("## 分段稳健性（前半 vs 后半）")
+        lines.append("")
+        lines.append("| 区间 | 期数 | 年化 | 基准年化 | 年化超额 | 最大回撤 | 胜率 |")
+        lines.append("|---|---|---|---|---|---|---|")
+        for label, key in (("前半", "first_half"), ("后半", "second_half")):
+            seg = split.get(key) or {}
+            lines.append(
+                f"| {label} | {seg.get('periods_count', 0)} | "
+                f"{seg.get('cagr', 0):.2%} | {seg.get('bench_cagr', 0):.2%} | "
+                f"{seg.get('excess_cagr', 0):+.2%} | "
+                f"{seg.get('max_drawdown', 0):.2%} | {seg.get('win_rate', 0):.0%} |"
+            )
+        lines.append("")
+        verdict = "两段均跑赢基准" if split.get("consistent_excess") else "超额并非两段都为正"
+        lines.append(f"- 结论：{verdict}")
+        if split.get("disclaimer"):
+            lines.append(f"- 说明：{split['disclaimer']}")
+        lines.append("")
+
     lines.append("## 逐年明细")
     lines.append("")
     for y in summary.get("yearly", []):

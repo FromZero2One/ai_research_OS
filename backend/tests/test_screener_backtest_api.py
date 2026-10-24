@@ -171,3 +171,9 @@ class TestBacktestAPI:
         resp = client.get(f"/api/v1/screener/backtests/{run_id}")
         assert resp.status_code == 200
         assert resp.json()["status"] in ("pending", "running", "completed")
+        # 列表含该次回测与预设名
+        listed = client.get("/api/v1/screener/backtests")
+        assert listed.status_code == 200
+        rows = listed.json()["backtests"]
+        assert any(r["id"] == run_id for r in rows)
+        assert any(r["preset_name"] == "API预设" for r in rows)

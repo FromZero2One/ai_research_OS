@@ -62,7 +62,9 @@ LLM 只在深判参与，筛选执行确定性。迁移 `b5d2f8a3c6e1` → `c8e1
 - **状态机**：`pending → running → completed/failed`（`screener.backtest_runs` 表），经持久任务 `screener_backtest` 后台执行，同时刻至多一个进行中（409）
 - **数据**：日线走外部 MySQL 前复权库（`BACKTEST_MYSQL_URL`，仅存 .env），**逐只「边拉边灌」**——单票一次查询（~1200 行）立即落库 commit，本地行数即进度、≥200 根视为完整可断点续传、单票网络错误重试 3 次；同票同日重复行去重、(ticker,date) 唯一约束幂等；历史财务缺失报告期按需经 `ingest_marketwide_yjbb` + `ingest_marketwide_main_finance` 补拉（SAVEPOINT 隔离）；财务指标带 `announcement_date`，回测按公告日 <= 调仓日过滤（缺失公告日的历史行回退旧口径）；票池优先本地活跃公司，为空时取外部库区间 distinct symbol（含退市票，缓解幸存者偏差）
 - **口径**（`screener/backtest.py` 纯函数）：调仓日 = 各披露截止日（Q1 4-30 / Q2 8-31 / Q3 10-31 / 年报次年 4-30）后首个交易日；**4 月调仓统一用上一年年报**，无未来函数；收益一律前复权 close；停牌（成交量为 0）按不可交易记 0 并标注；近似市值 = 调仓日收盘价 × 当前总股本；**已计佣金/卖出印花税/单边滑点**（`BACKTEST_COMMISSION_RATE` / `BACKTEST_STAMP_DUTY_RATE` / `BACKTEST_SLIPPAGE_RATE`）
-- **产出**：result JSON `{summary: {total_return, cagr, bench_cagr, excess_cagr, max_drawdown, annual_volatility, sharpe, sortino, calmar, win_rate, ...}, yearly: [...]}` + Markdown 报告落 `screener/reports/`（含免责声明）。风险指标按季度收益年化（×√4），无风险利率由 `BACKTEST_RISK_FREE_RATE` 配置。
+- **产出**：result JSON `{summary: {total_return, cagr, bench_cagr, excess_cagr, max_drawdown, annual_volatility, sharpe, sortino, calmar, win_rate, split_sample, ...}, yearly: [...]}` + Markdown 报告落 `screener/reports/`（含免责声明）。风险指标按季度收益年化（×√4），无风险利率由 `BACKTEST_RISK_FREE_RATE` 配置。
+- **分段稳健性**：`split_sample` 把调仓期按时间对半切分，分别给出年化/基准/超额/回撤/胜率与 `consistent_excess`（两段是否都跑赢）；报告新增「分段稳健性」表。期数 <4 不输出。注意：回测不做参数优化，对半切分只是稳健性观察，不等同严格样本外验证。
+- **API/UI**：`GET /screener/backtests`（最近 50 次，含预设名与 summary）、`GET /screener/backtests/{id}`、`GET /screener/backtests/{id}/report`。前端选股页「预设回测」卡片可选预设/年数启动回测（后台任务），展示汇总指标、分段表与逐年明细。
 - 已知近似：外部库无历史股本 → 市值为近似值；财务可见性有公告日的按公告日过滤，缺失公告日的按披露截止日近似；涨跌停不可交易未单独建模。报告内均已声明。
 
 ### 定时筛选与变化日报（2026-10-24）
@@ -259,4 +261,4 @@ APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工�
 ```bash
 make test        # pytest，专用 airesearch_test 库 + 隔离 Qdrant 集合
 ```
-当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **300 passed**。
+当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **305 passed**。
