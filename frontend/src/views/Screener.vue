@@ -510,6 +510,12 @@ async function buildPortfolio() {
           <el-table-column label="平均收益" width="110">
             <template #default="{ row }">{{ formatPct(row.avg_return) }}</template>
           </el-table-column>
+          <el-table-column label="基准" width="90">
+            <template #default="{ row }">{{ formatPct(row.bench_return) }}</template>
+          </el-table-column>
+          <el-table-column label="超额" width="90">
+            <template #default="{ row }">{{ formatPct(row.excess_return) }}</template>
+          </el-table-column>
           <el-table-column label="胜率" width="100">
             <template #default="{ row }">{{ formatPct(row.hit_rate) }}</template>
           </el-table-column>

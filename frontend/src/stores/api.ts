@@ -684,7 +684,14 @@ export interface ScreenerPerformance {
   status: string
   recommended_count: number
   with_entry_price: number
-  summary: Record<string, ScreenerHorizonStats>
+  summary: Record<string, ScreenerHorizonStats & { bench_return?: number | null; excess_return?: number | null }>
+  benchmark: {
+    name: string
+    entry_date: string | null
+    entry_price: number | null
+    current_return: number | null
+    horizons: Record<string, number | null>
+  } | null
   stocks: ScreenerStockPerformance[]
   message?: string
 }

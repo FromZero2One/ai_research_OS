@@ -9,7 +9,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from screener.models import ScreenerJudgement, ScreenerRun
-from screener.performance import compute_stock_performance, summarize
+from screener.performance import (
+    add_benchmark_excess,
+    compute_stock_performance,
+    summarize,
+)
 
 
 def _run_local_date(run: ScreenerRun) -> date | None:
@@ -106,10 +110,48 @@ async def build_run_performance(
             }
         )
 
+    benchmark = await _benchmark_performance(run_date)
     return {
         **base,
         "recommended_count": len(judgements),
         "with_entry_price": sum(1 for s in stocks if s["status"] == "ok"),
-        "summary": summarize(stocks),
+        "summary": add_benchmark_excess(summarize(stocks), benchmark),
+        "benchmark": benchmark,
         "stocks": stocks,
+    }
+
+
+async def _benchmark_performance(run_date: date) -> dict | None:
+    """沪深300 T+1 买入的同期限收益；数据源不可用时返回 None。"""
+    from core.logging import logger
+    from screener.backtest_data import fetch_index_daily
+
+    try:
+        raw = await fetch_index_daily(run_date, date.today())
+    except Exception as e:  # noqa: BLE001 — 基准是加分项，不阻塞表现接口
+        logger.warning("基准指数拉取失败: %s", e)
+        return None
+
+    rows: list[tuple[date, float]] = []
+    for item in raw:
+        day = item.get("date")
+        close = item.get("close")
+        if isinstance(day, str):
+            try:
+                day = date.fromisoformat(day[:10])
+            except ValueError:
+                continue
+        if isinstance(day, date) and close is not None:
+            rows.append((day, float(close)))
+    entry = next(((d, c) for d, c in rows if d > run_date), None)
+    if entry is None:
+        return None
+    after = [(d, c) for d, c in rows if d >= entry[0]]
+    perf = compute_stock_performance(entry[0], entry[1], after)
+    return {
+        "name": "沪深300",
+        "entry_date": perf["entry_date"],
+        "entry_price": perf["entry_price"],
+        "current_return": perf["current_return"],
+        "horizons": perf["horizons"],
     }

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from market.models import StockPrice
 from screener.models import ScreenerJudgement, ScreenerRun
-from screener.performance import compute_stock_performance, summarize
+from screener.performance import add_benchmark_excess, compute_stock_performance, summarize
 from screener.performance_service import build_run_performance
 
 
@@ -52,8 +52,28 @@ class TestComputeStockPerformance:
         assert summary["1m"]["hit_rate"] == pytest.approx(0.5)
         assert summary["3m"] == {"count": 0, "avg_return": None, "hit_rate": None}
 
+    def test_benchmark_excess(self):
+        summary = summarize([
+            {"current_return": 0.12, "horizons": {"1m": 0.10, "3m": None}},
+        ])
+        benchmark = {
+            "current_return": 0.05,
+            "horizons": {"1m": 0.04, "3m": None},
+        }
+        out = add_benchmark_excess(summary, benchmark)
+        assert out["1m"]["bench_return"] == pytest.approx(0.04)
+        assert out["1m"]["excess_return"] == pytest.approx(0.06)
+        assert out["current"]["excess_return"] == pytest.approx(0.07)
+        assert "bench_return" not in out["3m"]
 
-async def test_build_run_performance_t_plus_one(test_session: AsyncSession):
+
+async def test_build_run_performance_t_plus_one(test_session: AsyncSession, monkeypatch):
+    async def _no_benchmark(run_date):
+        return None
+
+    monkeypatch.setattr(
+        "screener.performance_service._benchmark_performance", _no_benchmark
+    )
     run = ScreenerRun(
         criteria_hash="h", criteria_text="标准", mode="presets",
         preset_ids=["p"], combine_mode="union", status="completed",

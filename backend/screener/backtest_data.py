@@ -276,7 +276,7 @@ async def fetch_index_daily(start: dt.date, end: dt.date) -> list[dict]:
     import asyncio
     import json
 
-    from market.akshare_executor import _AKSHARE_PROLOGUE, _run_child
+    from screener.ingest import _AKSHARE_PROLOGUE, _run_child
 
     code = (
         _AKSHARE_PROLOGUE
@@ -284,13 +284,9 @@ async def fetch_index_daily(start: dt.date, end: dt.date) -> list[dict]:
         + "df = ak.stock_zh_index_daily(symbol='sh000300')\n"
         + 'print("__R__:" + json.dumps(df.to_dict(orient="records"), ensure_ascii=False, default=str))\n'
     )
-    raw = await asyncio.to_thread(_run_child, code, 300)
-    if not raw or raw.startswith("E:"):
-        raise RuntimeError(f"指数日线拉取失败: {raw!r}")
-    payload = raw.removeprefix("__R__:").strip()
-    import json as _json
-
-    rows = _json.loads(payload)
+    rows = await asyncio.to_thread(_run_child, code, 300)
+    if not rows:
+        raise RuntimeError(f"指数日线拉取失败: {rows!r}")
     out = []
     for r in rows:
         d = r.get("date")

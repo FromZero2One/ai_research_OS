@@ -45,6 +45,25 @@ def compute_stock_performance(
     return out
 
 
+def add_benchmark_excess(summary: dict, benchmark: dict | None) -> dict:
+    """把基准收益与超额收益并入汇总（无基准时原样返回）。"""
+    if not benchmark:
+        return summary
+    for key in list(HORIZONS) + ["current"]:
+        bench = (
+            benchmark.get("current_return")
+            if key == "current"
+            else benchmark.get("horizons", {}).get(key)
+        )
+        row = summary.setdefault(
+            key, {"count": 0, "avg_return": None, "hit_rate": None}
+        )
+        if row.get("avg_return") is not None and bench is not None:
+            row["bench_return"] = bench
+            row["excess_return"] = row["avg_return"] - bench
+    return summary
+
+
 def summarize(rows: list[dict]) -> dict:
     """等权汇总各期限收益：平均、胜率、样本数。"""
     summary: dict = {}
