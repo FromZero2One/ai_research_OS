@@ -11,6 +11,8 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-10-24（行情采集暂停）**: 第 71 批完成（9 成功 + 1 跳过），`ingest_progress.csv` 共 747 条记录；主板覆盖 790/2111（≥200 根日线），行情 5,122,204 行；剩余 1,321 只 ≈ 133 批。按用户要求**暂停**，明天继续。恢复命令（在 `backend/` 下）：
+  `PYTHONUNBUFFERED=1 INGEST_PROGRESS_FILE=E:/ai_research_OS/ingest_progress.csv ALL_PROXY= all_proxy= PYTHONPATH=. ./.venv/Scripts/python.exe -X utf8 tools/ingest_main_board_batch.py --limit 10`
 - **2026-10-24（组合再平衡）**: 新增 `screener/rebalance.py` 纯函数 + `POST /screener/portfolios/{pid}/rebalance`：按最新收盘价估算市值，与保存时的目标权重比较，输出漂移/买卖动作/股数/金额；漂移 ≤tolerance 持有，买入按整手向下取整（不足一手 `lot_blocked`），缺价回退保存价并标记 `stale_price` 且不交易。前端载入已保存组合后可「计算再平衡」。screener + financial_sync 324 passed。
 - **2026-10-24（表现快照）**: 新表 `screener.performance_snapshots`（run_id/as_of 唯一，迁移 `e9f0a1b2c3d4`）：`POST /runs/{id}/performance/snapshot` 计算并保存当日快照（幂等覆盖），`GET /runs/{id}/performance/history` 查历史；`core/performance_schedule.py` 按 `PERFORMANCE_SNAPSHOT_SCHEDULE`（工作日 17:10）自动为最近 30 天运行记录，注册任务 `screener_performance_snapshot`。前端表现面板新增「记录快照」与历史快照表。screener + financial_sync 319 passed。
 - **2026-10-24（数据质量面板 + 运行筛选）**: 新增 `GET /screener/data-quality`：最新财务期、7 个关键指标覆盖、A 股公司行情覆盖（≥200 根日线）、最新行情日期、知识库文档/切片数，以及知识库空/行情覆盖 <50%/财务库空告警。前端选股页新增「数据质量」卡片；历史运行增加 全部/进行中/已完成/失败/已取消 筛选。screener + financial_sync 318 passed。
@@ -125,7 +127,7 @@ metadata:
 - Embedding 仍指向本机 Ollama（未安装）→ 文档上传/知识检索的稠密向量不可用，BM25 兜底；pytest 有 5 项因此失败
 - akshare 走独立 `akshare_mcp` venv 子进程（`AKSHARE_MCP_DIR` 指向旧机器路径，**本机需改 .env 并确认 venv 存在**，否则 A 股采集失败但不崩）
 - 迁移 head：`e9f0a1b2c3d4`（组合持久化 + 表现快照；此前含银行/保险指标与预设）
-- 当前数据（2026-10-24）：行情 507 万行，781 只具备 ≥200 根日线；财务期 2026Q2；知识库 0 文档；采集进度文件 738 条记录
+- 当前数据（2026-10-24 采集暂停）：行情 5,122,204 行，790/2111 主板股票具备 ≥200 根日线；剩余 1,321 只 ≈ 133 批；财务期 2026Q2；知识库 0 文档；采集进度文件 747 条记录
 - pytest 需先起 docker postgres；测试库 airesearch_test 由 conftest 用 create_all 重建（**改模型后旧测试库不会自动加列，需 DROP DATABASE airesearch_test 重建**）；`tests/test_session` fixture 为服务级测试专用（勿用 managed_session，会写进开发库）
 
 ## 相关文档
