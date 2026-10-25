@@ -109,7 +109,7 @@ class Settings(BaseSettings):
     SCREENER_MIN_CONFIDENCE: float = 0.0  # >0 时低于该置信度的推荐转为“数据不足”
 
     SCHEDULER_ENABLED: bool = True
-    MARKET_DATA_SCHEDULE: str = "0 2 * * 1-5"  # Weekdays 2am
+    MARKET_DATA_SCHEDULE: str = "0 18 * * 1-5"  # Weekdays 18:00 (after close, same-day bars)
     FINANCIAL_DATA_SCHEDULE: str = "15 3 * * 1-5"  # Weekdays 3:15am (market-wide financials)
     SCREENER_SCHEDULE: str = "30 16 * * 1-5"  # Weekdays 4:30pm after close
     SCREENER_SCHEDULE_PRESETS: str = "core"  # comma-separated style tags

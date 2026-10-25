@@ -58,7 +58,7 @@ def start_scheduler() -> AsyncIOScheduler:
     _scheduler = AsyncIOScheduler()
     _scheduler._logger = logger  # Use our logger
 
-    # Register market data update job (Weekdays 2am)
+    # Register market data update job (weekdays 18:00, after close → same-day bars)
     if hasattr(settings, "MARKET_DATA_SCHEDULE") and settings.MARKET_DATA_SCHEDULE:
         _add_cron_job(
             "market_data_update",
