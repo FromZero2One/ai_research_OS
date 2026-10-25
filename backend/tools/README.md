@@ -89,8 +89,8 @@ cd backend
 # 全部上传（需后端在跑 + Ollama 提供 bge-m3 embedding）
 .venv\Scripts\python tools\upload_reports.py
 
-# 只传部分
-.venv\Scripts\python tools\upload_reports.py --tickers 600519,603893
+# 只传部分（PowerShell 会把未加引号的逗号拆成多个参数，务必加引号）
+.venv\Scripts\python tools\upload_reports.py --tickers "600519,603893"
 .venv\Scripts\python tools\upload_reports.py --limit 3
 ```
 

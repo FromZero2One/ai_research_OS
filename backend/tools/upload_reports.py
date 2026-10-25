@@ -70,13 +70,18 @@ def wait_indexed(doc_id: str, timeout_s: int = 900) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=0)
-    parser.add_argument("--tickers", default="", help="逗号分隔，仅上传这些代码")
+    parser.add_argument(
+        "--tickers",
+        nargs="+",
+        default=[],
+        help="仅上传这些代码（支持逗号分隔或空格分隔，建议加引号）",
+    )
     args = parser.parse_args()
 
     with open(OUT_DIR / "manifest.csv", encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
     if args.tickers:
-        wanted = {t.strip() for t in args.tickers.split(",") if t.strip()}
+        wanted = {t.strip() for group in args.tickers for t in group.split(",") if t.strip()}
         rows = [r for r in rows if r["ticker"] in wanted]
     if args.limit:
         rows = rows[: args.limit]
