@@ -11,6 +11,15 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-10-25（行情收官 + 回测链路打通 + 首份成绩单）**:
+  - **行情**: 主板 2,111/2,111 全覆盖（≥200 根 2,099，其余 12 只为 2025-26 新股），全库 5,156 只 ≥200 根、1,137 万行。采集支持 `--shard i/n` 分片并行（6 进程），`fail` 记录不再永久跳过（可重试）。12 只新股永远 <200 根，重跑会空转，无需再采集。
+  - **历史推荐票补采**: `tools/ingest_recommended.py`，覆盖 183 只历史推荐票中 48 只主板清单外的票（002/300/301/688/001）。
+  - **回测修复 8 个 bug**（此前每次都被“BACKTEST_MYSQL_URL 未配置”提前挡下）: ①handler 启动注册 ②`uuid` 未导入 ③`select` 未导入 ④`_AKSHARE_PROLOGUE` 从 `market.akshare_executor` 误导入（应在 `screener.ingest`）⑤总股本走风控中的东财接口 → 改外部库 `stock_value_entity` 快照优先 ⑥票池误用本地活跃公司（种子数据是 8 只美股）→ 活跃票池 <100 只时改用外部库全市场 symbol ⑦历史财务补拉漏资产负债表/现金流 → 补 `ingest_marketwide_zcfz/xjll`，完整性判定要求 eps+total_assets+operating_cash_flow+F10 标记 ⑧PIT 公告日口径错误：东财 yjbb「最新公告日期」是滚动最新值，历史期会被后续期公告日污染 → 改为**法定披露截止日口径**（公告日钳制到截止日）。
+  - **性能**: `fetch_all_tickers` 原在 1,600 万行表做 DISTINCT（公共库上数分钟）→ 改用 `stock_name_entity`（5,386 只，毫秒级）+ 进程内缓存。
+  - **财务数据**: 2023Q3–2026Q2 共 9 个报告期 × 32 指标齐全（yjbb+资产负债表+现金流+F10 四类 loader）。
+  - **首份有效回测成绩**（3 年 / 9 个季度调仓期 / 全市场 / 含成本 / 基准 CSI300 +6.39% CAGR）: 高成长 CAGR +23.84%（超额 +17.45%，Sharpe 0.59，两段一致跑赢）；金融价值 +16.01%（超额 +9.61%，Sharpe 0.90，Sortino 1.71，回撤 -11.88%，两段一致跑赢）；周期反转 +2.65%（超额 -3.74%）；深度价值 -1.31%（-7.70%）；核心资产 -8.37%（-14.77%）；GARP -16.37%（-22.76%，胜率 0%，回撤 -33%）。全部 6 套 × 9 期无空仓。
+  - **工具**: `tools/run_backtest_queue.py`（6 套预设排队）、`prefill_periods.py`（按期补财务并验证）、`final_report.py`（成绩+持仓+分段）、`check_coverage.py`/`check_tasks.py`/`check_pg_activity.py`/`check_universe.py`。
+  - **环境**: `backend/.env` 增加 `BACKTEST_MYSQL_URL=mysql://root:***@8.137.104.120:3306/akshare`（外部库 8.0.43，前复权日线 5,371 只，无财务三表）。注意 `.env` 必须保持 UTF-8（PowerShell `Add-Content` 默认 ANSI 会写坏）。
 - **2026-10-24（行情采集暂停）**: 第 71 批完成（9 成功 + 1 跳过），`ingest_progress.csv` 共 747 条记录；主板覆盖 790/2111（≥200 根日线），行情 5,122,204 行；剩余 1,321 只 ≈ 133 批。按用户要求**暂停**，明天继续。恢复命令（在 `backend/` 下）：
   `PYTHONUNBUFFERED=1 INGEST_PROGRESS_FILE=E:/ai_research_OS/ingest_progress.csv ALL_PROXY= all_proxy= PYTHONPATH=. ./.venv/Scripts/python.exe -X utf8 tools/ingest_main_board_batch.py --limit 10`
 - **2026-10-24（组合再平衡）**: 新增 `screener/rebalance.py` 纯函数 + `POST /screener/portfolios/{pid}/rebalance`：按最新收盘价估算市值，与保存时的目标权重比较，输出漂移/买卖动作/股数/金额；漂移 ≤tolerance 持有，买入按整手向下取整（不足一手 `lot_blocked`），缺价回退保存价并标记 `stale_price` 且不交易。前端载入已保存组合后可「计算再平衡」。screener + financial_sync 324 passed。

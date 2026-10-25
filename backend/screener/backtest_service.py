@@ -41,23 +41,31 @@ async def _load_financials_by_period(
 ) -> dict[tuple[int, str], dict[str, list]]:
     """{(year, period): {ticker: [FinancialMetricEntry]}}（仅所需报告期）。
 
-    Point-in-Time：若提供 asof_by_period，公告日晚于 asof 的指标不进入该期
-    数据；没有公告日的旧数据按原口径纳入（回测报告会声明）。
+    Point-in-Time（截止日口径）：报告期法定披露截止日之后的调仓才可见。
+    东财 yjbb 的“最新公告日期”是**滚动最新值**（历史期会被污染成后续期公告日），
+    因此把公告日钳制到报告期截止日，避免历史期被整体误排除；缺失公告日同样按
+    截止日处理（回测报告会声明口径）。
     """
     from market.domain import FinancialMetricEntry
     from market.models import FinancialMetric
 
+    deadlines = backtest.build_disclosure_map()
     out: dict[tuple[int, str], dict[str, list]] = defaultdict(dict)
     for year, period in periods:
         rows = (
-            await db.execute(
-                select(FinancialMetric).where(
-                    FinancialMetric.fiscal_year == year,
-                    FinancialMetric.fiscal_period == period,
+            (
+                await db.execute(
+                    select(FinancialMetric).where(
+                        FinancialMetric.fiscal_year == year,
+                        FinancialMetric.fiscal_period == period,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
+        deadline = deadlines.get((year, period))
         # 同票同期取最晚公告日（期末报告/更正），作为该票该期的可见日
         announcements: dict[str, dt.date] = {}
         for m in rows:
@@ -71,12 +79,17 @@ async def _load_financials_by_period(
         by_ticker: dict[str, list] = defaultdict(list)
         for m in rows:
             announced = m.announcement_date or announcements.get(m.ticker)
+            # 滚动公告日 → 钳制到本期披露截止日（截止日为空则沿用原值）
+            if deadline is not None and announced is not None and announced > deadline:
+                announced = deadline
             if asof is not None and announced is not None and announced > asof:
                 continue
             by_ticker[m.ticker].append(
                 FinancialMetricEntry(
-                    fiscal_year=m.fiscal_year, fiscal_period=m.fiscal_period,
-                    metric_name=m.metric_name, metric_value=m.metric_value,
+                    fiscal_year=m.fiscal_year,
+                    fiscal_period=m.fiscal_period,
+                    metric_name=m.metric_name,
+                    metric_value=m.metric_value,
                     announcement_date=m.announcement_date,
                 )
             )
@@ -84,14 +97,62 @@ async def _load_financials_by_period(
     return dict(out)
 
 
+def _fetch_shares_sync(url: str) -> dict[str, float]:
+    """外部库最新交易日的总股本快照（symbol → TOTAL_SHARES）。"""
+    import pymysql
+
+    from screener.backtest_data import (
+        _parse_db,
+        _parse_host,
+        _parse_password,
+        _parse_port,
+        _parse_user,
+    )
+
+    conn = pymysql.connect(
+        host=_parse_host(url),
+        user=_parse_user(url),
+        password=_parse_password(url),
+        database=_parse_db(url),
+        port=_parse_port(url),
+        connect_timeout=10,
+    )
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT v.symbol, v.TOTAL_SHARES FROM akshare.stock_value_entity v "
+                "JOIN (SELECT max(TRADE_DATE) d FROM akshare.stock_value_entity) m "
+                "ON v.TRADE_DATE = m.d "
+                "WHERE v.TOTAL_SHARES IS NOT NULL AND v.TOTAL_SHARES > 0"
+            )
+            return {str(sym).strip(): float(sh) for sym, sh in cur.fetchall()}
+    finally:
+        conn.close()
+
+
 async def _fetch_total_shares(db: AsyncSession, tickers: list[str]) -> dict[str, float]:
-    """当前总股本（近似市值用）：外部库 stock_value_entity 单日快照 → 本地无缓存直接拉。
+    """当前总股本（近似市值用）：外部库 stock_value_entity 最新快照优先，akshare 兜底。
 
     返回 {ticker: 总股本}；缺失的票不在返回中（该票 market_cap=None）。
     """
     import asyncio
 
-    from market.akshare_executor import _AKSHARE_PROLOGUE, _run_child
+    from core.config import settings
+
+    want = set(tickers)
+    if settings.BACKTEST_MYSQL_URL:
+        try:
+            all_shares = await asyncio.to_thread(_fetch_shares_sync, settings.BACKTEST_MYSQL_URL)
+            out = {t: all_shares[t] for t in want if all_shares.get(t, 0) > 0}
+            if out:
+                logger.info("总股本：外部库快照命中 %d/%d 只", len(out), len(want))
+                return out
+            logger.warning("外部库总股本快照为空，回退 akshare")
+        except Exception as e:  # noqa: BLE001 — 外部库失败回退 akshare
+            logger.warning("外部库总股本拉取失败，回退 akshare: %s", str(e)[:150])
+
+    # 兜底：akshare 东财快照（可能被风控，失败则市值规则整体缺数据）
+    from screener.ingest import _AKSHARE_PROLOGUE, _run_child
 
     code = (
         _AKSHARE_PROLOGUE
@@ -99,16 +160,17 @@ async def _fetch_total_shares(db: AsyncSession, tickers: list[str]) -> dict[str,
         + "df = ak.stock_zh_a_spot_em()\n"
         + 'cols = {"代码": "ticker", "总股本": "shares"}\n'
         + "df = df[list(cols)].rename(columns=cols)\n"
-        + 'print("__R__:" + json.dumps(df.to_dict(orient="records"), ensure_ascii=False, default=str))\n'
+        + 'print("__R__:" + json.dumps(df.to_dict(orient="records"), '
+        'ensure_ascii=False, default=str))\n'
     )
-    raw = await asyncio.to_thread(_run_child, code, 300)
-    if not raw or raw.startswith("E:"):
-        logger.warning("总股本拉取失败，市值规则将全部缺数据: %s", (raw or "")[:200])
+    try:
+        rows = await asyncio.to_thread(_run_child, code, 300)
+    except Exception as e:  # noqa: BLE001 — 兜底数据源失败不应毁掉整个回测
+        logger.warning("总股本兜底拉取失败，市值规则将缺数据: %s", str(e)[:150])
         return {}
-    import json as _json
-
-    rows = _json.loads(raw.removeprefix("__R__:").strip())
-    want = set(tickers)
+    if not rows:
+        logger.warning("总股本拉取失败，市值规则将全部缺数据")
+        return {}
     out: dict[str, float] = {}
     for r in rows:
         t = str(r.get("ticker", "")).strip()
@@ -125,18 +187,21 @@ async def _price_dates_from_pg(db: AsyncSession, start: dt.date, end: dt.date) -
     from market.models import StockPrice
 
     rows = (
-        await db.execute(
-            select(StockPrice.date).where(
-                StockPrice.date >= start, StockPrice.date <= end
-            ).distinct().order_by(StockPrice.date)
+        (
+            await db.execute(
+                select(StockPrice.date)
+                .where(StockPrice.date >= start, StockPrice.date <= end)
+                .distinct()
+                .order_by(StockPrice.date)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return list(rows)
 
 
-async def _load_day_closes(
-    db: AsyncSession, day: dt.date, tickers: list[str]
-) -> dict[str, float]:
+async def _load_day_closes(db: AsyncSession, day: dt.date, tickers: list[str]) -> dict[str, float]:
     """某交易日各票前复权收盘价。"""
     from market.models import StockPrice
 
@@ -186,16 +251,34 @@ async def run_backtest(db: AsyncSession, run_id) -> ScreenerBacktestRun:
         start = end.replace(year=end.year - run.years)
 
         # ① 调仓日序列（需要先有日历 → 先拉全市场日线）
-        #    票池：本地活跃公司；本地为空 → 外部库区间内 distinct symbol（含退市票）
+        #    票池：预设回测面向全市场（外部库区间内 distinct symbol，含退市票，缓解幸存者偏差）；
+        #    本地活跃公司（自选）足够多时才按自选票池回测。
         from company.models import Company
 
-        tickers = set(
+        MIN_ACTIVE_UNIVERSE = 100
+        active = set(
             (await db.execute(select(Company.ticker).where(Company.is_active.is_(True))))
-            .scalars().all()
+            .scalars()
+            .all()
         )
-        if not tickers:
-            tickers = set(await backtest_data.fetch_all_tickers(start, end))
-            logger.info("本地无活跃公司，票池来自外部库 distinct symbol：%d 只", len(tickers))
+        market = set(await backtest_data.fetch_all_tickers(start, end))
+        if len(active) >= MIN_ACTIVE_UNIVERSE:
+            overlap = active & market
+            if len(overlap) >= MIN_ACTIVE_UNIVERSE:
+                tickers = overlap
+                logger.info("票池=活跃公司 ∩ 外部日线：%d 只", len(tickers))
+            else:
+                tickers = market
+                logger.info(
+                    "活跃公司与外部日线交集过小（%d 只），改用全市场：%d 只",
+                    len(overlap),
+                    len(market),
+                )
+        else:
+            tickers = market
+            logger.info(
+                "活跃公司票池过小（%d 只），改用全市场票池：%d 只", len(active), len(market)
+            )
         # 逐只拉取并立即落库（拉一只灌一只，本地库行数即进度，中断可续）
         synced_tickers = await fetch_daily_from_mysql(db, sorted(tickers), start, end)
         if synced_tickers == 0 and not await _price_dates_from_pg(db, start, end):
@@ -215,9 +298,7 @@ async def run_backtest(db: AsyncSession, run_id) -> ScreenerBacktestRun:
         for d in rebalance_dates:
             fp = backtest.pick_financial_period(d)
             asof_by_period[fp] = min(asof_by_period.get(fp, d), d)
-        financials_by_period = await _load_financials_by_period(
-            db, periods, asof_by_period
-        )
+        financials_by_period = await _load_financials_by_period(db, periods, asof_by_period)
 
         # ③ 近似市值用的当前总股本
         all_tickers = sorted(tickers)
@@ -234,22 +315,29 @@ async def run_backtest(db: AsyncSession, run_id) -> ScreenerBacktestRun:
             snapshot_rows = []
             for t, close in closes.items():
                 shares_n = shares.get(t)
-                snapshot_rows.append({
-                    "ticker": t,
-                    "name": t,
-                    "price": close,
-                    "market_cap": close * shares_n if shares_n else None,
-                    "turnover": None,
-                })
+                snapshot_rows.append(
+                    {
+                        "ticker": t,
+                        "name": t,
+                        "price": close,
+                        "market_cap": close * shares_n if shares_n else None,
+                        "turnover": None,
+                    }
+                )
 
             portfolio, _excluded = backtest.select_portfolio(
                 rdate, preset.quant_rules, snapshot_rows, fin, limit=20
             )
             if not portfolio:
-                periods_result.append({
-                    "year": rdate.year, "rebalance_date": rdate.isoformat(),
-                    "return": 0.0, "bench": 0.0, "holdings": [],
-                })
+                periods_result.append(
+                    {
+                        "year": rdate.year,
+                        "rebalance_date": rdate.isoformat(),
+                        "return": 0.0,
+                        "bench": 0.0,
+                        "holdings": [],
+                    }
+                )
                 continue
 
             # 卖出日 = 下一调仓日；末期持有到最后一个交易日
@@ -260,12 +348,8 @@ async def run_backtest(db: AsyncSession, run_id) -> ScreenerBacktestRun:
             buy_volumes = await _load_day_volumes(db, rdate, held_tickers)
             sell_volumes = await _load_day_volumes(db, sell_date, held_tickers)
             # 成交量为 0 → 停牌/不可交易（涨跌停未单独建模）
-            buy_prices = {
-                t: p for t, p in buy_prices.items() if (buy_volumes.get(t) or 0) > 0
-            }
-            sell_prices = {
-                t: p for t, p in sell_prices.items() if (sell_volumes.get(t) or 0) > 0
-            }
+            buy_prices = {t: p for t, p in buy_prices.items() if (buy_volumes.get(t) or 0) > 0}
+            sell_prices = {t: p for t, p in sell_prices.items() if (sell_volumes.get(t) or 0) > 0}
             cost_buy = settings.BACKTEST_COMMISSION_RATE + settings.BACKTEST_SLIPPAGE_RATE
             cost_sell = (
                 settings.BACKTEST_COMMISSION_RATE
@@ -273,8 +357,11 @@ async def run_backtest(db: AsyncSession, run_id) -> ScreenerBacktestRun:
                 + settings.BACKTEST_SLIPPAGE_RATE
             )
             holdings = backtest.compute_holding_returns(
-                portfolio, buy_prices, sell_prices,
-                cost_buy=cost_buy, cost_sell=cost_sell,
+                portfolio,
+                buy_prices,
+                sell_prices,
+                cost_buy=cost_buy,
+                cost_sell=cost_sell,
             )
             period_ret = sum(h["return"] for h in holdings) / len(holdings)
 
@@ -282,14 +369,18 @@ async def run_backtest(db: AsyncSession, run_id) -> ScreenerBacktestRun:
             bench = await fetch_index_daily(start, end)
             bench_ret = _bench_return(bench, rdate, sell_date)
 
-            periods_result.append({
-                "year": rdate.year, "rebalance_date": rdate.isoformat(),
-                "return": period_ret, "bench": bench_ret,
-                "holdings": [
-                    {k: h[k] for k in ("ticker", "name", "buy", "sell", "return", "suspended")}
-                    for h in holdings
-                ],
-            })
+            periods_result.append(
+                {
+                    "year": rdate.year,
+                    "rebalance_date": rdate.isoformat(),
+                    "return": period_ret,
+                    "bench": bench_ret,
+                    "holdings": [
+                        {k: h[k] for k in ("ticker", "name", "buy", "sell", "return", "suspended")}
+                        for h in holdings
+                    ],
+                }
+            )
 
         # ⑤ 汇总 + 落库（设计约定形状：{"summary": {...}, "yearly": [...]})
         stats = backtest.compute_nav_and_stats(
@@ -326,9 +417,15 @@ async def run_backtest(db: AsyncSession, run_id) -> ScreenerBacktestRun:
         run.status = "completed"
         run.finished_at = _now_iso()
         await EventLogger(db).record(
-            source="screener", event_type="backtest.completed",
-            entity_type="backtest_run", entity_id=str(run.id),
-            summary=f"回测完成：{preset.name} {run.years}年，{result['summary']['periods_count']} 期，累计 {result['summary']['total_return']:.1%}",
+            source="screener",
+            event_type="backtest.completed",
+            entity_type="backtest_run",
+            entity_id=str(run.id),
+            summary=(
+                f"回测完成：{preset.name} {run.years}年，"
+                f"{result['summary']['periods_count']} 期，"
+                f"累计 {result['summary']['total_return']:.1%}"
+            ),
         )
     except Exception as e:  # noqa: BLE001 — 全链路兜底：失败要可见
         run.status = "failed"
@@ -336,8 +433,11 @@ async def run_backtest(db: AsyncSession, run_id) -> ScreenerBacktestRun:
         run.finished_at = _now_iso()
         logger.exception("回测失败 %s", run_id)
         await EventLogger(db).record(
-            source="screener", event_type="backtest.failed",
-            entity_type="backtest_run", entity_id=str(run.id), summary=str(e)[:500],
+            source="screener",
+            event_type="backtest.failed",
+            entity_type="backtest_run",
+            entity_id=str(run.id),
+            summary=str(e)[:500],
         )
     await db.flush()
     return run

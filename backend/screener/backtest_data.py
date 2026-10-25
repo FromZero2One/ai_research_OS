@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.logging import logger
@@ -40,8 +40,12 @@ def _fetch_daily_sync(url: str, tickers: list[str], start: dt.date, end: dt.date
     import pymysql
 
     conn = pymysql.connect(
-        host=_parse_host(url), user=_parse_user(url), password=_parse_password(url),
-        database=_parse_db(url), port=_parse_port(url), connect_timeout=10,
+        host=_parse_host(url),
+        user=_parse_user(url),
+        password=_parse_password(url),
+        database=_parse_db(url),
+        port=_parse_port(url),
+        connect_timeout=10,
     )
     try:
         with conn.cursor() as cur:
@@ -99,8 +103,9 @@ async def fetch_daily_from_mysql(
         raise RuntimeError("BACKTEST_MYSQL_URL 未配置，无法拉取历史日线")
 
     # 断点续传：本地已有 5 年数据的票跳过
-    from market.models import StockPrice
     from sqlalchemy import func, select
+
+    from market.models import StockPrice
 
     done = set(
         (
@@ -110,10 +115,14 @@ async def fetch_daily_from_mysql(
                 .group_by(StockPrice.ticker)
                 .having(func.count() >= 200)  # 5 年 ~1200 交易日；<200 视为不完整重拉
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     pending = [t for t in tickers if t not in done]
-    logger.info("回测日线：共 %d 只，本地已有 %d 只，待拉取 %d 只", len(tickers), len(done), len(pending))
+    logger.info(
+        "回测日线：共 %d 只，本地已有 %d 只，待拉取 %d 只", len(tickers), len(done), len(pending)
+    )
 
     synced = 0
     for idx, ticker in enumerate(pending, 1):
@@ -127,16 +136,18 @@ async def fetch_daily_from_mysql(
             except Exception as e:  # noqa: BLE001 — 网络抖动重试（逐只拉取下单次失败不应毁掉整个 run）
                 if attempt == 2:
                     raise
-                logger.warning(
-                    "回测日线拉取重试 %d/3 %s: %s", attempt + 1, ticker, str(e)[:120]
-                )
+                logger.warning("回测日线拉取重试 %d/3 %s: %s", attempt + 1, ticker, str(e)[:120])
                 await asyncio.sleep(2 * (attempt + 1))
         if rows:
             bars: dict[dt.date, dict] = {}
             for symbol, date, open_, close, high, low, volume in rows:
                 bars[date] = {
-                    "date": date, "open": open_, "close": close,
-                    "high": high, "low": low, "volume": volume,
+                    "date": date,
+                    "open": open_,
+                    "close": close,
+                    "high": high,
+                    "low": low,
+                    "volume": volume,
                 }
             await sync_daily_to_pg(db, {ticker: [bars[d] for d in sorted(bars)]})
             synced += 1
@@ -146,22 +157,42 @@ async def fetch_daily_from_mysql(
     return synced
 
 
+_all_tickers_cache: list[str] | None = None
+
+
 async def fetch_all_tickers(start: dt.date, end: dt.date) -> list[str]:
-    """外部库区间内 distinct symbol（不依赖本地 Company 表，含已退市票）。"""
+    """全市场票池：优先轻量表 stock_name_entity（毫秒级），空则回退区间 DISTINCT 大表。
+
+    大表（1600 万行）上做 DISTINCT 无索引、公共库上可能耗时数分钟，仅作兜底；
+    结果进程内缓存，避免每次回测重复查询。
+    """
     from core.config import settings
 
     if not settings.BACKTEST_MYSQL_URL:
         raise RuntimeError("BACKTEST_MYSQL_URL 未配置，无法拉取历史日线")
 
+    global _all_tickers_cache
+    if _all_tickers_cache:
+        return _all_tickers_cache
+
     def _query(url: str) -> list[str]:
         import pymysql
 
         conn = pymysql.connect(
-            host=_parse_host(url), user=_parse_user(url), password=_parse_password(url),
-            database=_parse_db(url), port=_parse_port(url), connect_timeout=10,
+            host=_parse_host(url),
+            user=_parse_user(url),
+            password=_parse_password(url),
+            database=_parse_db(url),
+            port=_parse_port(url),
+            connect_timeout=10,
+            read_timeout=120,
         )
         try:
             with conn.cursor() as cur:
+                cur.execute("SELECT DISTINCT symbol FROM akshare.stock_name_entity")
+                rows = [r[0] for r in cur.fetchall()]
+                if rows:
+                    return rows
                 cur.execute(
                     "SELECT DISTINCT symbol FROM akshare.stock_history_daily_info_entity "
                     "WHERE date BETWEEN %s AND %s AND adjust = 'qfq'",
@@ -171,7 +202,9 @@ async def fetch_all_tickers(start: dt.date, end: dt.date) -> list[str]:
         finally:
             conn.close()
 
-    return await asyncio.to_thread(_query, settings.BACKTEST_MYSQL_URL)
+    _all_tickers_cache = await asyncio.to_thread(_query, settings.BACKTEST_MYSQL_URL)
+    logger.info("全市场票池：%d 只（stock_name_entity）", len(_all_tickers_cache))
+    return _all_tickers_cache
 
 
 async def sync_daily_to_pg(db: AsyncSession, daily: dict[str, list[dict]]) -> int:
@@ -192,8 +225,13 @@ async def sync_daily_to_pg(db: AsyncSession, daily: dict[str, list[dict]]) -> in
         )
         db.add_all(
             StockPrice(
-                ticker=ticker, date=b["date"], open=b["open"], close=b["close"],
-                high=b["high"], low=b["low"], volume=b["volume"],
+                ticker=ticker,
+                date=b["date"],
+                open=b["open"],
+                close=b["close"],
+                high=b["high"],
+                low=b["low"],
+                volume=b["volume"],
             )
             for b in bars
         )
@@ -204,25 +242,42 @@ async def sync_daily_to_pg(db: AsyncSession, daily: dict[str, list[dict]]) -> in
 # ── 历史财务按期补拉 ─────────────────────────────────────────────
 
 
-async def _missing_periods(db: AsyncSession, periods: list[tuple[int, str]]) -> set[tuple[int, str]]:
-    """periods 中在 financial_metrics 尚无任何数据的报告期。"""
+_REQUIRED_METRICS = ("eps", "total_assets", "operating_cash_flow")
+# F10 主要指标族（ROIC/FCFF/流动比率等），至少出现一个才算该期已补齐
+_F10_MARKERS = ("roic", "fcff", "current_ratio")
+
+
+async def _missing_periods(
+    db: AsyncSession, periods: list[tuple[int, str]]
+) -> set[tuple[int, str]]:
+    """periods 中缺少关键指标族（利润表/资产负债表/现金流）的报告期。"""
     from market.models import FinancialMetric
 
     if not periods:
         return set()
-    present: set[tuple[int, str]] = set()
+    present: dict[tuple[int, str], set[str]] = {}
     for year, period in periods:
-        row = (
-            await db.execute(
-                select(FinancialMetric.id).where(
-                    FinancialMetric.fiscal_year == year,
-                    FinancialMetric.fiscal_period == period,
-                ).limit(1)
+        rows = (
+            (
+                await db.execute(
+                    select(FinancialMetric.metric_name)
+                    .where(
+                        FinancialMetric.fiscal_year == year,
+                        FinancialMetric.fiscal_period == period,
+                    )
+                    .distinct()
+                )
             )
-        ).first()
-        if row:
-            present.add((year, period))
-    return set(periods) - present
+            .scalars()
+            .all()
+        )
+        present[(year, period)] = set(rows)
+    return {
+        (y, p)
+        for (y, p) in periods
+        if not all(m in present[(y, p)] for m in _REQUIRED_METRICS)
+        or not any(m in present[(y, p)] for m in _F10_MARKERS)
+    }
 
 
 async def _ingest_yjbb_for_period(db: AsyncSession, date_str: str) -> int:
@@ -230,6 +285,20 @@ async def _ingest_yjbb_for_period(db: AsyncSession, date_str: str) -> int:
     from screener.ingest import ingest_marketwide_yjbb
 
     return await ingest_marketwide_yjbb(db, date_str)
+
+
+async def _ingest_zcfz_for_period(db: AsyncSession, date_str: str) -> int:
+    """单报告期资产负债表入库（total_assets / total_liabilities / debt_to_equity）。"""
+    from screener.ingest import ingest_marketwide_zcfz
+
+    return await ingest_marketwide_zcfz(db, date_str)
+
+
+async def _ingest_xjll_for_period(db: AsyncSession, date_str: str) -> int:
+    """单报告期现金流量表入库（operating_cash_flow）。"""
+    from screener.ingest import ingest_marketwide_xjll
+
+    return await ingest_marketwide_xjll(db, date_str)
 
 
 async def _ingest_main_finance_for_period(db: AsyncSession, date_str: str) -> int:
@@ -253,6 +322,8 @@ async def ensure_financial_periods(db: AsyncSession, periods: list[tuple[int, st
         ingested = False
         for label, loader in (
             ("yjbb", _ingest_yjbb_for_period),
+            ("资产负债表", _ingest_zcfz_for_period),
+            ("现金流量表", _ingest_xjll_for_period),
             ("F10 主要指标", _ingest_main_finance_for_period),
         ):
             try:
@@ -274,7 +345,6 @@ async def ensure_financial_periods(db: AsyncSession, periods: list[tuple[int, st
 async def fetch_index_daily(start: dt.date, end: dt.date) -> list[dict]:
     """沪深300 指数日线（akshare stock_zh_index_daily）→ [{date, close}] 升序。"""
     import asyncio
-    import json
 
     from screener.ingest import _AKSHARE_PROLOGUE, _run_child
 
@@ -282,7 +352,8 @@ async def fetch_index_daily(start: dt.date, end: dt.date) -> list[dict]:
         _AKSHARE_PROLOGUE
         + "import akshare as ak, json\n"
         + "df = ak.stock_zh_index_daily(symbol='sh000300')\n"
-        + 'print("__R__:" + json.dumps(df.to_dict(orient="records"), ensure_ascii=False, default=str))\n'
+        + 'print("__R__:" + json.dumps(df.to_dict(orient="records"), '
+        'ensure_ascii=False, default=str))\n'
     )
     rows = await asyncio.to_thread(_run_child, code, 300)
     if not rows:

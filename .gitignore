@@ -37,3 +37,8 @@ frontend/*.out
 .gstack-*.log
 diagrams/
 .akshare_mcp/
+
+# 采集/回测临时产物
+*.out
+ingest_progress*.csv
+backend/tools/main_board_stocks.csv

@@ -6,7 +6,16 @@
 
 | 文件 | 说明 |
 |------|------|
-| `ingest_main_board_batch.py` | 分批采集主板股票行情数据脚本 |
+| `ingest_main_board_batch.py` | 分批采集主板股票行情数据脚本（支持 `--shard i/n` 分片并行） |
+| `ingest_recommended.py` | 补采历史上被选股推荐过的票（含 002/300/688 等主板清单外的票） |
+| `run_backtest_queue.py` | 依次为 6 套内置预设排队跑回测（规避 409 并发限制，自动轮询结果） |
+| `prefill_periods.py` | 预补全回测所需报告期的财务数据（yjbb + 资产负债表 + 现金流 + F10），并验证完整性 |
+| `final_report.py` | 汇总最近 6 次回测：指标 + 逐期持仓数 + 分段稳健性 |
+| `check_coverage.py` | 行情覆盖统计（行数 / ≥200 根票数 / 最新日期） |
+| `check_period_completeness.py` | 各报告期财务指标完整性检查 |
+| `check_tasks.py` | 后台任务队列表（`core.task_records`）状态 |
+| `check_pg_activity.py` | PostgreSQL 活跃查询/锁等待诊断 |
+| `check_universe.py` | 回测票池来源检查（活跃公司 vs 全市场） |
 | `main_board_stocks.csv` | 全市场主板股票列表（2,111 只，含沪市主板 1,700 只 + 深市主板 411 只） |
 
 ## 使用说明
@@ -38,6 +47,11 @@ cd backend
 
 # 采集全部待采集股票（会自动跳过已有数据的，支持中断恢复）
 .venv\Scripts\python tools\ingest_main_board_batch.py
+
+# 并行采集：3 个进程分片（各用独立进度文件 ingest_progress_shard{i}.csv，任务不重叠）
+.venv\Scripts\python tools\ingest_main_board_batch.py --shard 0 --num-shards 3
+.venv\Scripts\python tools\ingest_main_board_batch.py --shard 1 --num-shards 3
+.venv\Scripts\python tools\ingest_main_board_batch.py --shard 2 --num-shards 3
 ```
 
 ### 主板股票列表来源
