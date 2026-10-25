@@ -75,6 +75,13 @@ async def embed_chunks_safely(
     return out
 
 
+def _sanitize_text(text: str) -> str:
+    """移除 NUL 字节等在 PostgreSQL text 中非法的字符（部分 PDF 提取结果含 0x00）。"""
+    if "\x00" not in text:
+        return text
+    return text.replace("\x00", "")
+
+
 class DocumentService:
     """Full document lifecycle: ingest → parse → chunk → embed → index."""
 
@@ -208,8 +215,24 @@ class DocumentService:
         self._set_progress(doc, "parsing", "正在解析文档...")
         await self.session.flush()
 
+        # 幂等：重新索引前清理旧切片与旧向量（否则重复任务会产生重复切片）
+        existing = (
+            await self.session.execute(
+                select(DocumentChunk).where(DocumentChunk.document_id == doc.id)
+            )
+        ).scalars().all()
+        if existing:
+            vector_ids = [c.embedding_id for c in existing if c.embedding_id]
+            if vector_ids:
+                await self.vector_store.delete(settings.QDRANT_COLLECTION, vector_ids)
+            for chunk in existing:
+                await self.session.delete(chunk)
+            await self.session.flush()
+            logger.info("  [document] 重新索引：清理旧切片 %d 个", len(existing))
+
         file_bytes = Path(doc.file_path).read_bytes() if doc.file_path else b""
         raw_text = await self._parse(file_bytes, doc.source or "")
+        raw_text = _sanitize_text(raw_text)
         doc.raw_text = raw_text
         await self.session.flush()
 
