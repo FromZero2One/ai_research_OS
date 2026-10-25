@@ -23,6 +23,9 @@ Personal AI investment-research assistant. FastAPI backend in `backend/` (Python
 - Proxy env vars (`ALL_PROXY`, `HTTP(S)_PROXY`) break httpx calls to localhost. `api/app.py` calls `core/proxy_cleanup.clean_proxy_env()` before importing routers; standalone scripts using adapters directly must call it too (or clear the vars — the `ALL_PROXY= all_proxy=` prefix in docs/scripts).
 - Config: `core/config.py` (pydantic-settings, reads `backend/.env`). Code defaults differ from this machine's `.env` (LLM: DeepSeek via OpenAI-compatible endpoint, not the Ollama default). Full variable table in `backend/README.md`.
 - Hardcoded `/home/wsm/...` paths (`.env.example`, `backend/run_dev.sh`, Makefile `refresh-market` target) come from the original Linux dev box — machine-specific. On Windows use `start-dev.cmd` and set real paths in `backend/.env`.
+- **Start uvicorn with `--reload` on Windows**: without it uvicorn picks `ProactorEventLoop` and the process dies on `OSError [WinError 64] Accept failed on a socket` (seen mid-screener-run). `--reload` uses `SelectorEventLoop`. Cost: editing anything under `backend/` restarts the server (kills a running screening run — put throwaway scripts outside `backend/` while a run is in flight).
+- Long-running screening runs stuck in `judging` after a crash: `cd backend && .venv\Scripts\python tools\reset_stuck_runs.py --apply` (also fails the `screener_run` task so a restart doesn't auto-retry it).
+- Knowledge base is populated with ~103 annual reports (55,135 chunks). Bulk indexing: `tools\index_pending_parallel.py` (6 concurrent) — the single-threaded queue takes ~4x longer. `OLLAMA_NUM_PARALLEL=4` (User env) makes embedding requests parallel.
 
 ## Architecture rules
 
@@ -31,6 +34,7 @@ Personal AI investment-research assistant. FastAPI backend in `backend/` (Python
 - DI via `core/container.py`; routes get services through `Depends(get_container)`. Errors flow through `core/exceptions.py` handlers (structured JSON: 404/422/409/502/...). Timestamps are UTC ISO-8601 everywhere.
 - PostgreSQL: one schema per module (company/market/document/research/portfolio/ai/core/screener). `core.event_log` is a write-once audit trail — never update/delete.
 - Screener: deterministic screening; LLM only for per-stock deep judgement. Metric/preset definitions in `screener/seeds.py`; Markdown reports land in `screener/reports/`.
+- Screener deep judgement: evidence is retrieved **per criterion** (`judge._retrieve_per_criterion`), and the evidence guard rejects any `hit=true` whose evidence lacks a `[n]` citation. `confidence` is the LLM's uncalibrated self-score — use it for ordering only, never as a probability. Fact-like criteria (audit opinion, litigation, cash coverage) should become deterministic text/metric checks, not LLM prompts; qualitative criteria must be phrased so an annual report can actually evidence them.
 - Backend tasks: persistent PG-backed queue (`core/task_manager.py`) + APScheduler jobs in `core/scheduler.py` (see `GET /api/v1/scheduler/status`).
 
 ## Conventions

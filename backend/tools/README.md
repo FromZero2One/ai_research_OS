@@ -25,6 +25,14 @@
 | `doc_task_status.py` | 查某个文档 id 的索引任务历史（状态/重试次数/错误） |
 | `kb_status.py` | 知识库总览：文档数 / 已索引数 / 切片总数 |
 | `run_presets_live.py` | 按预设排队跑**实时选股**（规避 409，轮询并打印判定分布与推荐） |
+| `list_presets.py` | 列出全部预设的量化规则与定性标准（排查标准可验证性） |
+| `rewrite_presets_qualitative.py` | 把定性标准改写为可在年报中验证的表述（幂等；`--apply` 才写库，自动备份） |
+| `show_judgement.py` | 查看某次运行某只票的完整判定（verdict/置信度/逐条证据） |
+| `confidence_dist.py` | 置信度分布（验证 LLM 自评是否退化成固定档位） |
+| `run_status.py` | 最近选股运行状态（直连 PG，避免深判时 HTTP 大响应超时） |
+| `screener_task_status.py` | `screener_run` 任务队列状态（含中断原因） |
+| `reset_stuck_runs.py` | 复位崩溃残留的 running/judging 运行（`--apply`；同时把任务置 failed，避免重启自动重跑） |
+| `recent_activity.py` | 最近 5/10 分钟事件与任务写入（判断深判是否还在推进） |
 | `main_board_stocks.csv` | 全市场主板股票列表（2,111 只，含沪市主板 1,700 只 + 深市主板 411 只） |
 
 ## 使用说明
@@ -130,3 +138,26 @@ cd backend
 - **索引一直 false**：确认 `ollama list` 里有 `bge-m3:latest` 且 11434 端口可达（本机默认 localhost）
 - **重复下载/上传**：脚本已做幂等；若想强制重来，删除对应 PDF 或 `document.documents` 中同名记录
 - **PDF 合法性**：巨潮只提供公开披露文件，请自行遵守其使用条款
+
+## 选股相关工具
+
+```powershell
+# 跑预设（可只跑指定预设；不带参数跑高成长/深度价值/金融价值）
+.venv\Scripts\python tools\run_presets_live.py
+.venv\Scripts\python tools\run_presets_live.py 9df4fd6f-b15e-4db2-a43c-048e09be1f36
+
+# 查运行状态（直连 PG，深判期间也不会超时）
+.venv\Scripts\python tools\run_status.py 3
+
+# 看某只票的完整判定与逐条证据
+.venv\Scripts\python tools\show_judgement.py <run_id> 002602
+
+# 预设标准审计 / 改写（先只看，--apply 才写库，自动备份到 data/presets_qualitative_backup.json）
+.venv\Scripts\python tools\list_presets.py
+.venv\Scripts\python tools\rewrite_presets_qualitative.py
+```
+
+- 运行卡在 `judging`（后端崩溃/热重载导致）：`tools\reset_stuck_runs.py --apply` 复位。
+  该脚本同时把 `screener_run` 任务置 `failed`，否则后端重启会「恢复」任务并自动重跑。
+- 深判耗时参考（DeepSeek，46 只候选）：约 9–10 分钟；逐条检索上线后单只 +20~30%。
+- `confidence` 是 LLM 自评、未校准；`tools\confidence_dist.py` 可看分布（当前集中在 0.95/0.92/0.85）。
