@@ -9,7 +9,11 @@ import sys
 import time
 import urllib.request
 
+import psycopg2
+
 API = "http://127.0.0.1:8000/api/v1/screener"
+DB = dict(host="localhost", port=5432, dbname="airesearch",
+          user="airesearch", password="airesearch_dev")
 
 DEFAULT = {
     "高成长": "70e6282d-da98-46c8-91db-20ec062b3d96",
@@ -34,6 +38,28 @@ def get(path: str, timeout: int = 120) -> dict:
     )
 
 
+def db_state(run_id: str) -> tuple[str, int, int]:
+    """直连 PG 取状态（HTTP 大响应在深判时容易超时）。"""
+    conn = psycopg2.connect(**DB)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT status, candidate_count FROM screener.screener_runs WHERE id = %s",
+            (run_id,),
+        )
+        row = cur.fetchone()
+        cur.execute(
+            "SELECT count(*) FROM screener.screener_judgements WHERE run_id = %s",
+            (run_id,),
+        )
+        judged = cur.fetchone()[0]
+    finally:
+        conn.close()
+    if row is None:
+        return "missing", 0, 0
+    return row[0], row[1] or 0, judged
+
+
 def run_one(name: str, preset_id: str) -> None:
     print(f"\n{'=' * 60}\n预设: {name} ({preset_id})", flush=True)
     run = post("/runs", {"mode": "presets", "pool": "all", "preset_ids": [preset_id]})
@@ -42,25 +68,24 @@ def run_one(name: str, preset_id: str) -> None:
 
     started = time.time()
     last = None
+    status = "pending"
     while True:
         time.sleep(20)
-        data = get(f"/runs/{run_id}")
-        status = data["status"]
-        done = len(data.get("judgements") or [])
-        total = data.get("candidate_count") or 0
+        status, total, done = db_state(run_id)
         msg = f"  [{int(time.time() - started)}s] status={status} 已判定 {done}/{total}"
         if msg != last:
             print(msg, flush=True)
             last = msg
-        if status in ("completed", "failed", "cancelled"):
+        if status in ("completed", "failed", "cancelled", "missing"):
             break
 
+    data = get(f"/runs/{run_id}", timeout=300) if status == "completed" else {}
     judges = data.get("judgements") or []
     counts: dict[str, int] = {}
     for j in judges:
         key = j.get("verdict") or "?"
         counts[key] = counts.get(key, 0) + 1
-    print(f"状态={data['status']} 候选={data.get('candidate_count')} 判定={len(judges)}")
+    print(f"状态={status} 候选={data.get('candidate_count')} 判定={len(judges)}")
     print("判定分布:", counts)
     print("推荐:")
     for j in judges:
