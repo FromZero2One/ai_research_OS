@@ -18,6 +18,13 @@
 | `check_universe.py` | 回测票池来源检查（活跃公司 vs 全市场） |
 | `fetch_cninfo_reports.py` | **从巨潮资讯网批量下载年度报告 PDF**（按选股候选/指定运行） |
 | `upload_reports.py` | 把下载的年报批量上传到文档中心并等待索引（自动关联公司） |
+| `index_pending_parallel.py` | **并行索引所有未完成文档**（6 并发，绕过单线程任务队列；批量导入年报时用这个） |
+| `reindex_pending_docs.py` | 把未索引文档重新排进任务队列（单线程，任务丢失时用） |
+| `check_pending_docs.py` | 列出未索引文档 + 最近 `document_index` 任务状态 |
+| `cleanup_duplicate_tasks.py` | 清理重复的 `document_index` 待办任务（避免重复索引） |
+| `doc_task_status.py` | 查某个文档 id 的索引任务历史（状态/重试次数/错误） |
+| `kb_status.py` | 知识库总览：文档数 / 已索引数 / 切片总数 |
+| `run_presets_live.py` | 按预设排队跑**实时选股**（规避 409，轮询并打印判定分布与推荐） |
 | `main_board_stocks.csv` | 全市场主板股票列表（2,111 只，含沪市主板 1,700 只 + 深市主板 411 只） |
 
 ## 使用说明
@@ -98,6 +105,24 @@ cd backend
 - `doc_type=annual_report`，标题 `{公司名} {年份}年年度报告`
 - 同名文档已存在则跳过上传；上传后轮询 `/documents/{id}/status` 直到 `is_indexed=true`
 - 索引耗时取决于 PDF 大小（100 页年报约 1-3 分钟；17MB 大文件更久）
+- 批量导入几十份以上时，`upload_reports.py` 的轮询可能超时（单线程队列慢），此时用
+  `tools\index_pending_parallel.py` 直接并行索引剩余文档
+
+### 3. 批量索引加速（大批量导入必读）
+
+```powershell
+# 6 并发索引所有未索引文档（会先清空 pending 的 document_index 任务，避免重复）
+.venv\Scripts\python tools\index_pending_parallel.py
+
+# 查进度
+.venv\Scripts\python tools\kb_status.py          # 总数 / 已索引 / 切片数
+.venv\Scripts\python tools\check_pending_docs.py # 还有哪些没索引
+```
+
+- 必须从 `backend/` 运行；脚本会显式导入所有模块模型（否则跨 schema 外键解析失败）
+- `OLLAMA_NUM_PARALLEL=4`（User 环境变量）可让 embedding 请求在 Ollama 端并行，实测 ~3.8 份/分钟
+- embedding 批大小默认 64（`document/service.py: embed_chunks_safely`）
+- 索引已幂等：重新索引会先删除旧切片与旧向量；PDF 文本中的 NUL 字节（`0x00`）会在入库前清洗
 
 ### 常见问题
 
