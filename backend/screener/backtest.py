@@ -21,7 +21,9 @@ _DISCLOSURE_DEADLINE = {
 }
 
 
-def build_disclosure_map(start_year: int = 1995, end_year: int = 2030) -> dict[tuple[int, str], dt.date]:
+def build_disclosure_map(
+    start_year: int = 1995, end_year: int = 2030
+) -> dict[tuple[int, str], dt.date]:
     """报告期 (year, period) → 披露截止日。"""
     m: dict[tuple[int, str], dt.date] = {}
     for year in range(start_year, end_year):
@@ -70,15 +72,20 @@ def select_portfolio(
     snapshot_rows: list[dict],
     financials_by_ticker: dict[str, list],
     limit: int = 20,
+    scope: str = "all",
 ) -> tuple[list[dict], list[dict]]:
-    """单期选股：调用量化规则求值 + 排名截断（复用 screening 纯函数）。
+    """单期选股：行业隔离 → 量化规则求值 → 排名截断（复用 screening 纯函数）。
 
-    snapshot_rows 为该调仓日的价格行（含近似 market_cap）。
-    返回 (入选组合, 因缺数据被排除者)。
+    scope 与实盘一致：industrial 排除金融股（口径不可比），financial/bank/
+    insurance 只保留对应金融子行业；all 不过滤。
     """
+    from screener.industry import candidate_matches_scope
     from screener.screening import evaluate_quant_rules, rank_candidates
 
-    passed, excluded = evaluate_quant_rules(snapshot_rows, preset_rules, financials_by_ticker)
+    rows = snapshot_rows
+    if scope and scope != "all":
+        rows = [r for r in snapshot_rows if candidate_matches_scope(r, scope)]
+    passed, excluded = evaluate_quant_rules(rows, preset_rules, financials_by_ticker)
     ranked = rank_candidates(passed, limit=limit)
     return ranked, excluded
 

@@ -8,6 +8,12 @@ from core.config import settings
 from screener.backtest_data import ensure_financial_periods
 
 PERIODS = [
+    (2021, "Q3"),
+    (2021, "Q4"),
+    (2022, "Q2"),
+    (2022, "Q3"),
+    (2022, "Q4"),
+    (2023, "Q2"),
     (2023, "Q3"),
     (2023, "Q4"),
     (2024, "Q2"),

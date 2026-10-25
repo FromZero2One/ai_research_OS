@@ -304,6 +304,19 @@ async def run_backtest(db: AsyncSession, run_id) -> ScreenerBacktestRun:
         all_tickers = sorted(tickers)
         shares = await _fetch_total_shares(db, all_tickers)
 
+        # 行业隔离（与实盘一致）：工业预设排除金融股，金融预设只看金融股
+        from market.models import StockIndustry
+
+        industry_map = {
+            t: name
+            for t, name in (
+                await db.execute(select(StockIndustry.ticker, StockIndustry.industry_name))
+            ).all()
+        }
+        FINANCIAL_STYLES = {"financial", "bank", "insurance"}
+        scope = preset.style_tag if preset.style_tag in FINANCIAL_STYLES else "industrial"
+        logger.info("回测行业隔离 scope=%s（%d 只有行业分类）", scope, len(industry_map))
+
         # ④ 逐调仓期：选股 → 买入/卖出结算 → 期收益
         periods_result: list[dict] = []
         for i, rdate in enumerate(rebalance_dates):
@@ -322,11 +335,12 @@ async def run_backtest(db: AsyncSession, run_id) -> ScreenerBacktestRun:
                         "price": close,
                         "market_cap": close * shares_n if shares_n else None,
                         "turnover": None,
+                        "industry": industry_map.get(t),
                     }
                 )
 
             portfolio, _excluded = backtest.select_portfolio(
-                rdate, preset.quant_rules, snapshot_rows, fin, limit=20
+                rdate, preset.quant_rules, snapshot_rows, fin, limit=20, scope=scope
             )
             if not portfolio:
                 periods_result.append(
