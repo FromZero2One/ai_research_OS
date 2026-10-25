@@ -315,6 +315,61 @@ def _parse_llm_json(content: str) -> dict:
     return json.loads(text)
 
 
+async def _retrieve_per_criterion(
+    knowledge,
+    candidate: dict,
+    criteria: list[str],
+    company_id: str,
+    per_criterion: int = 2,
+    max_snippets: int = 8,
+) -> list[str]:
+    """按标准逐条检索，再交错合并去重。
+
+    单 query 检索（公司名 + 标准关键词）会让「审计意见」「分产品收入构成」这类
+    具体章节永远排不进前 N 条，LLM 只能答"资料未提及"。逐条检索保证每条标准
+    都有自己的一份证据；交错排序让前几条覆盖不同标准，而不是被同一条标准占满。
+    """
+    queries: list[str] = []
+    for criterion in criteria[:6]:
+        text = str(criterion).strip()
+        if text:
+            queries.append(text)
+    if not queries:
+        queries = [f"{candidate.get('name', '')} {candidate.get('ticker', '')}".strip()]
+
+    results = await asyncio.gather(
+        *(
+            knowledge.search(q, top_k=per_criterion, company_id=company_id)
+            for q in queries
+        ),
+        return_exceptions=True,
+    )
+
+    # 交错合并：先每个标准的第一条，再每个标准的第二条……
+    buckets: list[list[str]] = []
+    for res in results:
+        if isinstance(res, Exception):
+            buckets.append([])
+            continue
+        buckets.append([getattr(r, "content", str(r)) for r in res if getattr(r, "content", "")])
+
+    merged: list[str] = []
+    seen: list[str] = []
+    for rank in range(per_criterion):
+        for bucket in buckets:
+            if rank >= len(bucket):
+                continue
+            text = bucket[rank]
+            key = text[:80]
+            if key in seen:
+                continue
+            seen.append(key)
+            merged.append(text)
+            if len(merged) >= max_snippets:
+                return merged
+    return merged
+
+
 async def judge_one(
     llm: LLM,
     candidate: dict,
@@ -344,11 +399,9 @@ async def judge_one(
 
         if company_id:
             try:
-                query = f"{candidate.get('name', '')} {candidate.get('ticker', '')}".strip()
-                if criteria:
-                    query += " " + " ".join(str(c)[:30] for c in criteria[:2])
-                results = await knowledge.search(query, top_k=6, company_id=company_id)
-                snippets = [getattr(r, "content", str(r)) for r in results]
+                snippets = await _retrieve_per_criterion(
+                    knowledge, candidate, criteria, company_id
+                )
             except Exception as e:  # noqa: BLE001 — 检索故障不阻塞深判
                 logger.warning("深判知识库检索失败 %s: %s", candidate["ticker"], e)
         else:
