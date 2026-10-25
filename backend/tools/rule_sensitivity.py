@@ -8,20 +8,25 @@
 """
 
 import json
+import os
 import time
 import urllib.request
 
 import psycopg2
 
 BASE = "http://127.0.0.1:8000/api/v1/screener"
-YEARS = 3
+YEARS = int(os.getenv("BACKTEST_YEARS", "5"))
 POLL = 30
 
-# 要扫描的预设（name → id）及变体：rule_metric → (loosen_factor, tighten_factor)
+# 要扫描的预设（name → id）及变体：rule_metric → (放宽系数, )
 TARGETS = {
     "GARP": {
         "id": "57119c75-d80e-4a6b-b6a6-49cde1411991",
         "variants": [("roic", 0.7), ("roe", 0.8), ("net_margin", 0.8), ("pe", 1.5)],
+    },
+    "核心资产": {
+        "id": "b02a1716-41fd-4c41-8446-84af275fae23",
+        "variants": [("roic", 0.7), ("roe", 0.8), ("market_cap", 0.33)],
     },
 }
 
@@ -87,7 +92,10 @@ def main():
                         old = rule.get("value")
                         rule["value"] = round(float(old) * factor, 4)
                         changed = True
-                        print(f"\n[{name}] 变体: {metric} {old} → {rule['value']} (×{factor})", flush=True)
+                        print(
+                            f"\n[{name}] 变体: {metric} {old} → {rule['value']} (×{factor})",
+                            flush=True,
+                        )
                 if not changed:
                     continue
                 cur.execute(

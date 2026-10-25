@@ -4,6 +4,7 @@
 """
 
 import json
+import os
 import time
 import urllib.request
 
@@ -17,7 +18,7 @@ PRESETS = {
     "周期反转": "40ef6bf8-c4da-4f35-acae-b7c2de4cd2b9",
     "金融价值": "67fd20f8-86d0-458a-8782-252dd21454fc",
 }
-YEARS = 3
+YEARS = int(os.getenv("BACKTEST_YEARS", "3"))
 POLL = 60
 
 
