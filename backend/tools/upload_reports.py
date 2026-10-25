@@ -20,8 +20,9 @@ import psycopg2
 
 OUT_DIR = Path(__file__).resolve().parents[1] / "data" / "uploads" / "kb"
 BACKEND = "http://127.0.0.1:8000"
-DB = dict(host="localhost", port=5432, dbname="airesearch",
-          user="airesearch", password="airesearch_dev")
+DB = dict(
+    host="localhost", port=5432, dbname="airesearch", user="airesearch", password="airesearch_dev"
+)
 
 
 def ensure_company(cur, ticker: str, name: str) -> str:
@@ -52,8 +53,11 @@ def wait_indexed(doc_id: str, timeout_s: int = 900) -> dict:
     deadline = time.time() + timeout_s
     while time.time() < deadline:
         try:
-            r = json.loads(urllib.request.urlopen(
-                f"{BACKEND}/api/v1/documents/{doc_id}/status", timeout=20).read())
+            r = json.loads(
+                urllib.request.urlopen(
+                    f"{BACKEND}/api/v1/documents/{doc_id}/status", timeout=20
+                ).read()
+            )
         except Exception:
             time.sleep(10)
             continue
@@ -88,6 +92,18 @@ def main() -> None:
         company_id = ensure_company(cur, row["ticker"], row["name"])
         conn.commit()
         title = f"{row['name']} {row['year']}年年度报告"
+        cur.execute(
+            "SELECT id, is_indexed FROM document.documents "
+            "WHERE title=%s AND company_id=%s LIMIT 1",
+            (title, company_id),
+        )
+        existing = cur.fetchone()
+        if existing:
+            print(
+                f"[{i}/{len(rows)}] {row['ticker']}: 已存在（{existing[0]}），跳过上传", flush=True
+            )
+            results.append({"ticker": row["ticker"], "doc_id": str(existing[0]), "title": title})
+            continue
         try:
             doc = upload(path, title, company_id)
         except Exception as e:  # noqa: BLE001
@@ -102,8 +118,11 @@ def main() -> None:
     print("\n等待索引完成（解析/切片/Embedding）…", flush=True)
     for r in results:
         st = wait_indexed(r["doc_id"])
-        print(f"  {r['ticker']}: is_indexed={st.get('is_indexed')} "
-              f"chunks={st.get('chunk_count')} timeout={st.get('timeout', False)}", flush=True)
+        print(
+            f"  {r['ticker']}: is_indexed={st.get('is_indexed')} "
+            f"chunks={st.get('chunk_count')} timeout={st.get('timeout', False)}",
+            flush=True,
+        )
 
     with open(OUT_DIR / "uploaded.json", "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)

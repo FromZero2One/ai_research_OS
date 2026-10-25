@@ -16,6 +16,8 @@
 | `check_tasks.py` | 后台任务队列表（`core.task_records`）状态 |
 | `check_pg_activity.py` | PostgreSQL 活跃查询/锁等待诊断 |
 | `check_universe.py` | 回测票池来源检查（活跃公司 vs 全市场） |
+| `fetch_cninfo_reports.py` | **从巨潮资讯网批量下载年度报告 PDF**（按选股候选/指定运行） |
+| `upload_reports.py` | 把下载的年报批量上传到文档中心并等待索引（自动关联公司） |
 | `main_board_stocks.csv` | 全市场主板股票列表（2,111 只，含沪市主板 1,700 只 + 深市主板 411 只） |
 
 ## 使用说明
@@ -59,3 +61,47 @@ cd backend
 `main_board_stocks.csv` 通过 akshare 新浪源获取，包含 2,111 只主板股票（沪市主板 600/601/603/605 前缀，深市主板 000 前缀），已按 `pure_code`（纯 6 位代码）和 `板块` 分类。
 
 数据已批量导入 `company.companies` 表（`is_active=false`, `priority=999`），可直接使用采集脚本拉取行情。
+
+## 批量获取年报（巨潮资讯网）
+
+用于给知识库/定性选股补年报，两个脚本配合使用，均幂等（重复运行不会重复下载/上传）。
+
+### 1. 下载 PDF
+
+```powershell
+cd backend
+
+# 默认：取最近一次 completed 选股运行的全部候选股票
+.venv\Scripts\python tools\fetch_cninfo_reports.py
+
+# 指定某次运行（run_id 见选股页/GET /api/v1/screener/runs）
+.venv\Scripts\python tools\fetch_cninfo_reports.py a62a2cd7-3df2-4a30-8b0a-dda5ed4ce3c2
+```
+
+- 数据源：巨潮资讯网公告接口 `hisAnnouncement/query`（需 `orgId` 映射，脚本自动取 `szse_stock.json`）
+- 只取**最新一期主年报**（排除摘要/英文版/更正/公告）
+- 输出：`backend/data/uploads/kb/{ticker}_{年份}_annual.pdf` + `manifest.csv`（代码/名称/年份/标题/公告日/URL/大小）
+- 已存在的 PDF 自动跳过；无年报（如新上市）会打印「无年报」跳过
+
+### 2. 上传并建立索引
+
+```powershell
+# 全部上传（需后端在跑 + Ollama 提供 bge-m3 embedding）
+.venv\Scripts\python tools\upload_reports.py
+
+# 只传部分
+.venv\Scripts\python tools\upload_reports.py --tickers 600519,603893
+.venv\Scripts\python tools\upload_reports.py --limit 3
+```
+
+- 缺失的公司会自动补进 `company.companies`（`is_active=false`, `priority=999`），保证 `company_id` 关联
+- `doc_type=annual_report`，标题 `{公司名} {年份}年年度报告`
+- 同名文档已存在则跳过上传；上传后轮询 `/documents/{id}/status` 直到 `is_indexed=true`
+- 索引耗时取决于 PDF 大小（100 页年报约 1-3 分钟；17MB 大文件更久）
+
+### 常见问题
+
+- **接口返回 0 条**：巨潮查询必须用 `stock={code},{orgId}` 格式，只传代码不行
+- **索引一直 false**：确认 `ollama list` 里有 `bge-m3:latest` 且 11434 端口可达（本机默认 localhost）
+- **重复下载/上传**：脚本已做幂等；若想强制重来，删除对应 PDF 或 `document.documents` 中同名记录
+- **PDF 合法性**：巨潮只提供公开披露文件，请自行遵守其使用条款

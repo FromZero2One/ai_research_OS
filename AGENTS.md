@@ -10,6 +10,7 @@ Personal AI investment-research assistant. FastAPI backend in `backend/` (Python
 - **Tests** (from `backend/`, docker Postgres + Qdrant must be up): `.venv\Scripts\python -m pytest -v`; single file/test: `... pytest tests/test_market.py -k name` (pytest-asyncio `auto` mode — no markers needed). conftest auto-creates the dedicated `airesearch_test` DB (override via `TEST_DATABASE_URL`) and **refuses to run against the dev DB**; vectors go to a separate `documents_test` Qdrant collection.
 - **Known-failing tests**: 2 research evidence-inheritance tests fail because the local LLM returns truncated JSON (per README). Pre-existing — don't chase them in unrelated changes.
 - **Migrations**: from `backend/`, `PYTHONPATH=. alembic upgrade head` / `alembic revision --autogenerate -m "..."`. Linear chain (~30 versions).
+- **Annual reports (knowledge base)**: `cd backend && .venv\Scripts\python tools\fetch_cninfo_reports.py` (cninfo latest annual PDFs for the latest screener run) then `tools\upload_reports.py` (upload + index, idempotent; needs backend + Ollama running). Feeds qualitative presets and doc Q&A.
 
 ## Lint / typecheck debt — important
 

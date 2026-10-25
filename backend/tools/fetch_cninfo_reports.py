@@ -23,8 +23,7 @@ MAPPING_URL = "http://www.cninfo.com.cn/new/data/szse_stock.json"
 BACKEND = "http://127.0.0.1:8000"
 HEADERS = {
     "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "Chrome/120 Safari/537.36"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
     ),
     "Referer": "http://www.cninfo.com.cn/new/commonUrl?url=disclosure/list/notice",
     "X-Requested-With": "XMLHttpRequest",
@@ -34,11 +33,17 @@ SKIP_WORDS = ("摘要", "英文", "已取消", "更正", "公告")
 
 def list_run_tickers(run_id: str | None) -> list[str]:
     if run_id:
-        data = json.loads(urllib.request.urlopen(f"{BACKEND}/api/v1/screener/runs/{run_id}", timeout=30).read())
+        data = json.loads(
+            urllib.request.urlopen(f"{BACKEND}/api/v1/screener/runs/{run_id}", timeout=30).read()
+        )
     else:
-        runs = json.loads(urllib.request.urlopen(f"{BACKEND}/api/v1/screener/runs?limit=20", timeout=30).read())["runs"]
+        runs = json.loads(
+            urllib.request.urlopen(f"{BACKEND}/api/v1/screener/runs?limit=20", timeout=30).read()
+        )["runs"]
         run = next(r for r in runs if r["status"] == "completed" and r.get("result_count"))
-        data = json.loads(urllib.request.urlopen(f"{BACKEND}/api/v1/screener/runs/{run['id']}", timeout=30).read())
+        data = json.loads(
+            urllib.request.urlopen(f"{BACKEND}/api/v1/screener/runs/{run['id']}", timeout=30).read()
+        )
     tickers = sorted({j["ticker"] for j in data.get("judgements") or []})
     print(f"运行 {data['id'][:8]}：候选 {len(tickers)} 只", flush=True)
     return tickers
@@ -81,7 +86,9 @@ def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     with httpx.Client(headers=HEADERS, timeout=30, trust_env=False) as client:
-        mapping = {s.get("code"): s for s in (client.get(MAPPING_URL).json().get("stockList") or [])}
+        mapping = {
+            s.get("code"): s for s in (client.get(MAPPING_URL).json().get("stockList") or [])
+        }
         print(f"cninfo 映射: {len(mapping)} 只", flush=True)
 
         rows = []
@@ -91,13 +98,23 @@ def main() -> None:
                 print(f"[{i}/{len(tickers)}] {code}: 映射缺失，跳过", flush=True)
                 continue
             form = {
-                "pageNum": 1, "pageSize": 30, "column": "szse", "tabName": "fulltext",
-                "plate": "", "stock": f"{code},{meta.get('orgId')}", "searchkey": "",
-                "secid": "", "category": "category_ndbg_szsh", "trade": "", "seDate": "",
-                "sortName": "", "sortType": "", "isHLtitle": "true",
+                "pageNum": 1,
+                "pageSize": 30,
+                "column": "szse",
+                "tabName": "fulltext",
+                "plate": "",
+                "stock": f"{code},{meta.get('orgId')}",
+                "searchkey": "",
+                "secid": "",
+                "category": "category_ndbg_szsh",
+                "trade": "",
+                "seDate": "",
+                "sortName": "",
+                "sortType": "",
+                "isHLtitle": "true",
             }
             try:
-                anns = (client.post(API, data=form).json().get("announcements") or [])
+                anns = client.post(API, data=form).json().get("announcements") or []
             except Exception as e:  # noqa: BLE001
                 print(f"[{i}/{len(tickers)}] {code}: 查询失败 {str(e)[:80]}", flush=True)
                 continue
@@ -107,19 +124,37 @@ def main() -> None:
                 continue
             safe_name = str(meta.get("zwjc") or picked["secName"] or code).replace("/", "_")
             path = OUT_DIR / f"{code}_{picked['year']}_annual.pdf"
-            try:
-                size = download(picked["url"], path)
-            except Exception as e:  # noqa: BLE001
-                print(f"[{i}/{len(tickers)}] {code}: 下载失败 {str(e)[:80]}", flush=True)
-                continue
-            rows.append({
-                "ticker": code, "name": safe_name, "year": picked["year"],
-                "title": picked["title"], "date": picked["date"],
-                "url": picked["url"], "path": str(path), "size": size,
-            })
-            print(f"[{i}/{len(tickers)}] {code} {safe_name}: {picked['title']} "
-                  f"({size / 1e6:.1f} MB)", flush=True)
-            time.sleep(1)
+            if path.exists() and path.stat().st_size > 0:
+                size = path.stat().st_size
+                print(
+                    f"[{i}/{len(tickers)}] {code} {safe_name}: 已存在，跳过下载 "
+                    f"({size / 1e6:.1f} MB)",
+                    flush=True,
+                )
+            else:
+                try:
+                    size = download(picked["url"], path)
+                except Exception as e:  # noqa: BLE001
+                    print(f"[{i}/{len(tickers)}] {code}: 下载失败 {str(e)[:80]}", flush=True)
+                    continue
+                print(
+                    f"[{i}/{len(tickers)}] {code} {safe_name}: {picked['title']} "
+                    f"({size / 1e6:.1f} MB)",
+                    flush=True,
+                )
+                time.sleep(1)
+            rows.append(
+                {
+                    "ticker": code,
+                    "name": safe_name,
+                    "year": picked["year"],
+                    "title": picked["title"],
+                    "date": picked["date"],
+                    "url": picked["url"],
+                    "path": str(path),
+                    "size": size,
+                }
+            )
 
     manifest = OUT_DIR / "manifest.csv"
     with open(manifest, "w", newline="", encoding="utf-8-sig") as f:

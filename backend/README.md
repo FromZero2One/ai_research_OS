@@ -259,6 +259,20 @@ PYTHONPATH=. python scripts/seed_data.py
 
 Ollama 版本过旧（<0.3.0）时 `/api/embed` 不可用，Embedding 降级为 BM25 稀疏检索 + RRF 融合，功能不受影响。
 
+## 批量导入年报（巨潮资讯网）
+
+定性选股与文档问答依赖知识库。批量补年报分两步（均幂等，可重复运行）：
+
+```powershell
+cd backend
+# 1) 下载：默认取最近一次选股运行的全部候选股票（或传 run_id）
+.venv\Scripts\python tools\fetch_cninfo_reports.py
+# 2) 上传+索引：自动关联 company_id，轮询到 is_indexed=true
+.venv\Scripts\python tools\upload_reports.py
+```
+
+脚本会从巨潮公告接口取最新一期主年报（排除摘要/英文/更正），存到 `data/uploads/kb/` 并写 `manifest.csv`；上传时缺失公司会自动补进 `company.companies`。详见 [`tools/README.md`](tools/README.md#批量获取年报巨潮资讯网)。
+
 ## 外部 MCP 数据源
 
 - **akshare**：`market/akshare_executor.py` 调用外部 `akshare_mcp` venv（`AKSHARE_MCP_DIR`），子进程直连 Tencent/Sina/Eastmoney 数据源；价格/财务/估值三条采集链均无外部数据库依赖，可配云端 MCP 兜底（`AKSHARE_CLOUD_MCP_URL`，留空禁用）
