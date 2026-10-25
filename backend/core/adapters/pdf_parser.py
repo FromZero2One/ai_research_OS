@@ -6,6 +6,7 @@ Supports: text extraction, page metadata, headings detection, encrypted PDF hand
 
 from __future__ import annotations
 
+import asyncio
 import re
 
 import fitz
@@ -41,38 +42,10 @@ class PyMuPDFParser(DocumentParser):
     HEADING_FONT_THRESHOLD = 1.2
     """Font size ratio relative to average to classify as heading."""
 
-    async def parse(self, content: bytes, filename: str) -> ParsedDocument:
-        """Parse PDF content and return structured text with metadata.
-
-        Args:
-            content: Raw PDF file bytes.
-            filename: Original filename (used for file-type checks).
-
-        Returns:
-            ParsedDocument with text, metadata, and page-level chunks.
-
-        Raises:
-            PDFEncryptedError: If the PDF requires a password.
-            PDFScannedError: If no extractable text is found.
-            PDFParserError: For other parsing failures.
-        """
-        if not content:
-            return ParsedDocument(text="", metadata={"pages": 0, "error": "Empty file"})
-
-        try:
-            doc = await self._open_pdf(content)
-        except fitz.FileDataError as e:
-            raise PDFParserError(f"Invalid or corrupted PDF file: {e}") from e
-
-        # Check encryption
-        if doc.is_encrypted:
-            doc.close()
-            raise PDFEncryptedError("PDF is password-protected and cannot be parsed")
-
-        # Extract document-level metadata
-        meta = self._extract_metadata(doc)
-
-        # Extract pages
+    def _extract_pages(
+        self, doc: fitz.Document
+    ) -> tuple[list[str], list[dict], int]:
+        """同步提取所有页面文本（在线程池中调用，避免阻塞事件循环）。"""
         pages_text: list[str] = []
         page_metadata: list[dict] = []
         total_text_length = 0
@@ -122,6 +95,44 @@ class PyMuPDFParser(DocumentParser):
                 }
             )
             pages_text.append(page_text)
+
+        return pages_text, page_metadata, total_text_length
+
+    async def parse(self, content: bytes, filename: str) -> ParsedDocument:
+        """Parse PDF content and return structured text with metadata.
+
+        Args:
+            content: Raw PDF file bytes.
+            filename: Original filename (used for file-type checks).
+
+        Returns:
+            ParsedDocument with text, metadata, and page-level chunks.
+
+        Raises:
+            PDFEncryptedError: If the PDF requires a password.
+            PDFScannedError: If no extractable text is found.
+            PDFParserError: For other parsing failures.
+        """
+        if not content:
+            return ParsedDocument(text="", metadata={"pages": 0, "error": "Empty file"})
+
+        try:
+            doc = await self._open_pdf(content)
+        except fitz.FileDataError as e:
+            raise PDFParserError(f"Invalid or corrupted PDF file: {e}") from e
+
+        # Check encryption
+        if doc.is_encrypted:
+            doc.close()
+            raise PDFEncryptedError("PDF is password-protected and cannot be parsed")
+
+        # Extract document-level metadata
+        meta = self._extract_metadata(doc)
+
+        # Extract pages (线程池：大文件解析不能阻塞事件循环)
+        pages_text, page_metadata, total_text_length = await asyncio.to_thread(
+            self._extract_pages, doc
+        )
 
         page_count = len(doc)
         doc.close()

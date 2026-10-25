@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from pathlib import Path
 
@@ -354,15 +355,19 @@ class DocumentService:
             return result.text
 
         try:
-            pages_text: list[str] = []
-            with pdfplumber.open(io.BytesIO(content)) as pdf:
-                for page in pdf.pages:
-                    tables = extract_tables_from_page(page)
-                    if tables:
-                        pages_text.append(table_to_markdown(tables[0]))
-                    else:
-                        pages_text.append(page.extract_text() or "")
-            return "\n\n".join(pages_text)
+            def _extract_sync() -> str:
+                pages_text: list[str] = []
+                with pdfplumber.open(io.BytesIO(content)) as pdf:
+                    for page in pdf.pages:
+                        tables = extract_tables_from_page(page)
+                        if tables:
+                            pages_text.append(table_to_markdown(tables[0]))
+                        else:
+                            pages_text.append(page.extract_text() or "")
+                return "\n\n".join(pages_text)
+
+            # 线程池：pdfplumber 解析大 PDF 不能阻塞事件循环
+            return await asyncio.to_thread(_extract_sync)
         except Exception as e:
             logger.warning("  [document] pdfplumber parse failed (%s) — falling back", e)
             result = await self.pdf_parser.parse(content, "")
