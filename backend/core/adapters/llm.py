@@ -77,7 +77,11 @@ class OllamaLLM:
         payload = {
             "model": self._model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
-            "options": {"temperature": temperature, "num_predict": max_tokens},
+            "options": {
+                "temperature": temperature,
+                "num_predict": max_tokens,
+                "num_ctx": settings.OLLAMA_NUM_CTX,
+            },
             "think": self._think,
             "stream": stream,
         }

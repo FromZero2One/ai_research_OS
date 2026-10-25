@@ -47,7 +47,10 @@ _JUDGE_SYSTEM_PROMPT = (
     "不超过 40 字，禁止整段复述上下文；\n"
     "5. 定性标准必须基于上下文中的资料片段：命中时 evidence 必须引用片段编号（如 [1]）"
     "或上下文里的具体数字；无资料片段、资料未提及或只有常识/行业印象时，必须 hit=false "
-    "并写'数据不足'，禁止用模型记忆补全；\n"
+    "并写'数据不足'，禁止用模型记忆补全。若片段中有可支撑该标准的定性描述"
+    "（如'行业保持增长''市占率提升''位居行业前列''收入主要来自主营业务'），"
+    "可判 hit=true，并在 evidence 中引用片段编号并摘录关键词；只有片段完全未涉及该标准"
+    "时才写'数据不足'；\n"
     "6. 不得把'资料中未出现负面信息'当作'无违规/无风险'——缺失信息不等于通过；\n"
     "7. criteria_hits 的 criterion 必须逐字复制给定的定性标准原文，不得改写成预设名"
     "或自拟标签。\n"
@@ -290,7 +293,8 @@ def build_judge_context(
     if knowledge_snippets:
         lines.append("相关资料片段：")
         for i, snippet in enumerate(knowledge_snippets, 1):
-            lines.append(f"[{i}] {snippet[:300]}")
+            # 300 字常常切在关键结论前，年报片段给到 500 字（配合 num_ctx=8192）
+            lines.append(f"[{i}] {snippet[:500]}")
     else:
         lines.append("（无可用资料片段）")
     return "\n".join(lines)
@@ -343,7 +347,7 @@ async def judge_one(
                 query = f"{candidate.get('name', '')} {candidate.get('ticker', '')}".strip()
                 if criteria:
                     query += " " + " ".join(str(c)[:30] for c in criteria[:2])
-                results = await knowledge.search(query, top_k=3, company_id=company_id)
+                results = await knowledge.search(query, top_k=6, company_id=company_id)
                 snippets = [getattr(r, "content", str(r)) for r in results]
             except Exception as e:  # noqa: BLE001 — 检索故障不阻塞深判
                 logger.warning("深判知识库检索失败 %s: %s", candidate["ticker"], e)

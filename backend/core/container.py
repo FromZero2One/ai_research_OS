@@ -224,11 +224,19 @@ class Container:
     @property
     def knowledge_service(self) -> KnowledgeServiceProtocol:
         if self._knowledge is None:
+            import importlib.util
+
             from knowledge.service import KnowledgeService
 
-            # Cross-encoder re-ranker improves precision on top of hybrid RRF;
-            # search falls back to RRF automatically if the model is missing.
-            self._knowledge = KnowledgeService(self.session, use_reranker=True)
+            # Cross-encoder re-ranker improves precision on top of hybrid RRF, but
+            # it needs sentence-transformers + a cached model. Without them every
+            # search wastes time on a failed model load, so gate on availability.
+            has_reranker = (
+                importlib.util.find_spec("sentence_transformers") is not None
+            )
+            self._knowledge = KnowledgeService(
+                self.session, use_reranker=has_reranker
+            )
         return self._knowledge
 
     @property

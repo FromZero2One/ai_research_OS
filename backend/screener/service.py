@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.adapters.llm import create_llm
@@ -577,6 +577,11 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
         else:
             judgements = [_auto_pass_judgement(c) for c in candidates]
         await _check_cancelled(run.id)
+        # 幂等：任务被中断后重试会重跑整段，先清掉上一次已落库的判定，
+        # 否则同一 run 会出现重复判定（曾出现 46 候选 92 条判定）
+        await db.execute(
+            delete(ScreenerJudgement).where(ScreenerJudgement.run_id == run.id)
+        )
         for j in judgements:
             db.add(ScreenerJudgement(run_id=run.id, **j))
         await db.flush()
