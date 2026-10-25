@@ -29,7 +29,7 @@ from document.models import Document, DocumentChunk
 async def embed_chunks_safely(
     embedder: EmbeddingModel,
     texts: list[str],
-    batch_size: int = 32,
+    batch_size: int = 64,
 ) -> list[list[float] | None]:
     """Embed texts in batches, isolating provider failures per text.
 
