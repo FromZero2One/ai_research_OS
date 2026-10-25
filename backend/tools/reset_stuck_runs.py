@@ -38,5 +38,17 @@ if APPLY and rows:
         """
     )
     print("已标记 failed:", cur.rowcount)
+    # 同步把队列里的 screener_run 任务置 failed，否则后端重启会「恢复」并自动重跑
+    cur.execute(
+        """
+        UPDATE core.task_records
+        SET status = 'failed',
+            completed_at = now(),
+            error = COALESCE(error, 'reset: run aborted by operator')
+        WHERE task_type = 'screener_run'
+          AND status IN ('pending', 'running')
+        """
+    )
+    print("已标记任务 failed:", cur.rowcount)
     conn.commit()
 conn.close()

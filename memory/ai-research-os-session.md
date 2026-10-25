@@ -143,6 +143,33 @@ metadata:
 - 当前数据（2026-10-24 采集暂停）：行情 5,122,204 行，790/2111 主板股票具备 ≥200 根日线；剩余 1,321 只 ≈ 133 批；财务期 2026Q2；知识库 0 文档；采集进度文件 747 条记录
 - pytest 需先起 docker postgres；测试库 airesearch_test 由 conftest 用 create_all 重建（**改模型后旧测试库不会自动加列，需 DROP DATABASE airesearch_test 重建**）；`tests/test_session` fixture 为服务级测试专用（勿用 managed_session，会写进开发库）
 
+## 智能选股复盘（2026-10-25，最新）
+
+### 知识库
+- 103 份年报全部索引完成，55,135 切片（修复前 25,481）；覆盖高成长/深度价值/金融价值三套预设的候选
+- 并行索引工具 `tools/index_pending_parallel.py`（6 并发 + 批 64 + `OLLAMA_NUM_PARALLEL=4`），实测 ~3.8 份/分钟（串行 0.8）
+- 修复：PDF 解析线程化、重索引幂等（先删旧切片+向量）、NUL 字节清洗、独立脚本需显式导入全部模型
+
+### 5 年回测结论（15 期，基准 -4.56%）
+- 金融价值 +6.89%（超额 +11.45%，3 年/5 年两段一致）→ 唯一稳健跑赢
+- 深度价值 +5.60%、周期反转 -0.87%、高成长 -6.90%、核心资产 -14.92%、GARP -23.61%
+- 阈值敏感性：`roic` 规则完全无效果；放宽 `roe` 最有效但救不活核心资产/GARP
+
+### 实时深判（修复跨公司证据污染后）
+- 高成长 46 候选：3 推荐（300628 亿联 0.92、301345 涛涛车业 0.85、000807 云铝 0.85），**43 只判 insufficient**
+- 根因不是模型：定性标准不可验证（「细分行业排名前二」「渗透率持续提升」年报不会这么写），
+  加上每只仅喂 3 条×300 字片段、Ollama 默认 4096 上下文截断
+- 已修：检索 6 条×500 字、prompt 允许「方向性描述+引用[n]」、`num_ctx=8192`、重跑前清旧判定（曾出现 46 候选 92 条判定）、
+  reranker 仅在装了 sentence-transformers 时启用（本机未装，之前每次检索白等一次加载失败）
+- 5 套预设定性标准已改写为「可在年报/财务数据中验证」的表述，备份 `backend/data/presets_qualitative_backup.json`，
+  脚本 `backend/tools/rewrite_presets_qualitative.py`（核心资产原本无定性标准，未动）
+
+### 运行环境（更正上方旧记录）
+- 本机 Ollama 可用：`bge-m3:latest`（1024 维 embedding）+ `qwen3.5-q4`（深判 LLM）；`OLLAMA_NUM_PARALLEL=4`
+- 后端必须用 `--reload` 启动：Windows 下 uvicorn 用 Proactor 事件循环会偶发 `WinError 64` accept 崩溃；
+  `--reload` 走筛选器循环可规避（代价：改 backend/ 下任何文件都会重启，跑批期间别改代码）
+- 卡死运行清理：`tools/reset_stuck_runs.py --apply`（同时把 screener_run 任务置 failed，避免重启自动重跑）
+
 ## 相关文档
 - **启动命令** → [`USAGE.md`](../USAGE.md)「服务启动与停止」
 - **架构与配置** → [`backend/README.md`](../backend/README.md)
