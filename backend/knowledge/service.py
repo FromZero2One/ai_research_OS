@@ -220,21 +220,25 @@ class KnowledgeService:
         doc_type: str | None = None,
         content_type: str | None = None,
         min_score: float = 0.0,
+        company_id: str | None = None,
     ) -> list[SearchResult]:
         """Hybrid search: Qdrant (dense) + BM25 (sparse) → RRF fusion.
 
         ``content_type`` 按切片内容类型过滤（mda/risk/notes/announcement/other），
         供定性研究定向检索（如 MD&A 相关子问题只搜 mda）。
+        ``company_id`` 限定只检索该公司文档（深判必须传，避免跨公司证据污染）。
         """
         if not query.strip():
             return []
 
-        # Build filter for doc_type / content_type
+        # Build filter for doc_type / content_type / company
         vector_filter: dict = {}
         if doc_type:
             vector_filter["doc_type"] = doc_type
         if content_type:
             vector_filter["content_type"] = content_type
+        if company_id:
+            vector_filter["company_id"] = company_id
 
         # 1. Dense search
         query_vector = await self.embedder.embed_query(query)
@@ -246,7 +250,9 @@ class KnowledgeService:
         )
 
         # 2. Sparse search (BM25)
-        sparse_results = await self._sparse_search(query, top_k * 2, doc_type, content_type)
+        sparse_results = await self._sparse_search(
+            query, top_k * 2, doc_type, content_type, company_id
+        )
 
         # 3. Reciprocal Rank Fusion
         fused = self._rrf_fusion(dense_results, sparse_results, top_k)
@@ -338,6 +344,7 @@ class KnowledgeService:
         top_k: int,
         doc_type: str | None = None,
         content_type: str | None = None,
+        company_id: str | None = None,
     ) -> list[dict]:
         """BM25 sparse search over all indexed chunks."""
         # Load BM25 index (lazy, cached per session)
@@ -357,6 +364,8 @@ class KnowledgeService:
             if doc_type and meta.get("doc_type") != doc_type:
                 continue
             if content_type and meta.get("content_type") != content_type:
+                continue
+            if company_id and meta.get("company_id") != company_id:
                 continue
             results.append(
                 {
@@ -412,6 +421,18 @@ class KnowledgeService:
             return None
 
         tokenized_corpus = [_tokenize(c.content) for c in chunks]
+
+        # 文档 → 公司映射（BM25 元数据用于按公司过滤）
+        doc_ids = {c.document_id for c in chunks}
+        company_by_doc: dict[str, str | None] = {}
+        if doc_ids:
+            rows = await self.session.execute(
+                select(Document.id, Document.company_id).where(Document.id.in_(doc_ids))
+            )
+            company_by_doc = {
+                str(did): (str(cid) if cid else None) for did, cid in rows.all()
+            }
+
         bm25 = BM25Okapi(tokenized_corpus)
         bm25.ids = [c.embedding_id for c in chunks]
         bm25.metadata = [
@@ -419,6 +440,7 @@ class KnowledgeService:
                 "document_id": str(c.document_id),
                 "chunk_index": c.chunk_index,
                 "content_type": c.content_type or "other",
+                "company_id": company_by_doc.get(str(c.document_id)),
             }
             for c in chunks
         ]

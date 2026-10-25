@@ -467,6 +467,7 @@ class DocumentService:
                         "title": doc.title,
                         "doc_type": doc.doc_type,
                         "content_type": chunk.content_type,
+                        "company_id": str(doc.company_id) if doc.company_id else None,
                         "content": chunk.content[:500],  # preview
                     },
                 )

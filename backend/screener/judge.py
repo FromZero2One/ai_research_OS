@@ -166,7 +166,11 @@ _RATIO_METRICS = frozenset({
     "interest_coverage", "cash_ratio", "cfo_to_operating_profit", "peg",
 })
 # 比率类指标的常见区间；越界提示 LLM 标注异常，避免把一次性损益当成经营信号
-_ANOMALY_BOUNDS = {"net_margin": (-100.0, 100.0), "gross_margin": (-100.0, 100.0), "roe": (-100.0, 100.0)}
+_ANOMALY_BOUNDS = {
+    "net_margin": (-100.0, 100.0),
+    "gross_margin": (-100.0, 100.0),
+    "roe": (-100.0, 100.0),
+}
 
 
 def _fmt_money(value: float) -> str:
@@ -264,7 +268,10 @@ def build_judge_context(
     # union 初筛命中的预设（LLM 聚焦定性判断 + 复核异常，而非重新验证数字）
     preset_names = candidate.get("presets")
     if preset_names:
-        lines.append(f"命中预设: {'、'.join(preset_names)}（命中 {candidate.get('hits', len(preset_names))} 套）")
+        lines.append(
+            f"命中预设: {'、'.join(preset_names)}"
+            f"（命中 {candidate.get('hits', len(preset_names))} 套）"
+        )
     if financials:
         parts = [
             f"{_METRIC_CN.get(k, k)}={_fmt_value(k, v)}"
@@ -315,14 +322,33 @@ async def judge_one(
     # 知识库检索：失败静默吞掉（资料是加分项，不是必需品）
     snippets: list[str] = []
     if knowledge is not None:
+        # 解析候选公司 ID：只检索本公司文档，避免跨公司证据污染
+        company_id = None
         try:
-            query = f"{candidate.get('name', '')} {candidate.get('ticker', '')}".strip()
-            if criteria:
-                query += " " + " ".join(str(c)[:30] for c in criteria[:2])
-            results = await knowledge.search(query, top_k=3)
-            snippets = [getattr(r, "content", str(r)) for r in results]
-        except Exception as e:  # noqa: BLE001 — 检索故障不阻塞深判
-            logger.warning("深判知识库检索失败 %s: %s", candidate["ticker"], e)
+            from sqlalchemy import select
+
+            from company.models import Company
+
+            cid = (
+                await knowledge.session.execute(
+                    select(Company.id).where(Company.ticker == candidate.get("ticker"))
+                )
+            ).scalar_one_or_none()
+            company_id = str(cid) if cid else None
+        except Exception as e:  # noqa: BLE001
+            logger.warning("深判解析公司失败 %s: %s", candidate.get("ticker"), e)
+
+        if company_id:
+            try:
+                query = f"{candidate.get('name', '')} {candidate.get('ticker', '')}".strip()
+                if criteria:
+                    query += " " + " ".join(str(c)[:30] for c in criteria[:2])
+                results = await knowledge.search(query, top_k=3, company_id=company_id)
+                snippets = [getattr(r, "content", str(r)) for r in results]
+            except Exception as e:  # noqa: BLE001 — 检索故障不阻塞深判
+                logger.warning("深判知识库检索失败 %s: %s", candidate["ticker"], e)
+        else:
+            logger.info("深判无公司档案，跳过知识检索 %s", candidate.get("ticker"))
 
     user_msg = (
         f"{build_judge_context(candidate, snippets, financials=financials)}\n\n"
@@ -451,7 +477,9 @@ async def _judge_single(
                 best[e.metric_name] = (key, e.metric_value)
         fin = {k: v[1] for k, v in best.items()} if best else None
     try:
-        judgement = await judge_one(llm, cand, criteria or [criteria_text], knowledge=knowledge, financials=fin)
+        judgement = await judge_one(
+            llm, cand, criteria or [criteria_text], knowledge=knowledge, financials=fin
+        )
         recommend = bool(judgement["recommend"])
         text = " ".join(
             [str(r) for r in (judgement.get("reasons") or [])]
