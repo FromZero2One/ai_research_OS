@@ -77,3 +77,15 @@ class TestNotFoundHandler:
         assert resp.status_code == 404
         data = resp.json()
         assert "detail" in data or "error" in data
+
+
+class TestSchedulerJobs:
+    """性能快照任务已随模块删除 — 调度器不应再注册它。"""
+
+    def test_no_performance_snapshot_job(self):
+        from pathlib import Path
+
+        import core.scheduler
+
+        source = Path(core.scheduler.__file__).read_text(encoding="utf-8")
+        assert "performance_snapshot" not in source

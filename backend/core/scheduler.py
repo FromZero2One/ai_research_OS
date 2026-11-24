@@ -79,16 +79,6 @@ def start_scheduler() -> AsyncIOScheduler:
             settings.SCREENER_SCHEDULE,
         )
 
-    # Register performance snapshot job (weekdays after close)
-    if (
-        hasattr(settings, "PERFORMANCE_SNAPSHOT_SCHEDULE")
-        and settings.PERFORMANCE_SNAPSHOT_SCHEDULE
-    ):
-        _add_cron_job(
-            "performance_snapshot",
-            settings.PERFORMANCE_SNAPSHOT_SCHEDULE,
-        )
-
     # Register event log retention cleanup job (weekly)
     if hasattr(settings, "EVENT_LOG_CLEANUP_SCHEDULE") and settings.EVENT_LOG_CLEANUP_SCHEDULE:
         _add_cron_job(

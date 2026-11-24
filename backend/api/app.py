@@ -91,7 +91,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # Start background task worker (persistent task queue)
     # 持久任务 handler 必须在 worker 启动前导入注册；否则只有被路由/容器
     # 首次间接导入的 handler 生效（例如回测任务曾因此报 no handler）。
-    import core.performance_schedule  # noqa: F401
     import screener.backtest_service  # noqa: F401
     import screener.service  # noqa: F401
     from core.task_manager import _recover_interrupted_tasks, _task_worker_loop, stop_worker
@@ -113,14 +112,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         from core.event_cleanup import event_log_cleanup
         from core.financial_sync import financial_data_update
         from core.market_sync import market_data_update
-        from core.performance_schedule import scheduled_performance_snapshot
         from core.scheduler import register_job, start_scheduler
         from core.screener_schedule import scheduled_screener_update
 
         register_job("market_data_update", market_data_update)
         register_job("financial_data_update", financial_data_update)
         register_job("screener_schedule", scheduled_screener_update)
-        register_job("performance_snapshot", scheduled_performance_snapshot)
         register_job("event_log_cleanup", event_log_cleanup)
         start_scheduler()
         logger.info("Scheduler started (enabled=%s)", settings.SCHEDULER_ENABLED)
