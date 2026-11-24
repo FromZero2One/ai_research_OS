@@ -3,15 +3,15 @@ import asyncio
 
 import psycopg2
 
+from _db import connect
+
 from core.database import managed_session
 from core.task_manager import create_task
 
-DB = dict(host="localhost", port=5432, dbname="airesearch",
-          user="airesearch", password="airesearch_dev")
 
 
 def pending() -> list[tuple[str, str]]:
-    conn = psycopg2.connect(**DB)
+    conn = connect()
     cur = conn.cursor()
     cur.execute("SELECT id, title FROM document.documents WHERE NOT is_indexed")
     rows = [(str(r[0]), r[1]) for r in cur.fetchall()]

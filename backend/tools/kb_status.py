@@ -1,8 +1,9 @@
 """知识库（文档中心）状态：文档数 / 已索引 / 切片数 / 逐文档明细。"""
 import psycopg2
 
-c = psycopg2.connect(host="localhost", port=5432, dbname="airesearch",
-                     user="airesearch", password="airesearch_dev")
+from _db import connect
+
+c = connect()
 cur = c.cursor()
 cur.execute("""
     SELECT count(*), count(*) FILTER (WHERE is_indexed), coalesce(sum(chunk_count), 0)

@@ -18,8 +18,8 @@ from pathlib import Path
 
 import psycopg2
 
-DB = dict(host="localhost", port=5432, dbname="airesearch",
-          user="airesearch", password="airesearch_dev")
+from _db import connect
+
 BACKUP = Path("data/presets_qualitative_backup.json")
 APPLY = "--apply" in sys.argv
 
@@ -119,7 +119,7 @@ REWRITE: dict[str, list[tuple[str, str, str]]] = {
 
 
 def main() -> None:
-    conn = psycopg2.connect(**DB)
+    conn = connect()
     cur = conn.cursor()
     cur.execute("SELECT id, name, qualitative FROM screener.criteria_presets")
     rows = cur.fetchall()

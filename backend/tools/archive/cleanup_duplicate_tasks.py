@@ -1,8 +1,9 @@
 """删除重复的 document_index 待办任务（已有其他活跃任务的 reindex 任务）。"""
 import psycopg2
 
-c = psycopg2.connect(host="localhost", port=5432, dbname="airesearch",
-                     user="airesearch", password="airesearch_dev")
+from _db import connect
+
+c = connect()
 cur = c.cursor()
 
 cur.execute("""

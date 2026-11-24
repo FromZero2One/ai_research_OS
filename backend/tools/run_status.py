@@ -7,11 +7,11 @@ import sys
 
 import psycopg2
 
-DB = dict(host="localhost", port=5432, dbname="airesearch",
-          user="airesearch", password="airesearch_dev")
+from _db import connect
+
 LIMIT = int(sys.argv[1]) if len(sys.argv) > 1 else 3
 
-conn = psycopg2.connect(**DB)
+conn = connect()
 cur = conn.cursor()
 cur.execute(
     """

@@ -1,9 +1,9 @@
 """查 screener_run 任务队列状态。"""
 import psycopg2
 
-DB = dict(host="localhost", port=5432, dbname="airesearch",
-          user="airesearch", password="airesearch_dev")
-conn = psycopg2.connect(**DB)
+from _db import connect
+
+conn = connect()
 cur = conn.cursor()
 cur.execute(
     """

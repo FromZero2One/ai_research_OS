@@ -3,9 +3,10 @@ import sys
 
 import psycopg2
 
+from _db import connect
+
 DOC = sys.argv[1] if len(sys.argv) > 1 else "ad3e6d1a-97e5-4271-8148-a06813950299"
-c = psycopg2.connect(host="localhost", port=5432, dbname="airesearch",
-                     user="airesearch", password="airesearch_dev")
+c = connect()
 cur = c.cursor()
 cur.execute(
     "SELECT task_key, status, attempts, left(coalesce(error::text,''), 80), created_at "

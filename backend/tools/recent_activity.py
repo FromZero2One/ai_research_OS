@@ -1,9 +1,9 @@
 """看最近 5 分钟的选股/检索活动（判断深判是否还在推进）。"""
 import psycopg2
 
-DB = dict(host="localhost", port=5432, dbname="airesearch",
-          user="airesearch", password="airesearch_dev")
-conn = psycopg2.connect(**DB)
+from _db import connect
+
+conn = connect()
 cur = conn.cursor()
 
 cur.execute("SELECT now()")

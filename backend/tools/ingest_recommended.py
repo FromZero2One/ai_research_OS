@@ -10,6 +10,8 @@ import urllib.request
 
 import psycopg2
 
+from _db import connect
+
 BACKEND_URL = os.getenv("SCREENER_BACKEND_URL", "http://localhost:8000")
 PROGRESS_FILE = os.getenv(
     "INGEST_PROGRESS_FILE", "E:/ai_research_OS/ingest_progress_recommended.csv"
@@ -19,13 +21,10 @@ SLEEP_BETWEEN = 3
 MIN_ROWS = 200
 MAIN_BOARD = ("600", "601", "603", "605", "000")  # 正在由分片进程覆盖，跳过
 
-DB = dict(
-    host="localhost", port=5432, dbname="airesearch", user="airesearch", password="airesearch_dev"
-)
 
 
 def main():
-    conn = psycopg2.connect(**DB)
+    conn = connect()
     cur = conn.cursor()
     cur.execute(
         "SELECT DISTINCT ticker FROM screener.screener_judgements "

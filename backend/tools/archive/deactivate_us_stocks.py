@@ -1,8 +1,9 @@
 """把美股（非纯数字 ticker）移出活跃列表，并汇报本地股票状态。"""
 import psycopg2
 
-c = psycopg2.connect(host="localhost", port=5432, dbname="airesearch",
-                     user="airesearch", password="airesearch_dev")
+from _db import connect
+
+c = connect()
 cur = c.cursor()
 
 cur.execute("SELECT ticker FROM company.companies WHERE is_active = true ORDER BY ticker")

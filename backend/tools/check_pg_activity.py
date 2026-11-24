@@ -2,9 +2,9 @@
 
 import psycopg2
 
-conn = psycopg2.connect(
-    host="localhost", port=5432, dbname="airesearch", user="airesearch", password="airesearch_dev"
-)
+from _db import connect
+
+conn = connect()
 cur = conn.cursor()
 cur.execute("""
     SELECT pid, state, wait_event_type, wait_event,

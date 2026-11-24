@@ -11,9 +11,9 @@ import urllib.request
 
 import psycopg2
 
+from _db import connect
+
 API = "http://127.0.0.1:8000/api/v1/screener"
-DB = dict(host="localhost", port=5432, dbname="airesearch",
-          user="airesearch", password="airesearch_dev")
 
 DEFAULT = {
     "高成长": "70e6282d-da98-46c8-91db-20ec062b3d96",
@@ -40,7 +40,7 @@ def get(path: str, timeout: int = 120) -> dict:
 
 def db_state(run_id: str) -> tuple[str, int, int]:
     """直连 PG 取状态（HTTP 大响应在深判时容易超时）。"""
-    conn = psycopg2.connect(**DB)
+    conn = connect()
     try:
         cur = conn.cursor()
         cur.execute(

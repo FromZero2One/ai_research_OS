@@ -2,6 +2,8 @@
 
 import psycopg2
 
+from _db import connect
+
 REQUIRED = ("eps", "total_assets", "operating_cash_flow")
 PERIODS = [
     (2023, "Q3"),
@@ -15,9 +17,7 @@ PERIODS = [
     (2026, "Q2"),
 ]
 
-c = psycopg2.connect(
-    host="localhost", port=5432, dbname="airesearch", user="airesearch", password="airesearch_dev"
-)
+c = connect()
 cur = c.cursor()
 for y, p in PERIODS:
     cur.execute(

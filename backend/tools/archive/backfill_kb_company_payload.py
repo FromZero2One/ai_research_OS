@@ -1,14 +1,14 @@
 """给已索引切片回填 Qdrant payload.company_id（一次性修复：跨公司证据污染）。"""
 
 import psycopg2
+
+from _db import connect
 from qdrant_client import QdrantClient
 
 from core.config import settings
 
-DB = dict(host="localhost", port=5432, dbname="airesearch",
-          user="airesearch", password="airesearch_dev")
 
-conn = psycopg2.connect(**DB)
+conn = connect()
 cur = conn.cursor()
 cur.execute(
     "SELECT id, company_id, title FROM document.documents "

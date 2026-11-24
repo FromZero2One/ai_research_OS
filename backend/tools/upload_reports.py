@@ -18,11 +18,10 @@ from pathlib import Path
 import httpx
 import psycopg2
 
+from _db import connect
+
 OUT_DIR = Path(__file__).resolve().parents[1] / "data" / "uploads" / "kb"
 BACKEND = "http://127.0.0.1:8000"
-DB = dict(
-    host="localhost", port=5432, dbname="airesearch", user="airesearch", password="airesearch_dev"
-)
 
 
 def ensure_company(cur, ticker: str, name: str) -> str:
@@ -86,7 +85,7 @@ def main() -> None:
     if args.limit:
         rows = rows[: args.limit]
 
-    conn = psycopg2.connect(**DB)
+    conn = connect()
     cur = conn.cursor()
     results = []
     for i, row in enumerate(rows, 1):

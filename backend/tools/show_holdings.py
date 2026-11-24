@@ -4,13 +4,14 @@ import urllib.request
 
 import psycopg2
 
+from _db import connect
+
 RUNS = {
     "高成长": "1d4dd341-a562-441c-8ac2-d765af6c06e1",
     "金融价值": "142079ab-444c-4496-8c45-c8e4bcf07e7b",
 }
 
-conn = psycopg2.connect(host="localhost", port=5432, dbname="airesearch",
-                        user="airesearch", password="airesearch_dev")
+conn = connect()
 cur = conn.cursor()
 
 

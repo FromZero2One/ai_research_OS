@@ -9,6 +9,8 @@ import uuid
 
 import psycopg2
 
+from _db import connect
+
 # 独立进程需要显式导入所有模型，否则 SQLAlchemy 无法解析跨 schema 外键
 import company.models  # noqa: F401
 import document.models  # noqa: F401
@@ -17,13 +19,11 @@ import screener.models  # noqa: F401
 from core.container import create_container
 from core.database import managed_session
 
-DB = dict(host="localhost", port=5432, dbname="airesearch",
-          user="airesearch", password="airesearch_dev")
 CONCURRENCY = 6
 
 
 def pending() -> list[tuple[str, str]]:
-    conn = psycopg2.connect(**DB)
+    conn = connect()
     cur = conn.cursor()
     # 清掉单线程队列里的待办，避免重复索引
     cur.execute(

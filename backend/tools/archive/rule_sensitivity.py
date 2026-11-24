@@ -14,6 +14,8 @@ import urllib.request
 
 import psycopg2
 
+from _db import connect
+
 BASE = "http://127.0.0.1:8000/api/v1/screener"
 YEARS = int(os.getenv("BACKTEST_YEARS", "5"))
 POLL = 30
@@ -30,8 +32,6 @@ TARGETS = {
     },
 }
 
-DB = dict(host="localhost", port=5432, dbname="airesearch",
-          user="airesearch", password="airesearch_dev")
 
 
 def api_get(path):
@@ -75,7 +75,7 @@ def run_variant(preset_id):
 
 
 def main():
-    conn = psycopg2.connect(**DB)
+    conn = connect()
     cur = conn.cursor()
 
     for name, cfg in TARGETS.items():

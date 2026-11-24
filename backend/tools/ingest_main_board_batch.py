@@ -17,6 +17,8 @@ import urllib.request
 
 import psycopg2
 
+from _db import connect
+
 BACKEND_URL = os.getenv("SCREENER_BACKEND_URL", "http://localhost:8000")
 BATCH_SIZE = 10  # 每批10支，约4-6分钟，反馈快
 SLEEP_BETWEEN = 3  # 秒，避免触发风控
@@ -35,7 +37,7 @@ PROGRESS_FILE = os.getenv("INGEST_PROGRESS_FILE", "./ingest_progress.csv")
 
 def get_pending_tickers():
     """从 company.companies 获取待采集的主板股票（is_active=false）。"""
-    conn = psycopg2.connect(**DB)
+    conn = connect()
     cur = conn.cursor()
     cur.execute(
         """
@@ -56,7 +58,7 @@ def get_pending_tickers():
 
 def get_existing_count(ticker):
     """查询某只股票已有多少行股价。"""
-    conn = psycopg2.connect(**DB)
+    conn = connect()
     cur = conn.cursor()
     cur.execute("SELECT COUNT(*) FROM market.stock_prices WHERE ticker=%s", (ticker,))
     cnt = cur.fetchone()[0]

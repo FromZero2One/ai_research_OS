@@ -2,9 +2,9 @@
 
 import psycopg2
 
-conn = psycopg2.connect(
-    host="localhost", port=5432, dbname="airesearch", user="airesearch", password="airesearch_dev"
-)
+from _db import connect
+
+conn = connect()
 cur = conn.cursor()
 cur.execute("SELECT count(*) FROM company.companies WHERE is_active = true")
 print("活跃公司数:", cur.fetchone()[0])
