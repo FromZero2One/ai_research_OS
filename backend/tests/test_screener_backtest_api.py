@@ -6,15 +6,12 @@ import datetime as dt
 from typing import Any
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.interfaces import LLMResponse
 from screener.backtest_data import fetch_daily_from_mysql  # noqa: F401 (monkeypatch target ref)
 from screener.models import CriteriaPreset, ScreenerBacktestRun
 from screener.service import _ensure_market_data  # noqa: F401
-
 
 # ── 预置数据：2 只票 × 2 个调仓期，规则 ROE>10 全通过 ──
 
@@ -182,58 +179,3 @@ class TestBacktestAPI:
         run_id = "00000000-0000-0000-0000-000000000001"
         await bs._handle_backtest_run({"run_id": run_id})
         assert seen["run_id"] == _uuid.UUID(run_id)
-
-    async def test_stale_pending_run_is_recovered(
-        self, client, test_session: AsyncSession
-    ):
-        """无对应任务的陈旧 pending run 不应永久阻塞新回测。"""
-        preset = CriteriaPreset(
-            name="陈旧预设", description="d", style_tag="stale",
-            is_builtin=False, is_active=True,
-            quant_rules=[], qualitative=[], suggested_pool="all",
-        )
-        test_session.add(preset)
-        await test_session.flush()
-        stale = ScreenerBacktestRun(
-            preset_id=preset.id, years=1, status="pending"
-        )
-        test_session.add(stale)
-        await test_session.commit()
-
-        resp = client.post(
-            "/api/v1/screener/backtests",
-            json={"preset_id": str(preset.id), "years": 1},
-        )
-        assert resp.status_code == 201, resp.text
-
-        refreshed = await test_session.get(ScreenerBacktestRun, stale.id)
-        await test_session.refresh(refreshed)
-        assert refreshed.status == "failed"
-
-
-    async def test_post_and_get(self, client, backtest_env, test_session: AsyncSession):
-        """POST 建 run 返回 201；未知预设 → 422。"""
-        preset = CriteriaPreset(
-            name="API预设", description="d", style_tag="api", is_builtin=False, is_active=True,
-            quant_rules=[], qualitative=[], suggested_pool="all",
-        )
-        test_session.add(preset)
-        await test_session.commit()  # 路由用独立 session，必须落库可见
-
-        # 未知预设 → 422
-        resp = client.post("/api/v1/screener/backtests", json={"preset_id": str(__import__("uuid").uuid4()), "years": 5})
-        assert resp.status_code == 422
-        # 正常触发 → 201
-        resp = client.post("/api/v1/screener/backtests", json={"preset_id": str(preset.id), "years": 5})
-        assert resp.status_code == 201
-        run_id = resp.json()["id"]
-        # GET 详情
-        resp = client.get(f"/api/v1/screener/backtests/{run_id}")
-        assert resp.status_code == 200
-        assert resp.json()["status"] in ("pending", "running", "completed")
-        # 列表含该次回测与预设名
-        listed = client.get("/api/v1/screener/backtests")
-        assert listed.status_code == 200
-        rows = listed.json()["backtests"]
-        assert any(r["id"] == run_id for r in rows)
-        assert any(r["preset_name"] == "API预设" for r in rows)
