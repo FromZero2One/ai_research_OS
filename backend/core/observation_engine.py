@@ -9,14 +9,9 @@ that feed:
 
 from __future__ import annotations
 
-import uuid
-from datetime import UTC, datetime
-
 from core.logging import logger
 
 OBSERVATION_THRESHOLDS = {
-    "research_days_warning": 14,  # → attention after 14 days
-    "research_days_critical": 30,  # → need_research after 30 days
     "price_change_pct": 5.0,  # significant price change threshold
 }
 
@@ -27,11 +22,10 @@ async def run_observation_cycle() -> dict:
     Called by scheduler (daily) or manually via API.
     Returns summary of observations generated.
     """
-    from sqlalchemy import desc, select
+    from sqlalchemy import select
 
     from company.models import Company
     from core.database import managed_session
-    from research.models import ResearchSession
 
     async with managed_session() as session:
         observations = []
@@ -68,21 +62,6 @@ async def run_observation_cycle() -> dict:
         for row in prices_result.all():
             ticker_prices.setdefault(row.ticker, []).append({"date": row.date, "close": row.close})
 
-        # ── Batch preload: latest research per company ────────────────
-        company_ids = [c.id for c in companies_by_ticker.values() if c.id]
-        latest_research_by_company: dict[uuid.UUID, ResearchSession] = {}
-        if company_ids:
-            rs_result = await session.execute(
-                select(ResearchSession)
-                .where(ResearchSession.company_id.in_(company_ids))
-                .order_by(ResearchSession.company_id, desc(ResearchSession.created_at))
-            )
-            for rs in rs_result.scalars().all():
-                if rs.company_id is None:
-                    continue
-                if rs.company_id not in latest_research_by_company:
-                    latest_research_by_company[rs.company_id] = rs
-
         # ── Batch preload: sectors → companies in same sector ─────────
         sectors: set[str] = set()
         for c in companies_by_ticker.values():
@@ -108,25 +87,6 @@ async def run_observation_cycle() -> dict:
             company = companies_by_ticker.get(ticker)
             if not company:
                 continue
-
-            # Research freshness check
-            latest_research = latest_research_by_company.get(company.id) if company.id else None
-            days_since_research = None
-            if latest_research and latest_research.created_at:
-                delta = datetime.now(UTC) - latest_research.created_at
-                days_since_research = delta.days
-
-            if days_since_research is not None:
-                if days_since_research >= OBSERVATION_THRESHOLDS["research_days_critical"]:
-                    reasons.append(
-                        f"距上次研究 {days_since_research} 天"
-                        f"（超过 {OBSERVATION_THRESHOLDS['research_days_critical']} 天）"
-                    )
-                elif days_since_research >= OBSERVATION_THRESHOLDS["research_days_warning"]:
-                    reasons.append(
-                        f"距上次研究 {days_since_research} 天"
-                        f"（超过 {OBSERVATION_THRESHOLDS['research_days_warning']} 天）"
-                    )
 
             # Price change check
             prices_2 = ticker_prices.get(ticker, [])
@@ -157,25 +117,17 @@ async def run_observation_cycle() -> dict:
                         "ticker": ticker,
                         "company_name": company.name,
                         "reasons": reasons,
-                        "days_since_research": days_since_research,
                     }
                 )
 
                 from core.observation import Observation
 
-                obs_status = (
-                    "need_research"
-                    if days_since_research
-                    and days_since_research >= OBSERVATION_THRESHOLDS["research_days_critical"]
-                    else "attention"
-                )
                 session.add(
                     Observation(
                         ticker=ticker,
                         company_name=company.name,
                         reasons="\n".join(reasons),
-                        status=obs_status,
-                        days_since_research=days_since_research,
+                        status="attention",
                     )
                 )
 

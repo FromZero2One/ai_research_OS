@@ -1,26 +1,20 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useDashboard, useHealth, useLLMUsage, useObservations, useSchedulerStatus } from '@/stores/api'
+import { useHealth, useLLMUsage, useObservations, useSchedulerStatus } from '@/stores/api'
 
 const { data: scheduler } = useSchedulerStatus()
 const { data: obsData } = useObservations()
-const { data: dashboard } = useDashboard()
 const { data: llmUsage } = useLLMUsage()
 
-const hDash = useHealth('/dashboard')
-const hResearch = useHealth('/research/sessions?limit=1')
 const hCompanies = useHealth('/companies?limit=1')
 const hScheduler = useHealth('/scheduler/status')
 
 const stats = computed(() => [
-  { label: 'API 状态', value: hDash.isSuccess.value ? '正常' : '异常' },
+  { label: 'API 状态', value: hCompanies.isSuccess.value ? '正常' : '异常' },
   { label: '调度器', value: scheduler.value?.running ? '运行中' : '已停止' },
   { label: '观测记录', value: obsData.value?.observations?.length || 0 },
-  { label: 'Dashboard', value: dashboard.value ? '可用' : '不可用' },
 ])
 const healthList = computed(() => [
-  { name: 'Dashboard', isLoading: hDash.isLoading.value, isError: hDash.isError.value },
-  { name: '研究', isLoading: hResearch.isLoading.value, isError: hResearch.isError.value },
   { name: '公司', isLoading: hCompanies.isLoading.value, isError: hCompanies.isError.value },
   { name: '调度器', isLoading: hScheduler.isLoading.value, isError: hScheduler.isError.value },
 ])
@@ -67,7 +61,7 @@ const healthList = computed(() => [
       <template #header><div class="flex items-center justify-between"><span>👁️ 最近观测</span><span class="text-xs text-secondary">{{ obsData?.observations?.length || 0 }} 条记录</span></div></template>
       <div v-if="obsData?.observations?.length" class="space-y-2">
         <div v-for="obs in obsData.observations" :key="obs.id" class="item-block flex-col">
-          <div class="flex items-center justify-between w-full"><span class="font-medium text-sm">{{ obs.company_name || obs.ticker }}</span><el-tag :type="obs.status === 'need_research' ? 'danger' : 'warning'" size="small">{{ obs.status }}</el-tag></div>
+          <div class="flex items-center justify-between w-full"><span class="font-medium text-sm">{{ obs.company_name || obs.ticker }}</span><el-tag :type="obs.status === 'stale' ? 'danger' : 'warning'" size="small">{{ obs.status }}</el-tag></div>
           <div class="text-xs text-secondary mt-1">{{ obs.reasons?.join('、') || '无信号' }}</div>
           <div class="text-xs text-gray mt-1">{{ obs.observed_at ? new Date(obs.observed_at).toLocaleString('zh-CN') : '' }}</div>
         </div>

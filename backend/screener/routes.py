@@ -79,13 +79,6 @@ class PortfolioParams(BaseModel):
     name: str | None = Field(default=None, max_length=128)
 
 
-class ToResearchParams(BaseModel):
-    """POST /runs/{id}/to-research body。"""
-
-    tickers: list[str] | None = None
-    limit: int = Field(default=5, ge=1, le=50)
-
-
 class WatchlistParams(BaseModel):
     """POST /runs/{id}/watchlist body。"""
 
@@ -862,23 +855,6 @@ async def remove_saved_portfolio(
     if not await delete_portfolio(db, portfolio_id):
         raise NotFoundError("ScreenerPortfolio", str(portfolio_id))
     await db.commit()
-
-
-@router.post("/runs/{run_id}/to-research")
-async def to_research(
-    run_id: uuid.UUID,
-    params: ToResearchParams,
-    db: AsyncSession = Depends(get_db),
-):
-    """为推荐股创建研究中心会话（默认取置信度最高的 5 只，不自动规划）。"""
-    from screener.handoff import create_research_sessions
-
-    try:
-        return await create_research_sessions(
-            db, run_id, tickers=params.tickers, limit=params.limit
-        )
-    except ValueError as e:
-        raise NotFoundError("ScreenerRun", str(run_id)) from e
 
 
 @router.post("/runs/{run_id}/watchlist")

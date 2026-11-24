@@ -18,16 +18,11 @@ const selectedIndex = ref(0)
 const inputRef = ref<HTMLInputElement | null>(null)
 
 const commands: Command[] = [
-  { id: 'quick-research', label: '快速研究', description: '一键发起 AI 研究', icon: '⚡', route: '/research/quick', keywords: ['研究', '分析', 'research', 'quick'] },
-  { id: 'research', label: '研究中心', description: '查看所有研究会话', icon: '🔬', route: '/research', keywords: ['研究', '会话', 'research', 'session'] },
-  { id: 'timeline', label: '研究时间线', description: '按公司查看研究历史', icon: '📋', route: '/research/timeline', keywords: ['时间线', 'timeline', 'history'] },
-  { id: 'dashboard', label: '工作台', description: '每日投资工作台', icon: '🏠', route: '/', keywords: ['首页', '工作台', 'home', 'dashboard'] },
+  { id: 'screener', label: '价值筛选', description: '量化初筛 + LLM 深判', icon: '🎯', route: '/screener', keywords: ['筛选', 'screener', '价值'] },
   { id: 'companies', label: '公司', description: '浏览所有公司', icon: '🏢', route: '/companies', keywords: ['公司', '企业', 'company', 'ticker'] },
   { id: 'documents', label: '上传文档', description: '上传 PDF、报告或会议纪要', icon: '📄', route: '/documents', keywords: ['文档', '上传', 'pdf', 'document'] },
   { id: 'knowledge', label: '知识库搜索', description: '混合 RAG 搜索全部文档', icon: '🧠', route: '/knowledge', keywords: ['知识库', '搜索', 'rag', 'knowledge'] },
   { id: 'market', label: '行情', description: '市场行情与 K 线', icon: '📊', route: '/market', keywords: ['行情', '市场', 'k线', 'market', 'stock'] },
-  { id: 'ai', label: 'AI 中心', description: 'Prompt 模板与 AI 工具', icon: '⚡', route: '/ai', keywords: ['ai', 'prompt', '模板', '生成'] },
-  { id: 'portfolio', label: '自选列表', description: '关注的公司', icon: '💼', route: '/portfolio', keywords: ['自选', '关注', '组合', 'watchlist'] },
   { id: 'system', label: '系统状态', description: '调度器状态与执行记录', icon: '📡', route: '/system', keywords: ['系统', '状态', '调度', 'scheduler'] },
 ]
 

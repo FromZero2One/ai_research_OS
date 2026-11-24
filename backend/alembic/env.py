@@ -9,7 +9,6 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from ai.models import *  # noqa: F401, F403
 from alembic import context
 
 # Import all models so Alembic can detect them
@@ -21,8 +20,6 @@ from core.observation import *  # noqa: F401, F403
 from core.task_manager import *  # noqa: F401, F403
 from document.models import *  # noqa: F401, F403
 from market.models import *  # noqa: F401, F403
-from portfolio.models import *  # noqa: F401, F403
-from research.models import *  # noqa: F401, F403
 from screener.models import *  # noqa: F401, F403
 
 config = context.config

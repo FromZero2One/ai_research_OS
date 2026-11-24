@@ -170,17 +170,16 @@ class CompanyService:
     # ── Thesis ─────────────────────────────────────────────────────────
 
     async def get_thesis(self, ticker: str) -> dict | None:
-        """Get current thesis for a company (latest completed research or manual update)."""
+        """Get current manual thesis for a company (from EventLog override)."""
         from sqlalchemy import desc
 
         from core.event_log import EventLog
-        from research.models import ResearchSession
 
         company = await self.get_by_ticker(ticker)
         if not company:
             return None
 
-        # 1. Check for manual thesis override in EventLog
+        # Manual thesis override in EventLog
         result = await self.session.execute(
             select(EventLog)
             .where(
@@ -205,49 +204,13 @@ class CompanyService:
                 ),
             }
 
-        # 2. Fallback to latest completed research
-        research_result = await self.session.execute(
-            select(ResearchSession)
-            .where(
-                ResearchSession.company_id == company.id,
-                ResearchSession.status == "completed",
-                ResearchSession.thesis.isnot(None),
-            )
-            .order_by(desc(ResearchSession.updated_at))
-            .limit(1)
-        )
-        research_session = research_result.scalar_one_or_none()
-
-        if research_session and research_session.thesis:
-            structured = None
-            if research_session.extra_metadata and isinstance(
-                research_session.extra_metadata, dict
-            ):
-                structured = research_session.extra_metadata.get("structured_thesis")
-            return {
-                "ticker": ticker.upper(),
-                "company_name": company.name,
-                "thesis": research_session.thesis,
-                "decision": research_session.decision,
-                "confidence": research_session.confidence,
-                "source_session_id": str(research_session.id),
-                "updated_at": (
-                    research_session.updated_at.isoformat() if research_session.updated_at else None
-                ),
-                "structured_thesis": structured,
-            }
-
         return {
             "ticker": ticker.upper(),
             "company_name": company.name,
         }
 
     async def get_workspace(self, ticker: str) -> dict | None:
-        """Aggregated company workspace — thesis, timeline snippets, evidence."""
-        from sqlalchemy import desc
-
-        from research.models import ResearchEvidence, ResearchSession
-
+        """Aggregated company workspace — manual thesis only (research removed)."""
         company = await self.get_by_ticker(ticker)
         if not company:
             return None
@@ -255,40 +218,11 @@ class CompanyService:
         # Latest thesis
         thesis = await self.get_thesis(ticker)
 
-        # Recent research sessions
-        result = await self.session.execute(
-            select(ResearchSession)
-            .where(ResearchSession.company_id == company.id)
-            .order_by(desc(ResearchSession.created_at))
-            .limit(5)
-        )
-        sessions = list(result.scalars().all())
-
-        # Evidence summary across all sessions for this company
-        evidence_counts = {"supporting": 0, "opposing": 0, "neutral": 0}
-        for s in sessions:
-            ev_result = await self.session.execute(
-                select(ResearchEvidence).where(ResearchEvidence.session_id == s.id)
-            )
-            for ev in ev_result.scalars().all():
-                if ev.evidence_type in evidence_counts:
-                    evidence_counts[ev.evidence_type] += 1
-
         return {
             "ticker": ticker.upper(),
             "company_name": company.name,
             "company_id": str(company.id),
             "thesis": thesis,
-            "recent_research": [
-                {
-                    "id": str(s.id),
-                    "title": s.title,
-                    "status": s.status,
-                    "decision": s.decision,
-                    "thesis": s.thesis,
-                    "created_at": s.created_at.isoformat() if s.created_at else None,
-                }
-                for s in sessions
-            ],
-            "evidence_summary": evidence_counts,
+            "recent_research": [],
+            "evidence_summary": {"supporting": 0, "opposing": 0, "neutral": 0},
         }

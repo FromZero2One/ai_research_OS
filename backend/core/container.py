@@ -23,25 +23,13 @@ if TYPE_CHECKING:
     from market.service.freshness_service import FreshnessService
 
 from core.interfaces import (
-    AIService as AIServiceProtocol,
-)
-from core.interfaces import (
     CompanyService as CompanyServiceProtocol,
-)
-from core.interfaces import (
-    DashboardService as DashboardServiceProtocol,
 )
 from core.interfaces import (
     DocumentService as DocumentServiceProtocol,
 )
 from core.interfaces import (
     FinancialService as FinancialServiceProtocol,
-)
-from core.interfaces import (
-    HoldingService as HoldingServiceProtocol,
-)
-from core.interfaces import (
-    JournalService as JournalServiceProtocol,
 )
 from core.interfaces import (
     KnowledgeService as KnowledgeServiceProtocol,
@@ -56,28 +44,10 @@ from core.interfaces import (
     ProfileService as ProfileServiceProtocol,
 )
 from core.interfaces import (
-    ResearchEvidenceService as ResearchEvidenceServiceProtocol,
-)
-from core.interfaces import (
-    ResearchGatherService as ResearchGatherServiceProtocol,
-)
-from core.interfaces import (
-    ResearchReportService as ResearchReportServiceProtocol,
-)
-from core.interfaces import (
-    ResearchSessionService as ResearchSessionServiceProtocol,
-)
-from core.interfaces import (
-    ResearchThesisService as ResearchThesisServiceProtocol,
-)
-from core.interfaces import (
     SearchService as SearchServiceProtocol,
 )
 from core.interfaces import (
     ScreenerService as ScreenerServiceProtocol,
-)
-from core.interfaces import (
-    TimelineService as TimelineServiceProtocol,
 )
 
 
@@ -93,19 +63,9 @@ class Container:
         self._profile: ProfileServiceProtocol | None = None
         self._search: SearchServiceProtocol | None = None
         self._freshness: FreshnessService | None = None
-        self._session: ResearchSessionServiceProtocol | None = None
-        self._evidence: ResearchEvidenceServiceProtocol | None = None
-        self._report: ResearchReportServiceProtocol | None = None
-        self._gather: ResearchGatherServiceProtocol | None = None
-        self._thesis: ResearchThesisServiceProtocol | None = None
-        self._timeline: TimelineServiceProtocol | None = None
-        self._holding: HoldingServiceProtocol | None = None
-        self._journal: JournalServiceProtocol | None = None
         self._knowledge: KnowledgeServiceProtocol | None = None
         self._company: CompanyServiceProtocol | None = None
         self._document: DocumentServiceProtocol | None = None
-        self._ai: AIServiceProtocol | None = None
-        self._dashboard: DashboardServiceProtocol | None = None
         self._ratio: "RatioService | None" = None
         self._screener: ScreenerServiceProtocol | None = None
 
@@ -158,70 +118,6 @@ class Container:
         return self._freshness
 
     @property
-    def research_session_service(self) -> ResearchSessionServiceProtocol:
-        if self._session is None:
-            from research.session_service import SessionService
-
-            self._session = SessionService(self.session)
-        return self._session
-
-    @property
-    def research_evidence_service(self) -> ResearchEvidenceServiceProtocol:
-        if self._evidence is None:
-            from research.evidence_service import EvidenceService
-
-            self._evidence = EvidenceService(self.session)
-        return self._evidence
-
-    @property
-    def research_report_service(self) -> ResearchReportServiceProtocol:
-        if self._report is None:
-            from research.report_service import ReportService
-
-            self._report = ReportService(self.session)
-        return self._report
-
-    @property
-    def research_gather_service(self) -> ResearchGatherServiceProtocol:
-        if self._gather is None:
-            from research.gather_service import GatherService
-
-            self._gather = GatherService(self.session)
-        return self._gather
-
-    @property
-    def research_thesis_service(self) -> ResearchThesisServiceProtocol:
-        if self._thesis is None:
-            from research.thesis_service import ThesisService
-
-            self._thesis = ThesisService(self.session)
-        return self._thesis
-
-    @property
-    def timeline_service(self) -> TimelineServiceProtocol:
-        if self._timeline is None:
-            from research.timeline_service import TimelineService
-
-            self._timeline = TimelineService(self.session)
-        return self._timeline
-
-    @property
-    def holding_service(self) -> HoldingServiceProtocol:
-        if self._holding is None:
-            from portfolio.service.holding_service import HoldingService
-
-            self._holding = HoldingService(self.session)
-        return self._holding
-
-    @property
-    def journal_service(self) -> JournalServiceProtocol:
-        if self._journal is None:
-            from portfolio.service.journal_service import JournalService
-
-            self._journal = JournalService(self.session)
-        return self._journal
-
-    @property
     def knowledge_service(self) -> KnowledgeServiceProtocol:
         if self._knowledge is None:
             import importlib.util
@@ -254,22 +150,6 @@ class Container:
 
             self._document = DocumentService(self.session)
         return self._document
-
-    @property
-    def ai_service(self) -> AIServiceProtocol:
-        if self._ai is None:
-            from ai.service import AIService
-
-            self._ai = AIService(self.session)
-        return self._ai
-
-    @property
-    def dashboard_service(self) -> DashboardServiceProtocol:
-        if self._dashboard is None:
-            from dashboard.service import DashboardService
-
-            self._dashboard = DashboardService(self.session)
-        return self._dashboard
 
     @property
     def screener_service(self) -> ScreenerServiceProtocol:

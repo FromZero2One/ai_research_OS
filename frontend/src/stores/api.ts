@@ -109,102 +109,6 @@ export function useDeleteCompany() {
   })
 }
 
-// ── Research ──
-export interface ResearchPlanItem {
-  id: string
-  text: string
-  priority?: 'high' | 'medium' | 'low'
-  status?: 'pending' | 'in_progress' | 'completed'
-  answer?: string | null
-  evidence_count?: number
-}
-
-export interface ResearchPlan {
-  research_goal: string
-  sub_questions: Array<ResearchPlanItem | string>
-  analysis_dimensions: string[]
-  data_requirements: string[]; suggested_sources: string[]
-  version?: number
-}
-
-export interface ResearchSession {
-  id: string; title: string; question: string; context: string | null
-  company_id: string | null; status: string; thesis: string | null
-  decision: string | null; confidence: number | null; plan: ResearchPlan | null; created_at: string
-}
-
-export interface ResearchSessionDetail extends ResearchSession {
-  evidences: any[]; reports: any[]
-}
-
-export const RESEARCH_STATUS_LABELS: Record<string, string> = {
-  draft: '草稿',
-  researching: '研究中',
-  reviewing: '评审中',
-  completed: '已完成',
-  archived: '已归档',
-}
-
-export const DECISION_LABELS: Record<string, string> = {
-  buy: '买入',
-  sell: '卖出',
-  hold: '持有',
-  watch: '关注',
-  pass: '跳过',
-}
-
-export function useResearchSessions(status?: string) {
-  const params = status ? `?status=${status}` : ''
-  return useList<ResearchSession[]>(['research', status || 'all'], `/research/sessions${params}`)
-}
-
-export function useResearchSession(id: string) {
-  return useGet<ResearchSessionDetail>(['research', id], `/research/sessions/${id}`)
-}
-
-export function useCreateResearch() {
-  return useCreate<ResearchSession>('/research/sessions', [['research']])
-}
-
-export function useGeneratePlan() {
-  const qc = useQueryClient()
-  return useMutation<any, Error, string>({
-    mutationFn: (sessionId) => fetchApi(`/research/sessions/${sessionId}/plan`, { method: 'POST' }),
-    onSuccess: (_, sessionId) => { qc.invalidateQueries({ queryKey: ['research', sessionId] }) },
-  })
-}
-
-export function useAutoGatherEvidence() {
-  const qc = useQueryClient()
-  return useMutation<any, Error, string>({
-    mutationFn: (sessionId) => fetchApi(`/research/sessions/${sessionId}/auto-gather?use_plan=true`, { method: 'POST' }),
-    onSuccess: (_, sessionId) => { qc.invalidateQueries({ queryKey: ['research', sessionId] }) },
-  })
-}
-
-export function useGenerateReport() {
-  const qc = useQueryClient()
-  return useMutation<any, Error, { sessionId: string; isFinal: boolean }>({
-    mutationFn: ({ sessionId, isFinal }) => fetchApi(
-      `/research/sessions/${sessionId}/generate-report`,
-      { method: 'POST', body: JSON.stringify({ is_final: isFinal }) },
-    ),
-    onSuccess: (_, { sessionId }) => { qc.invalidateQueries({ queryKey: ['research', sessionId] }) },
-  })
-}
-
-export function useFinalizeResearch() {
-  const qc = useQueryClient()
-  return useMutation<any, Error, { sessionId: string; thesis: string; decision: string; confidence: number }>({
-    mutationFn: ({ sessionId, thesis, decision, confidence }) =>
-      fetchApi(
-        `/research/sessions/${sessionId}/finalize`,
-        { method: 'POST', body: JSON.stringify({ thesis, decision, confidence }) },
-      ),
-    onSuccess: (_, { sessionId }) => { qc.invalidateQueries({ queryKey: ['research', sessionId] }) },
-  })
-}
-
 // ── Documents ──
 export interface Document {
   id: string; title: string; doc_type: string; source: string | null
@@ -264,10 +168,7 @@ export function useWatchCompany() {
   const qc = useQueryClient()
   return useMutation<Company, Error, { ticker: string; name?: string; priority?: number; target_price?: number | null; reason?: string }>({
     mutationFn: (body) => fetchApi('/companies/watch', { method: 'POST', body: JSON.stringify(body) }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['companies'] })
-      qc.invalidateQueries({ queryKey: ['dashboard'] })
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['companies'] }) },
   })
 }
 
@@ -409,38 +310,6 @@ export function useLlmModels() {
   )
 }
 
-// ── Portfolio ──
-export function useHoldings() { return useList<any[]>(['holdings'], '/portfolio/holdings') }
-
-export function useAddHolding() {
-  const qc = useQueryClient()
-  return useMutation<unknown, Error, { ticker: string; shares: number; avg_cost_basis: number | null }>({
-    mutationFn: (body) => fetchApi('/portfolio/holdings', { method: 'POST', body: JSON.stringify(body) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['holdings'] }) },
-  })
-}
-
-// ── Dashboard ──
-export interface DashboardWatchlistItem {
-  id: string; ticker: string; company_name: string; sector: string | null
-  priority: number; target_price: number | null; reason: string | null
-  latest_price: number | null; price_date: string | null; price_change: number | null
-  status: 'normal' | 'attention' | 'need_research'; thesis: string | null
-  last_research_at: string | null; days_since_research: number | null
-}
-export interface DashboardWatchlist { watchlist_id: string; watchlist_name: string; items: DashboardWatchlistItem[] }
-export interface DashboardReminder { ticker: string; company_name: string; days_since_research: number; reasons: string[]; priority: number }
-export interface DashboardRecentResearch { id: string; title: string; question: string; status: string; thesis: string | null; created_at: string }
-export interface DashboardMarketItem {
-  ticker: string; company_name: string; sector: string | null; latest_price: number | null; change_pct: number | null
-}
-export interface DashboardData {
-  watchlist: DashboardWatchlist[]
-  research_reminders: DashboardReminder[]; recent_research: DashboardRecentResearch[]
-  market_overview?: DashboardMarketItem[]
-}
-export function useDashboard() { return useGet<DashboardData>(['dashboard'], '/dashboard') }
-
 // ── System ──
 export function useSchedulerStatus() {
   return useQuery<{ running?: boolean; jobs?: any[] }>({
@@ -472,116 +341,20 @@ export function useLLMUsage() {
   return useGet<LLMUsageSummary>(['llm-usage'], '/ai/usage', { refetchInterval: 30_000 })
 }
 
-export interface PromptTemplate {
-  id: string; name: string; description: string | null
-  system_prompt: string | null; user_prompt_template: string | null
-  temperature: number | null; max_tokens: number | null; is_active: boolean
-}
-
-export function useListTemplates() {
-  return useList<PromptTemplate[]>(['ai-templates'], '/ai/templates')
-}
-
-export function useCreateTemplate() {
-  const qc = useQueryClient()
-  return useMutation<PromptTemplate, Error, Record<string, unknown>>({
-    mutationFn: (body) => fetchApi('/ai/templates', { method: 'POST', body: JSON.stringify(body) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['ai-templates'] }) },
-  })
-}
-
-export function useUpdateTemplate(id: MaybeRefOrGetter<string | null>) {
-  const qc = useQueryClient()
-  return useMutation<PromptTemplate, Error, Record<string, unknown>>({
-    mutationFn: (body) => fetchApi(`/ai/templates/${toValue(id) ?? ''}`, { method: 'PATCH', body: JSON.stringify(body) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['ai-templates'] }) },
-  })
-}
-
-export function useDeleteTemplate() {
-  const qc = useQueryClient()
-  return useMutation<unknown, Error, string>({
-    mutationFn: (id) => fetchApi(`/ai/templates/${id}`, { method: 'DELETE' }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['ai-templates'] }) },
-  })
-}
-
-export function useExecuteTemplate() {
-  return useMutation<{ content: string; model: string; error?: string }, Error, { prompt_name: string; variables: Record<string, string> }>({
-    mutationFn: (body) => fetchApi('/ai/generate', { method: 'POST', body: JSON.stringify(body) }),
-  })
-}
-
-// ── Quick Research ──
-export interface QuickResearchRequest { ticker: string; question: string; title?: string; plan_type?: string | null }
-export interface QuickResearchResponse { session_id: string; status: string }
-export interface ResearchProgress { step: string; message: string; status: string; session_id: string; report_id?: string; error?: string }
-
-// 预置研究类型（与后端 research/planner.py PLAN_TEMPLATES 对应）
-export const PLAN_TYPE_OPTIONS = [
-  { value: 'initial', label: '首次覆盖 — 基本面 / 行业 / 估值' },
-  { value: 'earnings', label: '财报点评 — 最新一期业绩' },
-  { value: 'thesis_check', label: '论点检验 — 验证既有投资逻辑' },
-  { value: 'industry', label: '行业对比 — 同业优劣势与估值差' },
-] as const
-
-export function useQuickResearch() {
-  const qc = useQueryClient()
-  return useMutation<QuickResearchResponse, Error, QuickResearchRequest>({
-    mutationFn: (data) => fetchApi('/research/quick', { method: 'POST', body: JSON.stringify(data) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['research'] }); qc.invalidateQueries({ queryKey: ['dashboard'] }) },
-  })
-}
-
-export function subscribeResearchStream(
-  sessionId: string,
-  onProgress: (progress: ResearchProgress) => void,
-  onComplete: (progress: ResearchProgress) => void,
-  onError: (error: string) => void,
-): () => void {
-  const eventSource = new EventSource(`/api/research/quick/${sessionId}/stream`)
-  eventSource.addEventListener('progress', (event) => { try { onProgress(JSON.parse(event.data)) } catch {} })
-  eventSource.addEventListener('complete', (event) => { try { onComplete(JSON.parse(event.data)) } catch {}; eventSource.close() })
-  eventSource.addEventListener('error', () => { onError('SSE connection error'); eventSource.close() })
-  return () => eventSource.close()
-}
-
-// ── Research Timeline ──
-export interface TimelineEvent {
-  type: string; date: string; session_id?: string; session_title?: string
-  report_id?: string; version?: number; is_final?: boolean
-  thesis?: string | null; decision?: string | null; confidence?: number | null
-  detail: string; status?: string
-}
-export interface TimelineData { ticker: string; company_name: string | null; events: TimelineEvent[] }
-export interface DiffData {
-  report_id: string; session_id: string; from_version: number; to_version: number
-  diff: string; stats: { additions: number; deletions: number; context_lines: number }
-}
-export interface SessionTimelineData { session_id: string; session_title: string; status: string; thesis: string | null; decision: string | null; events: TimelineEvent[] }
-
-export function useTimeline(ticker: string) {
-  return useGet<TimelineData>(['timeline', ticker], ticker ? `/research/timeline?ticker=${encodeURIComponent(ticker)}` : '')
-}
-
-export function useReportDiff(reportId: string, otherVersion: number) {
-  return useGet<DiffData>(['report-diff', reportId, String(otherVersion)], reportId ? `/research/reports/${reportId}/diff?other_version=${otherVersion}` : '')
-}
-
-export function useSessionTimeline(sessionId: string) {
-  return useGet<SessionTimelineData>(['session-timeline', sessionId], sessionId ? `/research/sessions/${sessionId}/timeline` : '')
-}
-
 // ── Thesis Panel ──
+export const DECISION_LABELS: Record<string, string> = {
+  buy: '买入',
+  sell: '卖出',
+  hold: '持有',
+  watch: '关注',
+  pass: '跳过',
+}
+
+// ── Screener（智能选股）──
 export interface ThesisData {
   ticker: string; company_name: string; thesis: string | null; decision: string | null
   confidence: number | null; source_session_id: string | null; updated_at: string | null
   structured_thesis?: { bull_case: string[]; bear_case: string[]; key_drivers: string[]; risks: string[] } | null
-}
-export interface WorkspaceData {
-  ticker: string; company_name: string; company_id: string; thesis: ThesisData | null
-  recent_research: { id: string; title: string; status: string; decision: string | null; thesis: string | null; created_at: string | null }[]
-  evidence_summary: { supporting: number; opposing: number; neutral: number }
 }
 
 export function useCompanyThesis(ticker: MaybeRefOrGetter<string>) {
@@ -595,15 +368,8 @@ export function useUpdateThesis() {
   const qc = useQueryClient()
   return useMutation<any, Error, { ticker: string; thesis: string; decision?: string; confidence?: number }>({
     mutationFn: ({ ticker, thesis, decision, confidence }) => fetchApi(`/companies/by-ticker/${encodeURIComponent(ticker)}/thesis`, { method: 'POST', body: JSON.stringify({ thesis, decision, confidence }) }),
-    onSuccess: (_, { ticker }) => { qc.invalidateQueries({ queryKey: ['thesis', ticker] }); qc.invalidateQueries({ queryKey: ['dashboard'] }) },
+    onSuccess: (_, { ticker }) => { qc.invalidateQueries({ queryKey: ['thesis', ticker] }) },
   })
-}
-
-export function useCompanyWorkspace(ticker: MaybeRefOrGetter<string>) {
-  return useGet<WorkspaceData>(
-    computed(() => ['workspace', toValue(ticker)]),
-    computed(() => (toValue(ticker) ? `/companies/by-ticker/${encodeURIComponent(toValue(ticker))}/workspace` : '')),
-  )
 }
 
 // ── Screener（智能选股）──
@@ -959,21 +725,6 @@ export function usePushScreenerToWatchlist(id: MaybeRefOrGetter<string | null>) 
   })
 }
 
-export interface ScreenerHandoffResult {
-  run_id: string
-  created: { session_id: string; ticker: string; name: string }[]
-  skipped: { ticker: string; name: string; reason: string }[]
-  requested: number
-}
-export function usePushScreenerToResearch(id: MaybeRefOrGetter<string | null>) {
-  return useMutation<ScreenerHandoffResult, Error, { limit?: number; tickers?: string[] }>({
-    mutationFn: (payload) =>
-      fetchApi(`/screener/runs/${toValue(id) ?? ''}/to-research`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      }),
-  })
-}
 export function useScreenerRules() {
   return useGet<{ rules: Record<string, any> | null; criteria_hash?: string }>(['screener-rules'], '/screener/rules')
 }

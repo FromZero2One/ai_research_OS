@@ -109,7 +109,7 @@ SAMPLE_COMPANIES = [
 
 
 async def seed() -> None:
-    """Insert sample companies and a demo research session."""
+    """Insert sample companies."""
     configure_logging()
     logger.info("Seeding sample data...")
 
@@ -128,37 +128,8 @@ async def seed() -> None:
             except Exception as e:
                 logger.warning("  Skip %s: %s", data["ticker"], e)
 
-        # Create a demo research session
-        from research.session_service import SessionService
-
-        research = SessionService(session)
-        session_obj = await research.create(
-            title="NVDA — AI Growth Thesis 2026",
-            question=(
-                "Is NVIDIA still a strong buy given the rapid AI infrastructure buildout, "
-                "increasing competition from AMD and custom chips, and potential demand normalization?"
-            ),
-            context=(
-                "NVIDIA has been the primary beneficiary of the AI boom. "
-                "Data center revenue has grown 5x since FY2023. "
-                "However, hyperscalers are developing custom ASICs, "
-                "AMD MI300X is gaining traction, and export controls may limit TAM."
-            ),
-            company_id=None,  # We'll get NVDA's ID
-        )
-
-        # Find NVDA
-        nvda = await svc.get_by_ticker("NVDA")
-        if nvda:
-            session_obj.company_id = nvda.id
-            logger.info(
-                "  Research session '%s' linked to %s",
-                session_obj.title,
-                nvda.ticker,
-            )
-
         await session.commit()
-        logger.info("Seeding complete: %d companies, 1 research session", created)
+        logger.info("Seeding complete: %d companies", created)
 
 
 async def init_db() -> None:

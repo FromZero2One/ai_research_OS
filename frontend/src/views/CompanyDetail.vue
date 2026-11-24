@@ -4,9 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   DECISION_LABELS,
-  RESEARCH_STATUS_LABELS,
   useCompany,
-  useCompanyWorkspace,
+  useCompanyThesis,
   useDeleteCompany,
   useDocuments,
   useFinancialMetrics,
@@ -15,7 +14,6 @@ import {
   useIngestProfile,
   useMarketPrices,
   useRatios,
-  useResearchSessions,
   useUpdateCompany,
   useUpdateThesis,
   useValuationPercentile,
@@ -35,11 +33,11 @@ const deleteCompany = useDeleteCompany()
 const updateCompany = useUpdateCompany(id)
 
 const activeTab = ref('概览')
-const { data: docsData } = useDocuments(); const { data: sessions } = useResearchSessions()
+const { data: docsData } = useDocuments()
 const ticker = computed(() => company.value?.ticker || '')
 const { data: priceData } = useMarketPrices(ticker, 260)
 const { data: finData } = useFinancialMetrics(ticker)
-const { data: workspace } = useCompanyWorkspace(ticker)
+const { data: thesisData } = useCompanyThesis(ticker)
 const updateThesis = useUpdateThesis()
 const { data: ratioData } = useRatios(ticker)
 const { data: vp } = useValuationPercentile(ticker)
@@ -72,9 +70,7 @@ const epsData = computed(() => financials.value.filter((m) => m.metric_name === 
 const editingThesis = ref(false); const thesisText = ref(''); const thesisDecision = ref('watch'); const thesisConfidence = ref(0.6)
 const editingCompany = ref(false); const editName = ref(''); const editSector = ref(''); const editIndustry = ref(''); const editDesc = ref(''); const editTags = ref('')
 const ingesting = ref(false); const showDeleteConfirm = ref(false); const deleting = ref(false)
-const currentThesis = computed(() => workspace.value?.thesis || null)
-const evidenceCounts = computed(() => workspace.value?.evidence_summary || { supporting: 0, opposing: 0, neutral: 0 })
-const relatedSessions = computed(() => sessions.value?.filter((s: any) => s.company_id === id) || [])
+const currentThesis = computed(() => thesisData.value || null)
 const relatedDocs = computed(() => docsData.value?.items?.filter((d: any) => d.company_id === id) || [])
 
 async function handleRefreshData() {
@@ -126,7 +122,6 @@ async function handleSaveCompany() {
           <el-tag v-if="currentThesis?.thesis" type="primary" size="small" effect="plain">有观点</el-tag>
           <el-button @click="editName=company.name; editSector=company.sector||''; editIndustry=company.industry||''; editDesc=company.description||''; editTags=company.tags.map((t:any)=>t.tag).join(', '); editingCompany=true">编辑</el-button>
           <el-button @click="showDeleteConfirm=true" style="background:var(--danger);color:#fff">🗑 删除</el-button>
-          <el-button @click="router.push(`/research/quick?ticker=${company.ticker}`)" type="primary">⚡ 快速研究</el-button>
         </div>
       </div>
     </div>
@@ -150,10 +145,6 @@ async function handleSaveCompany() {
             </el-col>
           </el-row>
           <el-card v-if="company.description" shadow="never"><template #header>公司简介</template><p class="text-sm leading-relaxed">{{ company.description }}</p></el-card>
-          <el-card v-if="evidenceCounts.supporting>0||evidenceCounts.opposing>0" shadow="never">
-            <template #header>证据总览</template>
-            <div class="flex gap-4 text-sm"><span style="color:var(--success)">✅ {{ evidenceCounts.supporting }} 支持</span><span style="color:var(--danger)">⚠️ {{ evidenceCounts.opposing }} 反对</span><span class="text-secondary">📊 {{ evidenceCounts.neutral }} 中性</span></div>
-          </el-card>
         </div>
       </el-tab-pane>
 
@@ -182,17 +173,6 @@ async function handleSaveCompany() {
               </div>
             </div>
             <div v-else class="text-center py-6"><p class="text-sm text-secondary mb-3">还没有投资观点</p><el-button @click="thesisText=''; editingThesis=true" type="primary">✏️ 创建观点</el-button></div>
-          </el-card>
-          <el-card v-if="evidenceCounts.supporting>0||evidenceCounts.opposing>0" shadow="never">
-            <template #header>📊 证据统计</template>
-            <el-row :gutter="16"><el-col :span="8"><div class="evidence-stat" style="background:rgba(52,211,153,0.05);border:1px solid rgba(52,211,153,0.2)"><div class="evidence-count" style="color:var(--success)">{{ evidenceCounts.supporting }}</div><div class="text-xs text-secondary mt-1">支持</div></div></el-col><el-col :span="8"><div class="evidence-stat" style="background:rgba(248,113,113,0.05);border:1px solid rgba(248,113,113,0.2)"><div class="evidence-count" style="color:var(--danger)">{{ evidenceCounts.opposing }}</div><div class="text-xs text-secondary mt-1">反对</div></div></el-col><el-col :span="8"><div class="evidence-stat" style="background:rgba(154,160,166,0.05);border:1px solid var(--border)"><div class="evidence-count" style="color:var(--text-secondary)">{{ evidenceCounts.neutral }}</div><div class="text-xs text-secondary mt-1">中性</div></div></el-col></el-row>
-          </el-card>
-          <el-card v-if="workspace?.recent_research?.length" shadow="never">
-            <template #header>📋 近期研究</template>
-            <div v-for="s in workspace.recent_research" :key="s.id" class="research-item" @click="router.push(`/research/${s.id}`)">
-              <div><div class="text-sm">{{ s.title }}</div><div class="text-xs text-secondary mt-0.5">{{ s.created_at?new Date(s.created_at).toLocaleDateString('zh-CN'):'' }}</div></div>
-              <div class="flex items-center gap-2"><el-tag v-if="s.decision" size="small" type="success">{{ DECISION_LABELS[s.decision] || s.decision }}</el-tag><span class="text-xs text-secondary">{{ RESEARCH_STATUS_LABELS[s.status] || s.status }}</span></div>
-            </div>
           </el-card>
         </div>
       </el-tab-pane>
@@ -246,17 +226,6 @@ async function handleSaveCompany() {
         </div>
       </el-tab-pane>
 
-      <el-tab-pane label="研究" name="研究">
-        <div class="space-y-4">
-          <div class="flex items-center justify-between"><span class="text-sm text-secondary">研究会话列表</span><el-button @click="router.push(`/research/quick?ticker=${company.ticker}`)" type="primary" size="small">+ 新建研究会话</el-button></div>
-          <div v-if="!relatedSessions.length" class="empty-card"><div class="text-3xl mb-3">🔬</div><div class="font-medium">暂无研究</div><div class="text-sm text-secondary mt-1">点击上方 "新建研究会话" 开始研究</div></div>
-          <div v-else v-for="s in relatedSessions" :key="s.id" class="session-card" @click="router.push(`/research/${s.id}`)">
-            <div><div class="font-medium text-primary">{{ s.title }}</div><div class="text-sm text-secondary mt-1 line-clamp-1">{{ s.question }}</div></div>
-            <div class="flex items-center gap-2 ml-3"><el-tag v-if="s.decision" :type="s.decision==='buy'?'success':s.decision==='sell'?'danger':'warning'" size="small" effect="dark">{{ DECISION_LABELS[s.decision] || s.decision }}</el-tag><el-tag size="small">{{ RESEARCH_STATUS_LABELS[s.status] || s.status }}</el-tag></div>
-          </div>
-        </div>
-      </el-tab-pane>
-
       <el-tab-pane label="文档" name="文档">
         <div class="space-y-4">
           <div class="flex items-center justify-between"><span class="text-sm text-secondary">已上传文档</span><el-button @click="router.push(`/documents?company=${id}`)" type="primary" size="small">+ 上传文档</el-button></div>
@@ -283,13 +252,7 @@ async function handleSaveCompany() {
 .page { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
 .thesis-bar { display: flex; align-items: center; padding: 16px; border-radius: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-left: 4px solid var(--accent); }
 .thesis-block { padding: 12px; border-radius: 8px; }
-.evidence-stat { padding: 16px; border-radius: 8px; text-align: center; }
-.evidence-count { font-size: 24px; font-weight: 700; }
-.research-item { display: flex; align-items: center; justify-content: space-between; padding: 12px; border-radius: 8px; background: var(--bg-tertiary); cursor: pointer; margin-bottom: 8px; }
-.research-item:hover { background: var(--border); }
 .empty-card { padding: 32px; border-radius: 12px; background: var(--bg-secondary); border: 1px solid var(--border); text-align: center; }
-.session-card { display: flex; align-items: center; justify-content: space-between; padding: 20px; border-radius: 12px; background: var(--bg-secondary); border: 1px solid var(--border); cursor: pointer; margin-bottom: 12px; }
-.session-card:hover { border-color: rgba(79,140,255,0.3); }
 .doc-card { padding: 16px; border-radius: 12px; background: var(--bg-secondary); border: 1px solid var(--border); margin-bottom: 8px; }
 .text-success { color: var(--success); }
 .text-warning { color: var(--warning); }

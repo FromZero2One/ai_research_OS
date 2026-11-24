@@ -13,7 +13,6 @@ import {
   useScreenerMetrics,
   useScreenerPresets,
   useDeleteScreenerPortfolio,
-  usePushScreenerToResearch,
   usePushScreenerToWatchlist,
   useRebalanceScreenerPortfolio,
   useScreenerPortfolio,
@@ -420,9 +419,6 @@ function viewPortfolio(run: ScreenerRunSummary) {
   rebalanceResult.value = null
 }
 
-const handoffRunId = ref<string | null>(null)
-const handoffMutation = usePushScreenerToResearch(handoffRunId)
-
 // ── 运行明细 + 单只操作 ──
 const detailRunId = ref<string | null>(null)
 const { data: detailData } = useScreenerRun(detailRunId)
@@ -437,17 +433,6 @@ const verdictLabel: Record<string, { label: string; type: string }> = {
 function viewDetail(run: ScreenerRunSummary) {
   detailRunId.value = run.id
 }
-async function pushOneToResearch(row: ScreenerJudgement) {
-  if (!detailRunId.value) return
-  handoffRunId.value = detailRunId.value
-  try {
-    const r = await handoffMutation.mutateAsync({ tickers: [row.ticker], limit: 1 })
-    if (r.created.length) ElMessage.success(`已为 ${row.name} 创建研究会话`)
-    else ElMessage.info(`${row.name} 已有研究会话`)
-  } catch (e: any) {
-    ElMessage.error(e.message || '送入研究失败')
-  }
-}
 async function addOneToWatchlist(row: ScreenerJudgement) {
   if (!detailRunId.value) return
   watchlistRunId.value = detailRunId.value
@@ -458,17 +443,6 @@ async function addOneToWatchlist(row: ScreenerJudgement) {
     else ElMessage.warning(`${row.name} 缺少公司记录，无法加入自选`)
   } catch (e: any) {
     ElMessage.error(e.message || '加入自选失败')
-  }
-}
-
-async function pushToResearch(run: ScreenerRunSummary) {
-  handoffRunId.value = run.id
-  try {
-    const result = await handoffMutation.mutateAsync({ limit: 5 })
-    const skipped = result.skipped.length ? `，跳过 ${result.skipped.length} 只` : ''
-    ElMessage.success(`已创建 ${result.created.length} 个研究会话${skipped}`)
-  } catch (e: any) {
-    ElMessage.error(e.message || '送入研究失败')
   }
 }
 
@@ -875,15 +849,6 @@ async function removeSavedPortfolio(p: ScreenerSavedPortfolio) {
                 >取消</el-button>
               </template>
             </el-table-column>
-            <el-table-column label="研究" width="70">
-              <template #default="{ row }">
-                <el-button
-                  size="small" link type="primary"
-                  :loading="handoffMutation.isPending.value && handoffRunId === row.id"
-                  @click.stop="pushToResearch(row)"
-                >送入</el-button>
-              </template>
-            </el-table-column>
           </el-table>
         </el-card>
       </el-col>
@@ -962,12 +927,6 @@ async function removeSavedPortfolio(p: ScreenerSavedPortfolio) {
         </el-table-column>
         <el-table-column label="操作" width="110">
           <template #default="{ row }">
-            <el-button
-              v-if="row.status === 'ok' && row.recommend"
-              size="small" link type="primary"
-              :loading="handoffMutation.isPending.value && handoffRunId === detailRunId"
-              @click.stop="pushOneToResearch(row)"
-            >送入</el-button>
             <el-button
               v-if="row.status === 'ok' && row.recommend"
               size="small" link

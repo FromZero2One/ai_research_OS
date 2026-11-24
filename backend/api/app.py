@@ -28,10 +28,6 @@ from fastapi.responses import JSONResponse
 # registration can no longer rely on route modules importing services
 # transitively. Import every model explicitly (same list as alembic/env.py)
 # so SQLAlchemy metadata and mapper configuration are always complete.
-from ai.models import *  # noqa: F401, F403
-
-# ── Module routers ──────────────────────────────────────────────────
-from ai.routes import router as ai_router
 from company.models import *  # noqa: F401, F403
 from company.routes import router as company_router
 from core.config import settings
@@ -51,7 +47,7 @@ from core.logging import configure_logging, logger
 from core.observation import *  # noqa: F401, F403
 from core.scheduler_routes import router as scheduler_router
 from core.task_manager import *  # noqa: F401, F403
-from dashboard.routes import router as dashboard_router
+from core.system_routes import router as system_router
 from document.models import *  # noqa: F401, F403
 from document.routes import router as document_router
 from document.tasks import *  # noqa: F401, F403
@@ -66,10 +62,6 @@ from market.routes.price_routes import router as market_price_router
 from market.routes.profile_routes import router as market_profile_router
 from market.routes.ratio_routes import router as market_ratio_router
 from market.routes.search_routes import router as market_search_router
-from portfolio.models import *  # noqa: F401, F403
-from portfolio.routes import router as portfolio_router
-from research.models import *  # noqa: F401, F403
-from research.routes import router as research_router
 
 
 @asynccontextmanager
@@ -269,12 +261,9 @@ def create_app() -> FastAPI:
     app.include_router(market_freshness_router, prefix="/api/v1")
     app.include_router(document_router, prefix="/api/v1")
     app.include_router(knowledge_router, prefix="/api/v1")
-    app.include_router(ai_router, prefix="/api/v1")
-    app.include_router(research_router, prefix="/api/v1")
-    app.include_router(portfolio_router, prefix="/api/v1")
     app.include_router(scheduler_router, prefix="/api/v1")
     app.include_router(event_router, prefix="/api/v1")
-    app.include_router(dashboard_router, prefix="/api/v1")
+    app.include_router(system_router, prefix="/api/v1")
     app.include_router(screener_router, prefix="/api/v1")
 
     return app
