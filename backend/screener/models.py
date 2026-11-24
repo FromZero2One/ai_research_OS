@@ -132,23 +132,6 @@ class ScreenerBacktestRun(Base, UUIDMixin, TimestampMixin):
     finished_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
-class ScreenerPortfolio(Base, UUIDMixin, TimestampMixin):
-    """保存下来的组合方案（参数 + 构建结果），供历史查看与再平衡对照。"""
-
-    __tablename__ = "portfolios"
-    __table_args__ = {"schema": "screener"}
-
-    run_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("screener.screener_runs.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    name: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    params: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    result: Mapped[dict] = mapped_column(JSONB, nullable=False)
-
-
 class ScreenerPerformanceSnapshot(Base, UUIDMixin, TimestampMixin):
     """推荐后表现的定期快照（同一 run 每日一条，幂等 upsert）。"""
 
