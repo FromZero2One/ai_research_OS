@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import UTC, datetime
 
@@ -17,7 +18,6 @@ from core.config import settings
 from core.event_service import EventLogger
 from core.logging import logger
 from screener import screening
-from screener.criteria import read_criteria
 from screener.errors import ScreenerCancelled
 from screener.industry_ranking import compute_industry_percentiles
 from screener.judge import judge_candidates
@@ -25,7 +25,6 @@ from screener.models import ScreenerJudgement, ScreenerRun
 from screener.pool import filter_pool
 from screener.report import build_report, report_path_for
 from screener.rules_schema import hash_criteria
-from screener.translate import get_or_translate_rules
 from screener.valuation import required_data_metrics
 
 
@@ -290,12 +289,12 @@ def _financial_asof(financials: dict[str, list]) -> str | None:
 
 
 async def trigger_run(
-    db: AsyncSession, params: dict | None = None, enqueue: bool = True
+    db: AsyncSession, params: dict, enqueue: bool = True
 ) -> ScreenerRun | None:
     """手动触发一次筛选。已有 pending/running 时返回 None（路由转 409）。
 
-    params 形如 {"mode": "presets", "pool": "all", "preset_ids": [...], "combine": "union"}；
-    None = v1 自由文本模式（读 criteria.md，走 LLM 翻译）。
+    params 形如 {"mode": "presets", "pool": "all", "preset_ids": [...], "combine": "union"}，
+    必填且 mode 必须为 "presets"（freeform 已删除；非法参数 ValueError → 路由层 422）。
     preset_ids 引用不存在的预设 → ValueError（路由层转 422）。
     """
     active = (
@@ -308,55 +307,57 @@ async def trigger_run(
     if active:
         return None
 
-    if params is None:
-        text = read_criteria()
-        run = ScreenerRun(criteria_hash=hash_criteria(text), criteria_text=text)
-    else:
-        from screener.models import CriteriaPreset
+    from screener.models import CriteriaPreset
 
-        mode = params.get("mode", "presets")
-        preset_ids = params.get("preset_ids") or []
-        combine = params.get("combine", "union")
-        pool = params.get("pool", "all")
-        if mode != "presets":
-            raise ValueError(f"未知触发模式: {mode!r}")
-        if combine not in {"union", "intersection", "flatten"}:
-            raise ValueError(f"未知组合方式: {combine!r}")
-        if not preset_ids:
-            raise ValueError("presets 模式必须选择至少一个预设")
-        # 去重保持顺序；非法 UUID 字符串在此转 422 而非 DB DataError 500
-        preset_ids = list(dict.fromkeys(preset_ids))
-        try:
-            parsed_ids = [uuid.UUID(str(i)) for i in preset_ids]
-        except (ValueError, AttributeError) as e:
-            raise ValueError(f"preset_ids 含非法 UUID: {preset_ids}") from e
-        rows = (
-            await db.execute(
-                select(CriteriaPreset).where(CriteriaPreset.id.in_(parsed_ids))
-            )
-        ).scalars().all()
-        found = {str(r.id) for r in rows}
-        missing = [str(i) for i in preset_ids if str(i) not in found]
-        if missing:
-            raise ValueError(f"预设不存在: {missing}")
-
-        # 保持用户选择顺序；深判无定性条目时会回退用 criteria_text，
-        # 因此把预设描述一并带上，避免退化成「预设组合（核心资产）」这类空泛标签。
-        by_id = {str(r.id): r for r in rows}
-        ordered = [by_id[str(i)] for i in parsed_ids if str(i) in by_id]
-        names = " + ".join(r.name for r in ordered)
-        criteria_text = f"预设组合（{combine}）：{names}"
-        descriptions = "；".join(f"{r.name}：{r.description}" for r in ordered if r.description)
-        if descriptions:
-            criteria_text += f"\n投资逻辑：{descriptions}"
-        run = ScreenerRun(
-            criteria_hash=hash_criteria(criteria_text + "|" + "|".join(sorted(found))),
-            criteria_text=criteria_text,
-            mode="presets",
-            preset_ids=[str(i) for i in parsed_ids],
-            combine_mode=combine,
-            pool_override=pool,
+    mode = params.get("mode", "presets")
+    preset_ids = params.get("preset_ids") or []
+    combine = params.get("combine", "union")
+    pool = params.get("pool", "all")
+    if mode != "presets":
+        raise ValueError(f"未知触发模式: {mode!r}")
+    if combine not in {"union", "intersection", "flatten"}:
+        raise ValueError(f"未知组合方式: {combine!r}")
+    if not preset_ids:
+        raise ValueError("presets 模式必须选择至少一个预设")
+    # 去重保持顺序；非法 UUID 字符串在此转 422 而非 DB DataError 500
+    preset_ids = list(dict.fromkeys(preset_ids))
+    try:
+        parsed_ids = [uuid.UUID(str(i)) for i in preset_ids]
+    except (ValueError, AttributeError) as e:
+        raise ValueError(f"preset_ids 含非法 UUID: {preset_ids}") from e
+    rows = (
+        await db.execute(
+            select(CriteriaPreset).where(CriteriaPreset.id.in_(parsed_ids))
         )
+    ).scalars().all()
+    found = {str(r.id) for r in rows}
+    missing = [str(i) for i in preset_ids if str(i) not in found]
+    if missing:
+        raise ValueError(f"预设不存在: {missing}")
+
+    # 保持用户选择顺序；深判无定性条目时会回退用 criteria_text，
+    # 因此把预设描述一并带上，避免退化成「预设组合（核心资产）」这类空泛标签。
+    by_id = {str(r.id): r for r in rows}
+    ordered = [by_id[str(i)] for i in parsed_ids if str(i) in by_id]
+    names = " + ".join(r.name for r in ordered)
+    criteria_text = f"预设组合（{combine}）：{names}"
+    descriptions = "；".join(f"{r.name}：{r.description}" for r in ordered if r.description)
+    if descriptions:
+        criteria_text += f"\n投资逻辑：{descriptions}"
+
+    # criteria_hash = 组装规则（compose 输出）的稳定序列化哈希 —— 同一组预设
+    # 任意两次触发哈希一致，diff_service 据此匹配同口径基线。
+    from screener.compose import compose_rules
+
+    preview = compose_rules(ordered, pool, combine)
+    run = ScreenerRun(
+        criteria_hash=hash_criteria(json.dumps(preview, sort_keys=True)),
+        criteria_text=criteria_text,
+        mode="presets",
+        preset_ids=[str(i) for i in parsed_ids],
+        combine_mode=combine,
+        pool_override=pool,
+    )
     db.add(run)
     await db.flush()
 
@@ -406,27 +407,23 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
     await db.commit()
 
     try:
-        # ① 标准来源：presets 模式纯函数组装（零 LLM）；自由文本走 LLM 翻译（hash 缓存）
-        llm = create_llm()
-        presets = None
-        if run.mode == "presets":
-            from screener.compose import compose_rules
-            from screener.models import CriteriaPreset
+        # ① 标准来源：presets 纯函数组装（零 LLM）
+        from screener.compose import compose_rules
+        from screener.models import CriteriaPreset
 
-            rows = (
-                await db.execute(
-                    select(CriteriaPreset).where(CriteriaPreset.id.in_(run.preset_ids))
-                )
-            ).scalars().all()
-            by_id = {str(p.id): p for p in rows}
-            missing = [i for i in run.preset_ids if i not in by_id]
-            if missing:
-                raise ValueError(f"预设已不存在（触发后被删除）: {missing}")
-            presets = [by_id[i] for i in run.preset_ids]
-            rules = compose_rules(presets, run.pool_override or "all", run.combine_mode or "union")
-            rules["preset_ids"] = run.preset_ids
-        else:
-            rules = await get_or_translate_rules(db, run.criteria_text, llm=llm)
+        llm = create_llm()
+        rows = (
+            await db.execute(
+                select(CriteriaPreset).where(CriteriaPreset.id.in_(run.preset_ids))
+            )
+        ).scalars().all()
+        by_id = {str(p.id): p for p in rows}
+        missing = [i for i in run.preset_ids if i not in by_id]
+        if missing:
+            raise ValueError(f"预设已不存在（触发后被删除）: {missing}")
+        presets = [by_id[i] for i in run.preset_ids]
+        rules = compose_rules(presets, run.pool_override or "all", run.combine_mode or "union")
+        rules["preset_ids"] = run.preset_ids
         run.rules = rules
         await db.flush()
 
@@ -511,15 +508,8 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
                 settings.SCREENER_MAX_PER_INDUSTRY,
                 rules.get("candidate_limit", 50),
             )
-            from screener.compose import evaluate_near_misses_by_preset
-
-            near_misses = evaluate_near_misses_by_preset(
-                pool,
-                presets,
-                financials,
-                exclude=set(union_map),
-                limit=10,
-            )
+            # union 分支的 by-preset near-miss 尚未恢复（d8e0653 合并时移除），
+            # Task 6 统一重建 near-miss 逻辑；此处先不产出 union 擦边候选。
         else:
             eval_pool = pool
             scope = rules.get("sector_scope", "all") if run.mode == "presets" else "all"
@@ -667,7 +657,7 @@ class ScreenerService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def trigger_run(self, params: dict | None = None) -> ScreenerRun | None:
+    async def trigger_run(self, params: dict) -> ScreenerRun | None:
         return await trigger_run(self.db, params)
 
 

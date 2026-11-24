@@ -4,11 +4,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from screener.routes.criteria import router as criteria_router
 from screener.routes.presets import router as presets_router
 from screener.routes.runs import router as runs_router
 
 router = APIRouter(prefix="/screener", tags=["Screener"])
 router.include_router(runs_router)
 router.include_router(presets_router)
-router.include_router(criteria_router)

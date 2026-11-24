@@ -204,8 +204,8 @@ class KnowledgeService(Protocol):
 class ScreenerService(Protocol):
     """Interface for the LLM stock screener orchestration."""
 
-    async def trigger_run(self) -> Any:
-        """手动触发一次筛选；已有进行中运行时返回 None。"""
+    async def trigger_run(self, params: dict) -> Any:
+        """手动触发一次筛选（presets 模式）；已有进行中运行时返回 None。"""
         ...
 
 

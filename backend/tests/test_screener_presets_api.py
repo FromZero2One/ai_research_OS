@@ -89,10 +89,11 @@ async def test_trigger_presets_mode(async_client: AsyncClient, test_session: Asy
     body = resp.json()
     assert body["mode"] == "presets"
 
-    # 无 body → v1 自由文本（需要 criteria.md 存在）
+    # freeform 已删除：无 body / 空 body → 422
     resp2 = await async_client.post("/api/v1/screener/runs")
-    # 已有进行中的 run → 409 也是合法结果；二者均不应 500
-    assert resp2.status_code in {201, 409}
+    assert resp2.status_code == 422
+    resp3 = await async_client.post("/api/v1/screener/runs", json={})
+    assert resp3.status_code == 422
 
 
 async def test_trigger_unknown_preset_422(async_client: AsyncClient):
@@ -112,11 +113,10 @@ async def test_trigger_bad_combine_422(async_client: AsyncClient, test_session: 
     assert resp.status_code == 422
 
 
-async def test_trigger_empty_body_freeform(async_client: AsyncClient):
-    """自由文本模式：body={} 走 v1 criteria.md 流程（不要求 preset_ids）。"""
+async def test_trigger_empty_body_422(async_client: AsyncClient):
+    """freeform 已删除：body={} → 422。"""
     resp = await async_client.post("/api/v1/screener/runs", json={})
-    # 201（正常触发）或 409（已有进行中）均合法；绝不能 422/500
-    assert resp.status_code in {201, 409}
+    assert resp.status_code == 422
 
 
 async def test_trigger_invalid_uuid_422(async_client: AsyncClient):

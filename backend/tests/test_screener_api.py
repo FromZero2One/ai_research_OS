@@ -9,19 +9,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 from core.interfaces import LLMResponse
-from screener.models import ScreenerRun
 
 SPOT = [
     {"ticker": "600519", "name": "贵州茅台", "price": 1500.0, "turnover": 0.3, "market_cap": 1.88e12},
     {"ticker": "300750", "name": "宁德时代", "price": 200.0, "turnover": 1.0, "market_cap": 8.8e11},
 ]
 
-RULES = {
-    "stock_pool": {"type": "all", "tickers": []},
-    "quant_rules": [{"metric": "price", "op": "<", "value": 1000.0, "missing_data_policy": "exclude"}],
-    "qualitative_criteria": ["现金充裕"],
-    "candidate_limit": 50,
-}
+QUANT_RULES = [
+    {"metric": "price", "op": "<", "value": 1000.0, "missing_data_policy": "exclude"}
+]
 
 VALID_JUDGE = {
     "recommend": True,
@@ -33,10 +29,44 @@ VALID_JUDGE = {
 
 class FakeLLM:
     async def generate(self, messages: Any, **kwargs: Any) -> LLMResponse:
-        last = messages[-1].content
-        if "选股标准文档" in last or "标准文档" in last:
-            return LLMResponse(content=f"```json\n{json.dumps(RULES, ensure_ascii=False)}\n```", model="fake", usage=None)
-        return LLMResponse(content=f"```json\n{json.dumps(VALID_JUDGE, ensure_ascii=False)}\n```", model="fake", usage=None)
+        return LLMResponse(
+            content=f"```json\n{json.dumps(VALID_JUDGE, ensure_ascii=False)}\n```",
+            model="fake", usage=None,
+        )
+
+
+def _create_preset() -> str:
+    """测试专用预设：价格 < 1000 + 定性「现金充裕」。"""
+    import asyncio
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from screener.models import CriteriaPreset
+    from tests.conftest import test_async_engine
+
+    async def _go():
+        async with test_async_engine.connect() as conn:
+            session = AsyncSession(bind=conn, expire_on_commit=False)
+            preset = CriteriaPreset(
+                name="低价优质", description="价格低于 1000 且现金充裕",
+                style_tag="core", quant_rules=QUANT_RULES, qualitative=["现金充裕"],
+            )
+            session.add(preset)
+            await session.commit()
+            pid = str(preset.id)
+            await session.close()
+            return pid
+
+    return asyncio.run(_go())
+
+
+@pytest.fixture
+def preset_payload() -> dict:
+    """presets 模式触发 body（唯一合法入口）。"""
+    return {
+        "mode": "presets", "pool": "all",
+        "preset_ids": [_create_preset()], "combine": "union",
+    }
 
 
 @pytest.fixture
@@ -44,7 +74,6 @@ def screener_env(monkeypatch):
     """mock 全市场快照 + LLM 创建。"""
     monkeypatch.setattr("screener.screening.fetch_market_spot", lambda: _async(SPOT))
     monkeypatch.setattr("screener.service.create_llm", lambda: FakeLLM())
-    monkeypatch.setattr("screener.translate.create_llm", lambda: FakeLLM())
 
     # API 测试不做真实财务数据补采
     async def _no_ingest(db, needed):
@@ -96,8 +125,8 @@ def _run_screener_run(client: TestClient, resp_json: dict) -> dict:
 
 
 class TestTriggerAndRun:
-    def test_full_run(self, client: TestClient, screener_env):
-        resp = client.post("/api/v1/screener/runs")
+    def test_full_run(self, client: TestClient, screener_env, preset_payload: dict):
+        resp = client.post("/api/v1/screener/runs", json=preset_payload)
         assert resp.status_code == 201, resp.text
         run = _run_screener_run(client, resp.json())
         assert run["status"] == "completed"
@@ -115,24 +144,26 @@ class TestTriggerAndRun:
         assert report.status_code == 200
         assert "推荐列表" in report.json()["report"]
 
-    def test_trigger_then_immediate_get(self, client: TestClient, screener_env):
+    def test_trigger_then_immediate_get(
+        self, client: TestClient, screener_env, preset_payload: dict
+    ):
         """POST 返回后立即按 id 查询必须可见（run 行已在返回前提交）。"""
-        resp = client.post("/api/v1/screener/runs")
+        resp = client.post("/api/v1/screener/runs", json=preset_payload)
         assert resp.status_code == 201, resp.text
         run_id = resp.json()["id"]
         detail = client.get(f"/api/v1/screener/runs/{run_id}")
         assert detail.status_code == 200
         assert detail.json()["id"] == run_id
 
-    def test_duplicate_trigger_409(self, client: TestClient, screener_env):
-        first = client.post("/api/v1/screener/runs")
+    def test_duplicate_trigger_409(self, client: TestClient, screener_env, preset_payload: dict):
+        first = client.post("/api/v1/screener/runs", json=preset_payload)
         assert first.status_code == 201
         # run 仍是 pending（未执行）→ 再次触发应 409
-        second = client.post("/api/v1/screener/runs")
+        second = client.post("/api/v1/screener/runs", json=preset_payload)
         assert second.status_code == 409
 
-    def test_cancel_pending_run(self, client: TestClient, screener_env):
-        run_id = client.post("/api/v1/screener/runs").json()["id"]
+    def test_cancel_pending_run(self, client: TestClient, screener_env, preset_payload: dict):
+        run_id = client.post("/api/v1/screener/runs", json=preset_payload).json()["id"]
         resp = client.post(f"/api/v1/screener/runs/{run_id}/cancel")
         assert resp.status_code == 200
         assert resp.json()["status"] == "cancelling"
@@ -141,8 +172,8 @@ class TestTriggerAndRun:
         assert again.status_code == 200
         assert again.json()["status"] == "cancelling"
 
-    def test_cancel_finished_run_409(self, client: TestClient, screener_env):
-        resp = client.post("/api/v1/screener/runs")
+    def test_cancel_finished_run_409(self, client: TestClient, screener_env, preset_payload: dict):
+        resp = client.post("/api/v1/screener/runs", json=preset_payload)
         run = _run_screener_run(client, resp.json())
         cancelled = client.post(f"/api/v1/screener/runs/{run['id']}/cancel")
         assert cancelled.status_code == 409
@@ -155,8 +186,9 @@ class TestTriggerAndRun:
 
 
 class TestExportAndSchedule:
-    def test_export_csv(self, client: TestClient, screener_env):
-        run = _run_screener_run(client, client.post("/api/v1/screener/runs").json())
+    def test_export_csv(self, client: TestClient, screener_env, preset_payload: dict):
+        resp = client.post("/api/v1/screener/runs", json=preset_payload)
+        run = _run_screener_run(client, resp.json())
         resp = client.get(f"/api/v1/screener/runs/{run['id']}/export")
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/csv")
@@ -165,7 +197,9 @@ class TestExportAndSchedule:
         assert text.startswith("代码,名称,结论,推荐")
         assert "300750" in text and "宁德时代" in text
 
-    def test_push_recommendation_to_watchlist(self, client: TestClient, screener_env):
+    def test_push_recommendation_to_watchlist(
+        self, client: TestClient, screener_env, preset_payload: dict
+    ):
         company = client.post(
             "/api/v1/companies",
             json={"ticker": "300750", "name": "宁德时代"},
@@ -173,7 +207,8 @@ class TestExportAndSchedule:
         client.patch(
             f"/api/v1/companies/{company['id']}", json={"is_active": False}
         )
-        run = _run_screener_run(client, client.post("/api/v1/screener/runs").json())
+        trigger = client.post("/api/v1/screener/runs", json=preset_payload)
+        run = _run_screener_run(client, trigger.json())
 
         resp = client.post(
             f"/api/v1/screener/runs/{run['id']}/watchlist",
@@ -188,9 +223,13 @@ class TestExportAndSchedule:
         assert again.json()["added"] == []
         assert [x["ticker"] for x in again.json()["already"]] == ["300750"]
 
-    def test_diff_with_explicit_base(self, client: TestClient, screener_env):
-        first = _run_screener_run(client, client.post("/api/v1/screener/runs").json())
-        second = _run_screener_run(client, client.post("/api/v1/screener/runs").json())
+    def test_diff_with_explicit_base(
+        self, client: TestClient, screener_env, preset_payload: dict
+    ):
+        first_resp = client.post("/api/v1/screener/runs", json=preset_payload)
+        first = _run_screener_run(client, first_resp.json())
+        second_resp = client.post("/api/v1/screener/runs", json=preset_payload)
+        second = _run_screener_run(client, second_resp.json())
         resp = client.get(
             f"/api/v1/screener/runs/{second['id']}/diff",
             params={"base_run_id": first["id"]},
@@ -230,17 +269,17 @@ class TestExportAndSchedule:
         assert data["task_id"]
 
 
-class TestCriteriaEndpoints:
-    def test_get_criteria(self, client: TestClient):
-        resp = client.get("/api/v1/screener/criteria")
-        assert resp.status_code == 200
-        assert "股票池" in resp.json()["criteria"]
+class TestTriggerValidation:
+    def test_empty_body_422(self, client: TestClient):
+        """freeform 已删除：无 body / 空 body → 路由层 422。"""
+        assert client.post("/api/v1/screener/runs").status_code == 422
+        assert client.post("/api/v1/screener/runs", json={}).status_code == 422
 
-    def test_put_and_get(self, client: TestClient):
-        new_text = "# 我的标准\n股票池：创业板\nROE > 20"
-        put = client.put("/api/v1/screener/criteria", json={"criteria": new_text})
-        assert put.status_code == 200
-        assert client.get("/api/v1/screener/criteria").json()["criteria"] == new_text
+    def test_freeform_mode_422(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/screener/runs", json={"mode": "freeform", "preset_ids": ["x"]}
+        )
+        assert resp.status_code == 422
 
 
 class TestRunsList:

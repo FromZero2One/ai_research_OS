@@ -1,4 +1,4 @@
-"""presets 模式运行管线单测 — 跳过 LLM 翻译、union 排名、v1 回归。"""
+"""presets 模式运行管线单测 — union 排名、确定性初筛。"""
 
 from __future__ import annotations
 
@@ -47,13 +47,12 @@ class FakeLLM:
 
 @pytest.fixture
 def screener_env(monkeypatch):
-    """mock 全市场快照 + LLM 创建（translate 与 service 共用 FakeLLM 以便计数）。"""
+    """mock 全市场快照 + LLM 创建。"""
     async def _spot():
         return SPOT
 
     monkeypatch.setattr("screener.screening.fetch_market_spot", _spot)
     monkeypatch.setattr("screener.service.create_llm", lambda: FakeLLM())
-    monkeypatch.setattr("screener.translate.create_llm", lambda: FakeLLM())
 
     # 单测不做真实财务数据补采（网络 + 会改变“空财务数据”的断言）
     async def _no_ingest(db, needed):
@@ -248,25 +247,6 @@ async def test_presets_union_with_financials(test_session: AsyncSession, screene
     for j in judgements:
         assert j.snapshot["presets"] == ["周期反转"]
         assert j.snapshot["hits"] == 1
-
-
-async def test_freeform_path_regression(test_session: AsyncSession, screener_env, monkeypatch):
-    """v1 回归：params=None 行为完全一致（mode NULL、走翻译）。"""
-    from screener.criteria import read_criteria, write_criteria
-
-    original = read_criteria()
-    try:
-        write_criteria("只选价格低于 1000 的公司")
-        run = await trigger_run(test_session)
-        assert run.mode is None
-        assert run.preset_ids is None
-
-        done = await run_screener(test_session, run.id)
-        assert done.status == "completed"
-        assert done.candidate_count == 1  # 600519 价格 1500 被排除
-        assert done.rules is not None and "quant_rules" in done.rules
-    finally:
-        write_criteria(original)
 
 
 async def test_cancelled_run_finishes_without_pipeline(test_session: AsyncSession):

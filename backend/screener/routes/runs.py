@@ -6,6 +6,7 @@ import csv
 import io
 import uuid
 from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse, Response
@@ -23,11 +24,11 @@ router = APIRouter(tags=["Screener"])
 
 
 class TriggerParams(BaseModel):
-    """POST /runs 可选 body — body 缺省或 {} 均为 v1 自由文本模式。"""
+    """POST /runs 必填 body — presets 是唯一运行入口（freeform 已删除）。"""
 
-    mode: str | None = None
+    mode: Literal["presets"]
     pool: str = "all"
-    preset_ids: list[str] = Field(default_factory=list)
+    preset_ids: list[str] = Field(min_length=1)
     combine: str = "union"
 
 
@@ -169,13 +170,14 @@ async def data_quality(db: AsyncSession = Depends(get_db)):
 @router.post("/runs", status_code=201)
 async def trigger_run(
     container: Container = Depends(get_container),
-    params: TriggerParams | None = None,
+    params: TriggerParams = ...,
 ):
-    """触发一次智能选股（持久后台任务）。已有进行中的运行 → 409。"""
+    """触发一次智能选股（presets 模式，持久后台任务）。已有进行中的运行 → 409。
+
+    body 必填且 mode="presets"；缺 body / 非法字段 → 422。
+    """
     try:
-        run = await container.screener_service.trigger_run(
-            params.model_dump() if params is not None and params.mode is not None else None
-        )
+        run = await container.screener_service.trigger_run(params.model_dump())
     except ValueError as e:
         return JSONResponse(status_code=422, content={"error": str(e)})
     if run is None:
