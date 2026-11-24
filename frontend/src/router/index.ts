@@ -9,7 +9,6 @@ const router = createRouter({
     { path: '/market', name: 'market', component: () => import('@/views/Market.vue') },
     { path: '/screener', name: 'screener', component: () => import('@/views/Screener.vue') },
     { path: '/documents', name: 'documents', component: () => import('@/views/Documents.vue') },
-    { path: '/knowledge', name: 'knowledge', component: () => import('@/views/Knowledge.vue') },
     { path: '/system', name: 'system', component: () => import('@/views/System.vue') },
   ],
 })

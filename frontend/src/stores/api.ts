@@ -278,38 +278,6 @@ export function useIngestProfile() {
   })
 }
 
-// ── Knowledge ──
-export interface SearchResult {
-  content: string; score: number; document_id: string; title: string; doc_type: string
-  snippet?: string; highlights?: string[]
-}
-
-export async function searchKnowledge(query: string, topK: number = 10, docType?: string): Promise<{ query: string; count: number; results: SearchResult[] }> {
-  let url = `/knowledge/search?query=${encodeURIComponent(query)}&top_k=${topK}`
-  if (docType) url += `&doc_type=${encodeURIComponent(docType)}`
-  return fetchApi(url)
-}
-
-export interface AskSource {
-  title: string; chunk_index: number; score: number
-  document_id: string; content: string
-}
-
-export function useAskKnowledge() {
-  return useMutation<{ answer: string; sources: AskSource[]; model?: string }, Error, {
-    question: string; top_k?: number; provider?: 'default' | 'ollama'; model?: string | null
-  }>({
-    mutationFn: (body) => fetchApi('/knowledge/ask', { method: 'POST', body: JSON.stringify(body) }),
-  })
-}
-
-export function useLlmModels() {
-  return useGet<{ default: { provider: string; model: string }; ollama: string[] }>(
-    ['llm-models'],
-    '/knowledge/llm/models',
-  )
-}
-
 // ── System ──
 export function useSchedulerStatus() {
   return useQuery<{ running?: boolean; jobs?: any[] }>({
@@ -425,218 +393,18 @@ export function useRunScreenerSchedule() {
     },
   })
 }
-export function useCancelScreenerRun() {
-  const qc = useQueryClient()
-  return useMutation<{ id: string; status: string }, Error, string>({
-    mutationFn: (runId) =>
-      fetchApi(`/screener/runs/${runId}/cancel`, { method: 'POST' }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['screener-runs'] })
-      qc.invalidateQueries({ queryKey: ['screener-run'] })
-    },
-  })
-}
-export function useScreenerCriteria() {
-  return useGet<{ criteria: string }>(['screener-criteria'], '/screener/criteria')
-}
-export function useSaveCriteria() {
-  const qc = useQueryClient()
-  return useMutation<void, Error, { criteria: string }>({
-    mutationFn: (body) => fetchApi('/screener/criteria', { method: 'PUT', body: JSON.stringify(body) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['screener-criteria'] }); qc.invalidateQueries({ queryKey: ['screener-rules'] }) },
-  })
+export function useScreenerLatestReport() {
+  return useGet<{ run_id: string; report: string }>(
+    ['screener-latest-report'],
+    '/screener/latest-report',
+    { retry: 0 },
+  )
 }
 export function useScreenerRunReport(id: MaybeRefOrGetter<string | null>) {
   return useGet<{ report: string }>(
     computed(() => ['screener-report', toValue(id) ?? '']),
     computed(() => (toValue(id) ? `/screener/runs/${toValue(id)}/report` : '')),
   )
-}
-export function useScreenerRunDiff(
-  id: MaybeRefOrGetter<string | null>,
-  baseId?: MaybeRefOrGetter<string | null>,
-) {
-  return useGet<{ diff: string; has_previous: boolean; base_run_id: string | null }>(
-    computed(() => ['screener-diff', toValue(id) ?? '', toValue(baseId ?? null) ?? '']),
-    computed(() => {
-      const runId = toValue(id)
-      if (!runId) return ''
-      const base = toValue(baseId ?? null)
-      return `/screener/runs/${runId}/diff${base ? `?base_run_id=${base}` : ''}`
-    }),
-  )
-}
-
-export interface ScreenerHorizonStats {
-  count: number
-  avg_return: number | null
-  hit_rate: number | null
-}
-export interface ScreenerStockPerformance {
-  ticker: string
-  name: string
-  industry: string | null
-  entry_date: string | null
-  entry_price: number | null
-  current_return: number | null
-  horizons: Record<string, number | null>
-  status: string
-}
-export interface ScreenerPerformance {
-  run_id: string
-  run_created_at: string | null
-  entry_rule: string
-  status: string
-  recommended_count: number
-  with_entry_price: number
-  summary: Record<string, ScreenerHorizonStats & { bench_return?: number | null; excess_return?: number | null }>
-  benchmark: {
-    name: string
-    entry_date: string | null
-    entry_price: number | null
-    current_return: number | null
-    horizons: Record<string, number | null>
-  } | null
-  stocks: ScreenerStockPerformance[]
-  message?: string
-}
-export function useScreenerRunPerformance(id: MaybeRefOrGetter<string | null>) {
-  return useGet<ScreenerPerformance>(
-    computed(() => ['screener-performance', toValue(id) ?? '']),
-    computed(() => (toValue(id) ? `/screener/runs/${toValue(id)}/performance` : '')),
-  )
-}
-
-export interface ScreenerPerformanceSnapshot {
-  id: string
-  run_id: string
-  as_of: string
-  summary: Record<string, any>
-  meta: Record<string, any>
-  created_at: string | null
-}
-export function useScreenerPerformanceHistory(id: MaybeRefOrGetter<string | null>) {
-  return useGet<{ snapshots: ScreenerPerformanceSnapshot[] }>(
-    computed(() => ['screener-performance-history', toValue(id) ?? '']),
-    computed(() =>
-      toValue(id) ? `/screener/runs/${toValue(id)}/performance/history` : ''
-    ),
-  )
-}
-export function useSnapshotScreenerPerformance() {
-  const qc = useQueryClient()
-  return useMutation<ScreenerPerformanceSnapshot, Error, string>({
-    mutationFn: (runId) =>
-      fetchApi(`/screener/runs/${runId}/performance/snapshot`, { method: 'POST' }),
-    onSuccess: (row) => {
-      qc.invalidateQueries({ queryKey: ['screener-performance-history', row.run_id] })
-    },
-  })
-}
-
-export interface ScreenerPortfolioHolding {
-  ticker: string
-  name: string | null
-  industry: string | null
-  price: number | null
-  score: number | null
-  confidence: number | null
-  weight: number
-  amount: number
-}
-export interface ScreenerPortfolioResult {
-  run_id: string
-  method: string
-  capital: number
-  invested: number
-  cash: number
-  cash_weight: number
-  holdings: ScreenerPortfolioHolding[]
-  warnings: string[]
-}
-export interface ScreenerPortfolioParams {
-  capital: number
-  method: string
-  max_weight: number
-  max_industry_weight: number
-  max_holdings: number
-  save?: boolean
-  name?: string | null
-}
-export interface ScreenerSavedPortfolio {
-  id: string
-  run_id: string
-  name: string | null
-  params: ScreenerPortfolioParams
-  result: ScreenerPortfolioResult
-  created_at: string | null
-}
-export function useScreenerPortfolio(id: MaybeRefOrGetter<string | null>) {
-  return useMutation<ScreenerPortfolioResult, Error, ScreenerPortfolioParams>({
-    mutationFn: (payload) =>
-      fetchApi(`/screener/runs/${toValue(id) ?? ''}/portfolio`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      }),
-  })
-}
-export interface ScreenerRebalanceHolding {
-  ticker: string
-  name: string | null
-  industry: string | null
-  entry_price: number | null
-  current_price: number | null
-  shares: number
-  current_value: number
-  current_weight: number
-  target_weight: number
-  drift: number
-  action: 'buy' | 'sell' | 'hold'
-  amount_delta: number
-  shares_delta: number
-  stale_price: boolean
-  lot_blocked: boolean
-}
-export interface ScreenerRebalanceResult {
-  portfolio_id: string
-  name: string | null
-  total_value: number
-  invested_value: number
-  cash: number
-  cash_weight: number
-  tolerance: number
-  lot_size: number
-  holdings: ScreenerRebalanceHolding[]
-  summary: { buys: number; sells: number; holds: number }
-}
-export function useRebalanceScreenerPortfolio() {
-  return useMutation<
-    ScreenerRebalanceResult,
-    Error,
-    { portfolio_id: string; tolerance?: number; lot_size?: number }
-  >({
-    mutationFn: ({ portfolio_id, ...body }) =>
-      fetchApi(`/screener/portfolios/${portfolio_id}/rebalance`, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      }),
-  })
-}
-export function useScreenerPortfolios(id: MaybeRefOrGetter<string | null>) {
-  return useGet<{ portfolios: ScreenerSavedPortfolio[] }>(
-    computed(() => ['screener-portfolios', toValue(id) ?? '']),
-    computed(() =>
-      toValue(id) ? `/screener/runs/${toValue(id)}/portfolios` : ''
-    ),
-  )
-}
-export function useDeleteScreenerPortfolio() {
-  const qc = useQueryClient()
-  return useMutation<void, Error, string>({
-    mutationFn: (portfolioId) =>
-      fetchApi(`/screener/portfolios/${portfolioId}`, { method: 'DELETE' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['screener-portfolios'] }),
-  })
 }
 
 export interface ScreenerDataQuality {
@@ -662,49 +430,6 @@ export function useScreenerDataQuality() {
   )
 }
 
-export interface ScreenerBacktestRun {
-  id: string
-  preset_id: string
-  preset_name: string | null
-  years: number
-  status: string
-  error: string | null
-  summary: Record<string, any> | null
-  report_path: string | null
-  created_at: string | null
-  finished_at: string | null
-}
-export interface ScreenerBacktestDetail extends ScreenerBacktestRun {
-  result: { summary?: Record<string, any>; yearly?: any[]; start?: string; end?: string; disclaimers?: string[] } | null
-}
-export function useScreenerBacktests() {
-  return useGet<{ backtests: ScreenerBacktestRun[] }>(
-    ['screener-backtests'],
-    '/screener/backtests',
-  )
-}
-export function useTriggerScreenerBacktest() {
-  const qc = useQueryClient()
-  return useMutation<{ id: string; status: string }, Error, { preset_id: string; years: number }>({
-    mutationFn: (body) =>
-      fetchApi('/screener/backtests', { method: 'POST', body: JSON.stringify(body) }),
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ['screener-backtests'] })
-      qc.invalidateQueries({ queryKey: ['screener-backtest', data.id] })
-    },
-  })
-}
-export function useScreenerBacktest(
-  id: MaybeRefOrGetter<string | null>,
-  opts?: { poll?: MaybeRefOrGetter<boolean> },
-) {
-  return useGet<ScreenerBacktestDetail>(
-    computed(() => ['screener-backtest', toValue(id) ?? '']),
-    computed(() => (toValue(id) ? `/screener/backtests/${toValue(id)}` : '')),
-    { refetchInterval: computed(() => (toValue(opts?.poll ?? false) ? 3_000 : false)) },
-  )
-}
-
 export interface ScreenerWatchlistResult {
   run_id: string
   added: { ticker: string; name: string }[]
@@ -721,10 +446,6 @@ export function usePushScreenerToWatchlist(id: MaybeRefOrGetter<string | null>) 
   })
 }
 
-export function useScreenerRules() {
-  return useGet<{ rules: Record<string, any> | null; criteria_hash?: string }>(['screener-rules'], '/screener/rules')
-}
-
 // ── Screener 预设库（v1.5）──
 export interface ScreenerMetricDef {
   key: string; name_cn: string; category: string
@@ -737,7 +458,7 @@ export interface ScreenerPreset {
   is_builtin: boolean; is_active: boolean
 }
 export interface TriggerParamsBody {
-  mode: 'presets' | 'freeform'
+  mode: 'presets'
   pool: string
   preset_ids: string[]
   combine: 'union' | 'intersection' | 'flatten'
@@ -748,29 +469,6 @@ export function useScreenerMetrics() {
 }
 export function useScreenerPresets() {
   return useGet<{ presets: ScreenerPreset[] }>(['screener-presets'], '/screener/presets')
-}
-const PRESET_KEYS = [['screener-presets'], ['screener-runs']]
-
-export function useCreateScreenerPreset() {
-  return useCreate<ScreenerPreset, Record<string, any>>('/screener/presets', PRESET_KEYS)
-}
-export function useUpdateScreenerPreset(id: MaybeRefOrGetter<string>) {
-  const qc = useQueryClient()
-  return useMutation<ScreenerPreset, Error, Record<string, any>>({
-    mutationFn: (body) => fetchApi<ScreenerPreset>(`/screener/presets/${toValue(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
-    onSuccess: () => { PRESET_KEYS.forEach((key) => qc.invalidateQueries({ queryKey: key })) },
-  })
-}
-export function useDeleteScreenerPreset() {
-  return useDelete(PRESET_KEYS)
-}
-export function useToggleScreenerPreset() {
-  const qc = useQueryClient()
-  return useMutation<ScreenerPreset, Error, { id: string; is_active: boolean }>({
-    mutationFn: ({ id, is_active }) =>
-      fetchApi<ScreenerPreset>(`/screener/presets/${id}`, { method: 'PUT', body: JSON.stringify({ is_active }) }),
-    onSuccess: () => { PRESET_KEYS.forEach((key) => qc.invalidateQueries({ queryKey: key })) },
-  })
 }
 export function useTriggerScreenerRunPresets(invalidateKeys: string[][] = [['screener-runs']]) {
   return useCreate<{ id: string; status: string; mode: string | null; combine: string | null }>(
