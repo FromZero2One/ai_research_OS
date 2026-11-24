@@ -252,55 +252,6 @@ def evaluate_quant_rules(
     return passed, excluded
 
 
-def evaluate_near_misses(
-    candidates: list[dict],
-    rules: list[dict],
-    financials_by_ticker: dict[str, list[FinancialMetricEntry]],
-    limit: int = 10,
-) -> list[dict]:
-    """近似命中：恰好失败 1 条规则、且无缺失数据的候选（按市值降序，最多 limit）。
-
-    缺数据不视为“差一点”（无法判断），失败 2 条以上也不列，避免报告噪声。
-    返回项附 `failed_rule`（metric/op/threshold/value）与 score=(n-1)/n。
-    """
-    if not rules:
-        return []
-    out: list[dict] = []
-    for cand in candidates:
-        fin_entries = financials_by_ticker.get(cand["ticker"], [])
-        failures: list[dict] = []
-        unavailable = False
-        for rule in rules:
-            value = _rule_value(rule, cand, fin_entries)
-            if value is None:
-                if rule.get("missing_data_policy", "exclude") == "include":
-                    continue
-                unavailable = True
-                break
-            if not _OPS[rule["op"]](value, float(rule["value"])):
-                failures.append(
-                    {
-                        "metric": rule["metric"],
-                        "op": rule["op"],
-                        "threshold": float(rule["value"]),
-                        "value": round(value, 4),
-                    }
-                )
-                if len(failures) > 1:
-                    break
-        if unavailable or len(failures) != 1:
-            continue
-        out.append(
-            {
-                **cand,
-                "score": score_candidate(len(rules) - 1, len(rules)),
-                "failed_rule": failures[0],
-            }
-        )
-    out.sort(key=lambda c: c.get("market_cap") or 0.0, reverse=True)
-    return out[:limit]
-
-
 def score_candidate(hit: int, applicable: int) -> float:
     """初筛得分 = 命中条件数 / 适用条件数；无规则时 0.0。"""
     if applicable <= 0:

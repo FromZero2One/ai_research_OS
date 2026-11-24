@@ -176,3 +176,28 @@ def test_union_eval_financial_metric_rules():
     result = evaluate_quant_rules_by_preset(candidates, [p1], financials_by_ticker=financials)
     assert set(result) == {"AAA"}
     assert result["AAA"]["hits"] == 1
+
+
+def test_union_with_qualitative_end_to_end():
+    """union + 定性标准全链路：compose_rules 产出定性条目与量化规则，评估可走通。"""
+    p1 = _preset("P1", [_rule("roe", ">", 15)], qualitative=["护城河"])
+    p2 = _preset("P2", [_rule("market_cap", ">", 1e9)], qualitative=["现金充裕"])
+    rules = compose_rules([p1, p2], pool="all", combine="union")
+    assert rules["qualitative_criteria"] == ["[P1] 护城河", "[P2] 现金充裕"]
+
+    from market.domain import FinancialMetricEntry
+
+    candidates = [
+        {"ticker": "AAA", "name": "甲", "market_cap": 3e9},
+        {"ticker": "BBB", "name": "乙", "market_cap": 3e9},
+    ]
+    financials = {
+        "AAA": [FinancialMetricEntry(metric_name="roe", metric_value=20.0, fiscal_year=2026, fiscal_period="Q2")],
+        "BBB": [FinancialMetricEntry(metric_name="roe", metric_value=5.0, fiscal_year=2026, fiscal_period="Q2")],
+    }
+    result = evaluate_quant_rules_by_preset(
+        candidates, [p1, p2], financials_by_ticker=financials
+    )
+    assert set(result) == {"AAA", "BBB"}  # union：命中任一预设即入选
+    assert result["AAA"]["presets"] == ["P1", "P2"]
+    assert result["BBB"]["presets"] == ["P2"]
