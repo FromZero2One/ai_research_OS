@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 
 from core.config import settings
 from core.interfaces import LLM, LLMMessage, LLMResponse
@@ -399,8 +400,13 @@ async def judge_one(
 
         if company_id:
             try:
+                _t0 = time.perf_counter()
                 snippets = await _retrieve_per_criterion(
                     knowledge, candidate, criteria, company_id
+                )
+                logger.debug(
+                    "深判检索耗时 %s: %.2fs（%d 条片段）",
+                    candidate["ticker"], time.perf_counter() - _t0, len(snippets),
                 )
             except Exception as e:  # noqa: BLE001 — 检索故障不阻塞深判
                 logger.warning("深判知识库检索失败 %s: %s", candidate["ticker"], e)
@@ -421,8 +427,13 @@ async def judge_one(
         # 截断是确定性的：重试时放大 token 预算并明确要求压缩输出
         attempt_messages = messages if attempt == 0 else [*messages, _RETRY_HINT]
         max_tokens = _JUDGE_MAX_TOKENS if attempt == 0 else _JUDGE_RETRY_MAX_TOKENS
+        _t1 = time.perf_counter()
         response: LLMResponse = await llm.generate(
             messages=attempt_messages, temperature=0.2, max_tokens=max_tokens
+        )
+        logger.debug(
+            "深判 LLM 耗时 %s: %.2fs（attempt %d）",
+            candidate["ticker"], time.perf_counter() - _t1, attempt + 1,
         )
         try:
             out = _parse_llm_json(response.content)
@@ -437,8 +448,7 @@ async def judge_one(
     raise ValueError(last_error)
 
 
-# 深判默认并发数：单用户 DeepSeek 云端，5 路并发不触发限流
-_DEFAULT_MAX_CONCURRENCY = 5
+# 深判并发数默认值，实际取 settings.SCREENER_JUDGE_CONCURRENCY（默认 8，DeepSeek 云端无压力）
 
 
 async def judge_candidates(
@@ -448,19 +458,23 @@ async def judge_candidates(
     knowledge=None,
     qualitative: list[str] | None = None,
     financials_by_ticker: dict[str, list] | None = None,
-    max_concurrency: int = _DEFAULT_MAX_CONCURRENCY,
+    max_concurrency: int | None = None,
     should_stop=None,
 ) -> list[dict]:
     """并发深判；单只失败 → 该只 status=failed，其余不受影响。
 
     qualitative 为结构化规则里的定性条目；未提供时退回用标准原文整段判断。
     financials_by_ticker 提供候选的最新财务指标（进入深判上下文）。
-    max_concurrency 限制同时在途的 LLM 调用数（Semaphore）。
+    max_concurrency 限制同时在途的 LLM 调用数（Semaphore）；None 时取
+    settings.SCREENER_JUDGE_CONCURRENCY。
     结果顺序与输入顺序一致（asyncio.gather 保序）。
     should_stop 为异步回调：返回 True 时中断剩余深判并抛 ScreenerCancelled
     （已开始的 LLM 调用会被取消）。
     """
     from screener.errors import ScreenerCancelled
+
+    if max_concurrency is None:
+        max_concurrency = settings.SCREENER_JUDGE_CONCURRENCY
 
     criteria = qualitative or [criteria_text]
     semaphore = asyncio.Semaphore(max_concurrency)
