@@ -59,6 +59,33 @@ def test_union_qualitative_dedupe_preserve_order():
     assert rules["qualitative_criteria"] == ["[P1] 护城河", "[P1] 现金充裕", "[P2] 周期底部"]
 
 
+def test_union_mixed_qualitative_dict_and_str():
+    """union：qualitative 中 dict（fact_check）拆出到 fact_checks 键且不加前缀；str 留在原路径并加前缀。"""
+    p1 = _preset(
+        "P1",
+        [_rule("roe", ">", 10)],
+        qualitative=[
+            "护城河",
+            {"type": "fact_check", "check": "审计意见", "prompt": "近三年审计意见均为标准无保留"},
+        ],
+    )
+    p2 = _preset(
+        "P2",
+        [_rule("roe", ">", 15)],
+        qualitative=[
+            {"type": "fact_check", "check": "审计意见", "prompt": "近三年审计意见均为标准无保留"},
+            "现金充裕",
+        ],
+    )
+    rules = compose_rules([p1, p2], pool="all", combine="union")
+
+    assert rules["fact_checks"] == [
+        {"type": "fact_check", "check": "审计意见", "prompt": "近三年审计意见均为标准无保留"},
+    ]
+    assert rules["qualitative_criteria"] == ["[P1] 护城河", "[P2] 现金充裕"]
+    assert all(isinstance(q, str) for q in rules["qualitative_criteria"])
+
+
 def test_pool_param_overrides_suggested_pool():
     """pool 参数覆盖各预设的 suggested_pool。"""
     p1 = _preset("P1", [_rule("roe", ">", 10)], suggested_pool="chinext")

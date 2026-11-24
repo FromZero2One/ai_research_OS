@@ -7,6 +7,7 @@ pool 无法产出候选（候选来自 spot 采集，股票池过滤由 service 
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from screener.industry import candidate_matches_scope
@@ -44,6 +45,8 @@ def compose_rules(presets: list[Any], pool: str, combine: str) -> dict:
     seen_metrics: dict[str, int] = {}
     qualitative: list[str] = []
     seen_qual: set[str] = set()
+    fact_checks: list[dict] = []
+    seen_fact_checks: set[str] = set()
     for preset in presets:
         for rule in preset.quant_rules:
             metric = rule["metric"]
@@ -56,6 +59,13 @@ def compose_rules(presets: list[Any], pool: str, combine: str) -> dict:
             # intersection/union：全部保留（AND 拼接）
             quant_rules.append(rule)
         for q in preset.qualitative:
+            if isinstance(q, dict):
+                # fact_check 条目：独立通道，不加预设前缀（自带 check 名即可区分）
+                key = json.dumps(q, ensure_ascii=False, sort_keys=True)
+                if key not in seen_fact_checks:
+                    seen_fact_checks.add(key)
+                    fact_checks.append(q)
+                continue
             if q not in seen_qual:
                 seen_qual.add(q)
                 # union 深判 criteria_hits 标注来源预设（spec 组合语义节）
@@ -66,6 +76,7 @@ def compose_rules(presets: list[Any], pool: str, combine: str) -> dict:
         "stock_pool": {"type": pool},
         "quant_rules": quant_rules,
         "qualitative_criteria": qualitative,
+        "fact_checks": fact_checks,
         "candidate_limit": 50,
         "combine": combine,
         "preset_names": [p.name for p in presets],

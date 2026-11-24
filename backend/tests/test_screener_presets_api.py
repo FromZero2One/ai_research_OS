@@ -1,24 +1,14 @@
-"""预设/指标 API 端点单测 — CRUD、内置保护 409、触发 422。"""
+"""预设/指标 API 端点单测 — 只读查询（预设列表、指标库）+ 触发校验。"""
 
 from __future__ import annotations
 
 import uuid as _uuid
 
-import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from screener.models import CriteriaPreset
-
-_VALID = {
-    "name": "我的 API 预设",
-    "description": "接口自建",
-    "style_tag": "custom",
-    "quant_rules": [{"metric": "roe", "op": ">", "value": 10, "missing_data_policy": "exclude"}],
-    "qualitative": ["现金流稳定"],
-    "suggested_pool": "main",
-}
 
 
 async def _builtin_id(db: AsyncSession, style_tag: str) -> str:
@@ -48,35 +38,6 @@ async def test_presets_list_contains_builtins(async_client: AsyncClient):
         "core", "growth", "value", "garp", "cycle",
         "financial", "bank", "insurance",
     }
-
-
-async def test_preset_create_and_delete(async_client: AsyncClient):
-    resp = await async_client.post("/api/v1/screener/presets", json=_VALID)
-    assert resp.status_code == 201, resp.text
-    pid = resp.json()["id"]
-
-    # 更新自建预设
-    resp = await async_client.put(f"/api/v1/screener/presets/{pid}", json={"name": "改名"})
-    assert resp.status_code == 200
-    assert resp.json()["name"] == "改名"
-
-    # 删除自建预设
-    resp = await async_client.delete(f"/api/v1/screener/presets/{pid}")
-    assert resp.status_code == 200
-
-
-async def test_preset_create_invalid_rule_422(async_client: AsyncClient):
-    bad = {**_VALID, "quant_rules": [{"metric": "roe", "op": "~", "value": 1, "missing_data_policy": "exclude"}]}
-    resp = await async_client.post("/api/v1/screener/presets", json=bad)
-    assert resp.status_code == 422
-
-
-async def test_preset_update_builtin_409(async_client: AsyncClient, test_session: AsyncSession):
-    pid = await _builtin_id(test_session, "core")
-    resp = await async_client.put(f"/api/v1/screener/presets/{pid}", json={"name": "改内置"})
-    assert resp.status_code == 409
-    resp = await async_client.delete(f"/api/v1/screener/presets/{pid}")
-    assert resp.status_code == 409
 
 
 async def test_trigger_presets_mode(async_client: AsyncClient, test_session: AsyncSession):
