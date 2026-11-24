@@ -200,7 +200,7 @@ PostgreSQL 用 schema 做模块隔离，初始化 SQL 见 `docker/init.sql`：
 | `market` | stock_prices, financial_metrics（含 announcement_date，PIT）, valuation_history（估值历史，PE/PB 分位源）, stock_industry（申万/新浪行业）, data_freshness |
 | `document` | documents, document_chunks（含 content_type：mda/risk/notes/announcement/other） |
 | `research` / `portfolio` / `ai` | **代码已删除（2026-11-24），表保留未清理** |
-| `core` | event_log, task_records, observations |
+| `core` | event_log, task_records（observations 表为已删观测引擎残留） |
 | `screener` | screener_rules, screener_runs, screener_judgements, screener_metric_defs, screener_presets, screener_portfolios, performance_snapshots |
 
 - `knowledge` 无独立 schema：复用 document 表 + Qdrant 向量
@@ -249,14 +249,13 @@ PYTHONPATH=. python scripts/seed_data.py
 | LLM | `LLM_PROVIDER` | **ollama** | **openai** |
 | | `OPENAI_BASE_URL` | https://api.openai.com/v1 | https://api.deepseek.com/v1 |
 | | `OPENAI_MODEL` | gpt-4o | deepseek-chat |
-| | `LLM_TIER_LIGHT_PROVIDER` / `LLM_TIER_LIGHT_MODEL` | ollama / qwen2.5:7b | openai / deepseek-chat |
 | | `OLLAMA_MODEL` | llama3.1:70b | qwen3.5-98k:latest（注释） |
 | | `OLLAMA_NUM_CTX` | 8192 | —（深判 prompt 含财务+多片段，默认 4096 会截断；仅 Ollama provider 生效） |
 | Redis | `REDIS_URL` | redis://127.0.0.1:6380/0 | — |
 | 文档 | `UPLOAD_DIR` / `MAX_UPLOAD_SIZE_MB` | data/uploads / 50 | — |
 | | `CHUNK_SIZE` / `CHUNK_OVERLAP` | 512 / 64 | — |
 | 市场 | `AKSHARE_ENABLED` / `YFINANCE_ENABLED` | true / true | — |
-| 外部数据源 | `AKSHARE_MCP_DIR` / `NEWSNOW_MCP_SERVER_PATH` | /home/wsm/codes/akshare_mcp 等 | 机器相关 |
+| 外部数据源 | `AKSHARE_MCP_DIR` | /home/wsm/codes/akshare_mcp 等 | 机器相关 |
 | 调度器 | `SCHEDULER_ENABLED` | **true** | — |
 | | `FINANCIAL_DATA_SCHEDULE` | `15 3 * * 1-5` | — |
 | | `SCREENER_SCHEDULE` | `30 16 * * 1-5` | — |
@@ -306,13 +305,12 @@ cd backend
 ## 外部 MCP 数据源
 
 - **akshare**：`market/akshare_executor.py` 调用外部 `akshare_mcp` venv（`AKSHARE_MCP_DIR`），子进程直连 Tencent/Sina/Eastmoney 数据源；价格/财务/估值三条采集链均无外部数据库依赖，可配云端 MCP 兜底（`AKSHARE_CLOUD_MCP_URL`，留空禁用）
-- **newsnow**：`core/adapters/newsnow_mcp.py` 调用外部 newsnow MCP server（`NEWSNOW_MCP_SERVER_PATH` / `NEWSNOW_BASE_URL`）
 
 ## 后台任务
 
 `core/task_manager.py`：PostgreSQL 持久化 `core.task_records` + worker 循环 + 自动重试 + `(type,key)` 去重 + 启动恢复。
 
-APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工作日 2:00）、`financial_data_update`（工作日 3:15，全市场财务三表刷新，三类数据源 SAVEPOINT 隔离）、`screener_schedule`（工作日 16:30，定时选股 + 变化日报）、`performance_snapshot`（工作日 17:10，最近运行表现快照）、`observation_cycle`（工作日 5:30）、`event_log_cleanup`（周一 3:00）。状态见 `GET /api/v1/scheduler/status`。
+APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工作日 2:00）、`financial_data_update`（工作日 3:15，全市场财务三表刷新，三类数据源 SAVEPOINT 隔离）、`screener_schedule`（工作日 16:30，定时选股 + 变化日报）、`performance_snapshot`（工作日 17:10，最近运行表现快照）、`event_log_cleanup`（周一 3:00）。状态见 `GET /api/v1/scheduler/status`。
 
 ## 测试
 

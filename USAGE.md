@@ -169,9 +169,6 @@ LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-your-deepseek-api-key
 OPENAI_BASE_URL=https://api.deepseek.com/v1
 OPENAI_MODEL=deepseek-chat
-# light tier（证据分类/事实抽取）也走云端（本机无 Ollama 时）
-LLM_TIER_LIGHT_PROVIDER=openai
-LLM_TIER_LIGHT_MODEL=deepseek-chat
 ```
 
 > **注意**: 2026-10 实测 `deepseek-chat` 可用且分类评测 15/15 全对；模型以 DeepSeek 官方文档为准。
@@ -408,25 +405,21 @@ cd frontend && npm run gen
 
 ### 4.7 调度中心 `/scheduler`
 
-功能:手动触发定时任务、查看观察报告。
+功能:手动触发定时任务、查看任务状态。
 
 **定时任务** (需 `SCHEDULER_ENABLED=true` 才自动运行):
 | 任务名 | 默认时间 | 功能 |
 |--------|---------|------|
 | `market_data_update` | 工作日2am | 更新市场数据 |
-| `observation_cycle` | 工作日5:30am | 运行自选股观察周期（价格异动/行业异动） |
 
 **手动触发**:
 ```
 POST /api/v1/scheduler/run/market_data_update
-POST /api/v1/scheduler/run/observation_cycle
 ```
 
-**查看调度器状态和观察报告**:
+**查看调度器状态**:
 ```
 GET /api/v1/scheduler/status            # 调度器状态(运行中/停止)
-GET /api/v1/scheduler/observations      # 最近的观察报告列表
-POST /api/v1/scheduler/observe          # 手动触发一次观察
 ```
 
 ### 4.8 智能选股 `/screener`（2026-10-24）
@@ -655,25 +648,22 @@ ai_research_os/
 │   │   ├── interfaces.py      # Protocol 接口(Embedding/VectorStore/LLM/服务协议)
 │   │   ├── exceptions.py      # 统一异常体系
 │   │   ├── logging.py         # structlog配置
-│   │   ├── scheduler.py       # APScheduler调度器(market_data/observation/cleanup)
-│   │   ├── scheduler_routes.py# 调度/观察 API 路由
+│   │   ├── scheduler.py       # APScheduler调度器(market_data/cleanup)
+│   │   ├── scheduler_routes.py# 调度 API 路由
 │   │   ├── market_sync.py     # 市场数据定时采集
-│   │   ├── observation.py     # 观察记录模型
-│   │   ├── observation_engine.py # 自选股观察引擎
 │   │   ├── event_service.py / event_log.py / event_routes.py / event_cleanup.py
 │   │   ├── task_manager.py    # 持久任务队列(Postgres+worker)
 │   │   ├── llm_usage.py       # LLM token 用量累计器
 │   │   ├── system_routes.py   # /ai/usage 用量端点（AI 模块删除后保留）
 │   │   ├── security.py        # JWT工具(V1未启用,有意保留)
 │   │   └── adapters/          # 外部服务适配器
-│   │       ├── llm.py         # DeepSeek(OpenAI兼容)/Ollama适配器,分级路由
+│   │       ├── llm.py         # DeepSeek(OpenAI兼容)/Ollama适配器
 │   │       ├── embedding.py   # BGE-M3嵌入(Ollama API)
 │   │       ├── reranker.py    # BGE Reranker
 │   │       ├── vector_store.py# Qdrant向量存储
 │   │       ├── cache.py       # Redis缓存
 │   │       ├── pdf_parser.py  # PyMuPDF解析
-│   │       └── newsnow_mcp.py # NewsNow MCP 新闻源
-│   ├── company/               # 公司中心(CRUD/标签/Thesis/自选is_active)
+│   │   ├── company/               # 公司中心(CRUD/标签/Thesis/自选is_active)
 │   ├── market/                # 市场中心(service/+routes/子目录+domain/repositories/akshare_executor)
 │   ├── document/              # 文档中心(含 content_classifier.py 内容打标 + table_extractor.py 表格结构化)
 │   ├── knowledge/             # 知识中心(混合RAG,读写document表+Qdrant)
