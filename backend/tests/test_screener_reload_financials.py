@@ -49,8 +49,11 @@ async def test_filters_by_metrics_and_period(test_session: AsyncSession, seeded_
     assert periods == {(2026, "Q2")}  # 2025Q4 旧期被过滤
 
 
-async def test_no_filters_loads_all(test_session: AsyncSession, seeded_financials):
-    """不传过滤条件时保持旧行为（全量加载），向后兼容。"""
-    fin = await _reload_financials(test_session)
-    assert set(fin.keys()) == {"600519", "300750"}
-    assert len(fin["600519"]) == 3
+async def test_empty_metrics_returns_empty(test_session: AsyncSession, seeded_financials):
+    """metrics 为空时直接返回空字典，不再执行全表加载。"""
+    fin = await _reload_financials(test_session, metrics=set())
+    assert fin == {}
+
+    # metrics 必传，缺省调用应报 TypeError
+    with pytest.raises(TypeError):
+        await _reload_financials(test_session)

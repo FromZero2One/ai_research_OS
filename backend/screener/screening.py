@@ -23,8 +23,9 @@ from screener.valuation import (
 
 # 全市场 A 股实时快照。
 # 注1：不走 akshare.stock_zh_a_spot_em（东财 push2 2026-10-22 起风控掐无 UA 请求 +
-# 分页限流，59 页必挂）；改用新浪 Market_Center 分页接口（hs_a，含价格/换手率/
-# 总市值），每页独立重试 + 节流，实测稳定。
+# 分页限流，59 页必挂）；改用自写 requests 脚本直接调新浪 Market_Center 分页接口（hs_a，
+# 含价格/换手率/总市值），通过 run_akshare 的子进程通道执行（非 akshare 库本身），
+# 每页独立重试 + 节流，实测稳定。
 # 注2：新浪 mktcap 单位为万元 → ×1e4 换算为元（与东财 f20 对齐）。
 _SPOT_CODE = (
     "import os, time, json\n"

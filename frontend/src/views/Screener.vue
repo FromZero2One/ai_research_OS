@@ -328,6 +328,15 @@ const statusLabel: Record<string, { label: string; type: string }> = {
   failed: { label: '失败', type: 'danger' },
 }
 
+// 各状态对应的阶段描述，让用户在等待时知道当前在做什么
+const stageDesc: Record<string, string> = {
+  pending: '等待调度中，稍后开始初筛',
+  screening: '正在采集全市场快照并执行量化初筛',
+  judging: '正在进行 LLM 逐只定性深判',
+  completed: '筛选完成，报告已生成',
+  failed: '筛选失败，请查看错误信息',
+}
+
 // ── 报告查看 ──
 const viewingRunId = ref<string | null>(null)
 const { data: reportData } = useScreenerRunReport(viewingRunId)
@@ -650,6 +659,7 @@ async function removeSavedPortfolio(p: ScreenerSavedPortfolio) {
             <el-tag :type="(statusLabel[activeRun.status]?.type as any) || 'info'">
               {{ statusLabel[activeRun.status]?.label || activeRun.status }}
             </el-tag>
+            <span class="text-secondary">{{ stageDesc[activeRun.status] || '' }}</span>
             <span class="text-secondary">候选 {{ activeRun.candidate_count ?? '-' }} / 推荐 {{ activeRun.result_count ?? '-' }}</span>
           </div>
           <div v-if="activeRun?.error" class="run-error">{{ activeRun.error }}</div>

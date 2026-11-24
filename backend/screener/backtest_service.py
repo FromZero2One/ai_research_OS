@@ -317,6 +317,9 @@ async def run_backtest(db: AsyncSession, run_id) -> ScreenerBacktestRun:
         scope = preset.style_tag if preset.style_tag in FINANCIAL_STYLES else "industrial"
         logger.info("回测行业隔离 scope=%s（%d 只有行业分类）", scope, len(industry_map))
 
+        # 基准指数只拉取一次，所有调仓期复用（避免在循环内重复请求 akshare）
+        bench = await fetch_index_daily(start, end)
+
         # ④ 逐调仓期：选股 → 买入/卖出结算 → 期收益
         periods_result: list[dict] = []
         for i, rdate in enumerate(rebalance_dates):
@@ -379,8 +382,7 @@ async def run_backtest(db: AsyncSession, run_id) -> ScreenerBacktestRun:
             )
             period_ret = sum(h["return"] for h in holdings) / len(holdings)
 
-            # 基准同期收益
-            bench = await fetch_index_daily(start, end)
+            # 基准同期收益（bench 在循环外已拉取一次，此处复用）
             bench_ret = _bench_return(bench, rdate, sell_date)
 
             periods_result.append(

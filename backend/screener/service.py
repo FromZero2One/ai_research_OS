@@ -41,21 +41,23 @@ def _local_now_text() -> str:
 
 async def _reload_financials(
     db: AsyncSession,
-    metrics: set[str] | None = None,
+    metrics: set[str],
     year: int | None = None,
     period: str | None = None,
 ) -> dict[str, list]:
     """加载财务指标 → {ticker: [FinancialMetricEntry]}（初筛求值用）。
 
-    传 metrics/year/period 时在 SQL 层过滤（全市场多期数据全量加载会
-    随财报季无限增长，内存和查询时间都不可持续）；不传保持旧行为全量加载。
+    metrics 为必传且非空；year/period 可选，传入时在 SQL 层进一步过滤到指定报告期。
+    禁用“全量加载”旧行为：metrics 为空时直接返回空字典，绝不执行不带指标过滤的
+    全表查询，避免把全市场多期财务数据全部载入内存。
     """
+    if not metrics:
+        return {}
+
     from market.domain import FinancialMetricEntry
     from market.models import FinancialMetric
 
-    stmt = select(FinancialMetric)
-    if metrics:
-        stmt = stmt.where(FinancialMetric.metric_name.in_(metrics))
+    stmt = select(FinancialMetric).where(FinancialMetric.metric_name.in_(metrics))
     if year is not None:
         stmt = stmt.where(FinancialMetric.fiscal_year == year)
     if period is not None:

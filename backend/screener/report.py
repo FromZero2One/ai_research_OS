@@ -100,6 +100,26 @@ def _preset_label(snapshot: dict) -> str:
     return label
 
 
+def _normalize_criterion(text: str) -> str:
+    """标准化判定条目：去除首尾空格、剥离合并模式下的预设前缀（如 "[核心资产] "）、折叠内部空白。"""
+    import re
+
+    t = text.strip()
+    # 剥离 "[预设名] " 前缀
+    t = re.sub(r"^\[[^\]]+\]\s*", "", t)
+    # 折叠连续空白
+    t = re.sub(r"\s+", " ", t)
+    return t
+
+
+def _criterion_matches_item(criterion: str, item: str) -> bool:
+    """判定条目是否命中标准条目：优先精确匹配（标准化后），失败则回退子串匹配。"""
+    if _normalize_criterion(criterion) == _normalize_criterion(item):
+        return True
+    # 回退：原始子串匹配，保留对 LLM 措辞微小差异的兼容
+    return item in criterion or criterion in item
+
+
 def build_report(
     run: dict,
     judgements: list[dict],
@@ -240,28 +260,16 @@ def build_report(
                 lines.append(f"- **{criterion}**：本次候选无相关判断记录")
     else:
         for item in _extract_criteria_items(criteria_text):
-            hits = [
-                j for j in ok_judgements
-                if any(
-                    h.get("hit") and item in str(h.get("criterion", ""))
-                    for h in (j.get("criteria_hits") or [])
-                )
-            ]
-            misses = [
-                j for j in ok_judgements
-                if any(
-                    not h.get("hit") and item in str(h.get("criterion", ""))
-                    for h in (j.get("criteria_hits") or [])
-                )
-            ]
+            hits = [j for j in ok_judgements if any(
+                h.get("hit") and _criterion_matches_item(str(h.get("criterion", "")), item) for h in (j.get("criteria_hits") or [])
+            )]
+            misses = [j for j in ok_judgements if any(
+                not h.get("hit") and _criterion_matches_item(str(h.get("criterion", "")), item) for h in (j.get("criteria_hits") or [])
+            )]
             if hits:
                 sample = hits[0]
                 evidence = next(
-                    (
-                        h.get("evidence", "")
-                        for h in sample.get("criteria_hits") or []
-                        if h.get("hit") and item in str(h.get("criterion", ""))
-                    ),
+                    (h.get("evidence", "") for h in sample.get("criteria_hits") or [] if h.get("hit") and _criterion_matches_item(str(h.get("criterion", "")), item)),
                     "",
                 )
                 lines.append(

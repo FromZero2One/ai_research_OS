@@ -121,6 +121,7 @@ def evaluate_quant_rules_by_preset(
                 entry["presets"].append(preset.name)
 
     # 收敛为最终形状：score = 各预设得分均值（票数排名在 service 按 hits 排）
+    final: dict[str, dict] = {}
     for entry in result.values():
         scores = entry.pop("scores")
         entry["score"] = sum(scores) / len(scores) if scores else 0.0
@@ -138,36 +139,3 @@ def evaluate_quant_rules_by_preset(
                 }
             )
     return result
-
-
-def evaluate_near_misses_by_preset(
-    candidates: list[dict],
-    presets: list[Any],
-    financials_by_ticker: dict[str, list],
-    exclude: set[str] | None = None,
-    limit: int = 10,
-) -> list[dict]:
-    """union 模式近似命中：对每个预设单独找“只差一条规则”的票并去重。
-
-    exclude 用于剔除已进入候选池的票；同一票命中多个预设的近似项时
-    保留第一个预设的失败规则。结果按市值降序截断。
-    """
-    from screener.screening import evaluate_near_misses
-
-    exclude = exclude or set()
-    merged: dict[str, dict] = {}
-    for preset in presets:
-        scope = getattr(preset, "style_tag", None) or "industrial"
-        if scope not in _FINANCIAL_SCOPES:
-            scope = "industrial"
-        applicable = [c for c in candidates if candidate_matches_scope(c, scope)]
-        for item in evaluate_near_misses(
-            applicable, preset.quant_rules, financials_by_ticker, limit=len(applicable)
-        ):
-            if item["ticker"] in exclude or item["ticker"] in merged:
-                continue
-            merged[item["ticker"]] = {**item, "preset": preset.name}
-    ranked = sorted(
-        merged.values(), key=lambda c: c.get("market_cap") or 0.0, reverse=True
-    )
-    return ranked[:limit]

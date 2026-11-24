@@ -6,9 +6,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.adapters.llm import create_llm
@@ -25,6 +27,19 @@ from screener.rules_schema import (
 )
 
 _AVAILABLE_METRICS_TEXT = "、".join(sorted(KNOWN_METRICS))
+
+# 按 doc_hash 分片的并发锁：同一文档在同一进程内同一时刻只翻译一次，
+# 避免并发触发时重复调用 LLM。跨进程冲突由数据库唯一键 + upsert 兜底。
+_translate_locks: dict[str, asyncio.Lock] = {}
+
+
+def _get_translate_lock(doc_hash: str) -> asyncio.Lock:
+    """按 doc_hash 获取或创建翻译锁（惰性初始化）。"""
+    lock = _translate_locks.get(doc_hash)
+    if lock is None:
+        lock = asyncio.Lock()
+        _translate_locks[doc_hash] = lock
+    return lock
 
 _TRANSLATE_SYSTEM_PROMPT = (
     "你是选股规则结构化助手。用户会给出一篇自然语言的选股标准文档，"
@@ -170,8 +185,14 @@ async def get_or_translate_rules(
     criteria_text: str,
     llm: LLM | None = None,
 ) -> dict:
-    """按文档 hash 查缓存；未命中或缓存含不可用指标时重新翻译并落库。"""
+    """按文档 hash 查缓存；未命中则调用翻译并落 ScreenerRule。
+
+    并发安全：先按 doc_hash 加进程内锁，再双重检查缓存；翻译完成后通过
+    PostgreSQL upsert 写入，跨进程重复插入由唯一键兜底，不会重复报错。
+    """
     doc_hash = hash_criteria(criteria_text)
+
+    # 第一次检查（无锁快路径，绝大多数命中缓存时无需加锁）
     existing = (
         await db.execute(select(ScreenerRule).where(ScreenerRule.doc_hash == doc_hash))
     ).scalar_one_or_none()
@@ -183,7 +204,20 @@ async def get_or_translate_rules(
         await db.delete(existing)
         await db.flush()
 
-    rules = await translate_criteria(llm or create_llm(), criteria_text)
-    db.add(ScreenerRule(doc_hash=doc_hash, rules=rules, criteria_text=criteria_text))
-    await db.flush()
-    return rules
+    async with _get_translate_lock(doc_hash):
+        # 双重检查：锁内再查一次，另一协程可能已翻译并写入
+        existing = (
+            await db.execute(select(ScreenerRule).where(ScreenerRule.doc_hash == doc_hash))
+        ).scalar_one_or_none()
+        if existing:
+            return existing.rules
+
+        rules = await translate_criteria(llm or create_llm(), criteria_text)
+        # upsert：doc_hash 冲突时忽略新写入，保留先翻译成功的记录
+        await db.execute(
+            insert(ScreenerRule)
+            .values(doc_hash=doc_hash, rules=rules, criteria_text=criteria_text)
+            .on_conflict_do_nothing(index_elements=[ScreenerRule.doc_hash])
+        )
+        await db.flush()
+        return rules
