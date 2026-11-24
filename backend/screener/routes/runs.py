@@ -1,4 +1,4 @@
-"""Screener 运行 API — 触发、历史、取消、详情、导出、报告、diff、自选、调度。"""
+"""Screener 运行 API — 触发、历史、详情、导出、报告、diff、自选、调度。"""
 
 from __future__ import annotations
 
@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.container import Container
 from core.database import get_container, get_db
-from core.event_service import EventLogger
 from core.exceptions import NotFoundError
 from screener.models import ScreenerJudgement, ScreenerRun
 
@@ -206,35 +205,6 @@ async def list_runs(db: AsyncSession = Depends(get_db)):
             for r in runs
         ]
     }
-
-
-@router.post("/runs/{run_id}/cancel")
-async def cancel_run(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    """请求取消运行：worker 在阶段边界/下一只深判前 cooperative 停止。"""
-    from screener.service import ACTIVE_STATUSES
-
-    run = (
-        await db.execute(select(ScreenerRun).where(ScreenerRun.id == run_id))
-    ).scalar_one_or_none()
-    if run is None:
-        raise NotFoundError("ScreenerRun", str(run_id))
-    if run.status == "cancelling":
-        return {"id": str(run.id), "status": run.status}
-    if run.status not in ACTIVE_STATUSES:
-        return JSONResponse(
-            status_code=409, content={"error": f"运行已结束（{run.status}），无法取消"}
-        )
-    run.status = "cancelling"
-    from screener.cancel import request_cancel
-
-    request_cancel(run.id)
-    await EventLogger(db).record(
-        source="screener", event_type="screener.cancel_requested",
-        entity_type="screener_run", entity_id=str(run.id),
-        summary="用户请求取消运行",
-    )
-    await db.commit()
-    return {"id": str(run.id), "status": run.status}
 
 
 @router.get("/runs/{run_id}")

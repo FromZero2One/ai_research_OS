@@ -249,18 +249,6 @@ async def test_presets_union_with_financials(test_session: AsyncSession, screene
         assert j.snapshot["hits"] == 1
 
 
-async def test_cancelled_run_finishes_without_pipeline(test_session: AsyncSession):
-    """排队期间取消：worker 启动后直接置 cancelled，不访问行情/LLM。"""
-    run = ScreenerRun(criteria_hash="h", criteria_text="标准", status="cancelling")
-    test_session.add(run)
-    await test_session.flush()
-
-    out = await run_screener(test_session, run.id)
-    assert out.status == "cancelled"
-    assert out.error == "已取消"
-    assert out.finished_at is not None
-
-
 async def test_trigger_unknown_preset_raises(test_session: AsyncSession):
     """preset_ids 含不存在的预设 → ValueError（路由层转 422）。"""
     import uuid as _uuid

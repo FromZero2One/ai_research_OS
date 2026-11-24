@@ -459,6 +459,45 @@ async def run_backtest(db: AsyncSession, run_id) -> ScreenerBacktestRun:
     return run
 
 
+async def fail_stale_backtest_runs(db: AsyncSession) -> list[str]:
+    """崩溃/任务丢失残留的进行中回测 run → 收尾置 failed，解除触发阻塞。
+
+    判定：进行中（pending/running）的 run，其最近一次 `screener_backtest` 任务
+    已结束（failed/completed）或根本不存在 → 说明任务不会再推进该 run。
+    返回被收尾的 run id 列表。
+    """
+    from core.task_manager import TaskRecord
+
+    actives = (
+        await db.execute(
+            select(ScreenerBacktestRun).where(
+                ScreenerBacktestRun.status.in_(["pending", "running"])
+            )
+        )
+    ).scalars().all()
+    failed_ids: list[str] = []
+    for active in actives:
+        task = (
+            await db.execute(
+                select(TaskRecord)
+                .where(
+                    TaskRecord.task_type == "screener_backtest",
+                    TaskRecord.task_key == f"backtest:{active.id}",
+                )
+                .order_by(TaskRecord.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if task is None or task.status in ("failed", "completed"):
+            active.status = "failed"
+            active.error = active.error or "回测任务未执行完成（handler 缺失或进程中断）"
+            active.finished_at = _now_iso()
+            failed_ids.append(str(active.id))
+    if failed_ids:
+        await db.flush()
+    return failed_ids
+
+
 def _bench_return(bench: list[dict], buy_day: dt.date, sell_day: dt.date) -> float:
     """基准在 [buy_day, sell_day] 的收益（取区间内首末收盘）。"""
     in_window = [b["close"] for b in bench if buy_day <= b["date"] <= sell_day]

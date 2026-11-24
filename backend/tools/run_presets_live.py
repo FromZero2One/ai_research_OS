@@ -76,7 +76,7 @@ def run_one(name: str, preset_id: str) -> None:
         if msg != last:
             print(msg, flush=True)
             last = msg
-        if status in ("completed", "failed", "cancelled", "missing"):
+        if status in ("completed", "failed", "missing"):
             break
 
     data = get(f"/runs/{run_id}", timeout=300) if status == "completed" else {}

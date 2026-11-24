@@ -162,28 +162,6 @@ class TestTriggerAndRun:
         second = client.post("/api/v1/screener/runs", json=preset_payload)
         assert second.status_code == 409
 
-    def test_cancel_pending_run(self, client: TestClient, screener_env, preset_payload: dict):
-        run_id = client.post("/api/v1/screener/runs", json=preset_payload).json()["id"]
-        resp = client.post(f"/api/v1/screener/runs/{run_id}/cancel")
-        assert resp.status_code == 200
-        assert resp.json()["status"] == "cancelling"
-        # 重复取消幂等
-        again = client.post(f"/api/v1/screener/runs/{run_id}/cancel")
-        assert again.status_code == 200
-        assert again.json()["status"] == "cancelling"
-
-    def test_cancel_finished_run_409(self, client: TestClient, screener_env, preset_payload: dict):
-        resp = client.post("/api/v1/screener/runs", json=preset_payload)
-        run = _run_screener_run(client, resp.json())
-        cancelled = client.post(f"/api/v1/screener/runs/{run['id']}/cancel")
-        assert cancelled.status_code == 409
-
-    def test_cancel_unknown_run_404(self, client: TestClient):
-        resp = client.post(
-            "/api/v1/screener/runs/00000000-0000-0000-0000-000000000000/cancel"
-        )
-        assert resp.status_code == 404
-
 
 class TestExportAndSchedule:
     def test_export_csv(self, client: TestClient, screener_env, preset_payload: dict):

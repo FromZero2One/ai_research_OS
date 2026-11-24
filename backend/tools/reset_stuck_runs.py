@@ -18,7 +18,7 @@ cur.execute(
     """
     SELECT id, status, candidate_count, created_at
     FROM screener.screener_runs
-    WHERE status NOT IN ('completed', 'failed', 'cancelled')
+    WHERE status NOT IN ('completed', 'failed')
     ORDER BY created_at DESC
     """
 )
@@ -34,7 +34,7 @@ if APPLY and rows:
         SET status = 'failed',
             finished_at = now(),
             error = COALESCE(error, 'reset: backend crashed mid-run')
-        WHERE status NOT IN ('completed', 'failed', 'cancelled')
+        WHERE status NOT IN ('completed', 'failed')
         """
     )
     print("已标记 failed:", cur.rowcount)

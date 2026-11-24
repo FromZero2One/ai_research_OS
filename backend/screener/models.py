@@ -22,7 +22,7 @@ class ScreenerRun(Base, UUIDMixin, TimestampMixin):
             "status",
             unique=True,
             postgresql_where=text(
-                "status IN ('pending', 'screening', 'judging', 'cancelling')"
+                "status IN ('pending', 'screening', 'judging')"
             ),
         ),
         {"schema": "screener"},

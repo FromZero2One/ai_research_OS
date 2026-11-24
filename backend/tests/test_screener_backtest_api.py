@@ -1,4 +1,4 @@
-"""回测编排 + API 单测 — monkeypatch 数据层，验证状态机/结果/报告/422/409。"""
+"""回测编排服务层单测 — monkeypatch 数据层，验证状态机/结果/报告。"""
 
 from __future__ import annotations
 
@@ -147,7 +147,7 @@ class TestRunBacktest:
         assert done.error
 
 
-class TestBacktestAPI:
+class TestBacktestService:
     def test_handler_registered_at_startup(self, client):
         """回测持久任务 handler 必须在 worker 启动前注册（曾因延迟导入失败）。"""
         from core.task_manager import _task_handlers
@@ -179,3 +179,59 @@ class TestBacktestAPI:
         run_id = "00000000-0000-0000-0000-000000000001"
         await bs._handle_backtest_run({"run_id": run_id})
         assert seen["run_id"] == _uuid.UUID(run_id)
+
+    async def test_fail_stale_backtest_runs_dead_task(
+        self, test_session: AsyncSession
+    ):
+        """进行中的 run 对应任务已死（不存在/failed/completed）→ run 收尾置 failed。"""
+        from core.task_manager import TaskRecord
+        from screener.backtest_service import fail_stale_backtest_runs
+
+        preset = CriteriaPreset(
+            name="恢复测试预设", description="d", style_tag="test-stale",
+            is_builtin=False, is_active=True,
+            quant_rules=[], qualitative=[], suggested_pool="all",
+        )
+        test_session.add(preset)
+        await test_session.flush()
+
+        dead_no_task = ScreenerBacktestRun(
+            preset_id=preset.id, years=1, status="pending"
+        )
+        dead_failed_task = ScreenerBacktestRun(
+            preset_id=preset.id, years=1, status="running"
+        )
+        alive = ScreenerBacktestRun(preset_id=preset.id, years=1, status="running")
+        test_session.add_all([dead_no_task, dead_failed_task, alive])
+        await test_session.flush()
+        # alive：最近一次任务仍在排队
+        test_session.add(
+            TaskRecord(
+                task_type="screener_backtest",
+                task_key=f"backtest:{alive.id}",
+                payload={"run_id": str(alive.id)},
+                status="pending",
+            )
+        )
+        # dead_failed_task：任务已失败
+        test_session.add(
+            TaskRecord(
+                task_type="screener_backtest",
+                task_key=f"backtest:{dead_failed_task.id}",
+                payload={"run_id": str(dead_failed_task.id)},
+                status="failed",
+            )
+        )
+        await test_session.flush()
+
+        failed_ids = await fail_stale_backtest_runs(test_session)
+        await test_session.flush()
+
+        assert set(failed_ids) == {str(dead_no_task.id), str(dead_failed_task.id)}
+        assert dead_no_task.status == "failed"
+        assert dead_no_task.error
+        assert dead_no_task.finished_at is not None
+        assert dead_failed_task.status == "failed"
+        # 任务仍存活的 run 不动
+        assert alive.status == "running"
+        assert alive.error is None
