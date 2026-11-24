@@ -12,21 +12,22 @@ Python/FastAPI 后端。完整使用手册见根目录 [`USAGE.md`](../USAGE.md)
 
 ## 架构
 
-7 个业务模块，依赖只向上：
+5 个业务模块 + Screener，依赖只向上：
 
 ```
-Company → Market + Document → Knowledge(RAG) → AI → Research → Portfolio
+Company → Market + Document → Knowledge(RAG) → Screener(筛选/深判/回测)
 ```
+
+> 2026-11-24 瘦身：research/portfolio/ai/dashboard 四模块代码已删除（数据库表保留）。LLM 用量端点 `/api/v1/ai/usage` 由 `core/system_routes.py` 继续提供。
 
 各模块文件结构并不完全统一：
 
 | 形态 | 模块 |
 |------|------|
-| 完整四层 `models → schemas → service → routes` | company, document, ai |
-| `service/` + `routes/` 子目录拆分 | market（另含 domain/repositories/akshare_executor）、portfolio（2 服务） |
-| 顶层多个 `*_service.py` | research（session/evidence/report/gather/thesis/timeline 6 服务） |
-| 薄模块（仅 routes + service，无自有 models/schemas） | knowledge（读写 document 表 + Qdrant）、dashboard（跨模块聚合） |
-| 编排型（pipeline + LLM 两层） | screener（criteria/translate/screening/judge/report/service，2026-10-21 新增） |
+| 完整四层 `models → schemas → service → routes` | company, document |
+| `service/` + `routes/` 子目录拆分 | market（另含 domain/repositories/akshare_executor） |
+| 薄模块（仅 routes + service，无自有 models/schemas） | knowledge（读写 document 表 + Qdrant） |
+| 编排型（pipeline + LLM 两层） | screener（criteria/translate/screening/judge/report/service） |
 服务通过 `core/container.py` DI 容器懒加载，路由经 `Depends(get_container)` 获取。
 
 ### Screener（智能选股，2026-10-21 v1；2026-10-22 v1.5 预设库）
@@ -124,13 +125,11 @@ ALL_PROXY= all_proxy= PYTHONPATH=. ./.venv/Scripts/python.exe -X utf8 scripts/ev
 
 **表现快照（2026-10-24）**：表 `screener.performance_snapshots`（迁移 `e9f0a1b2c3d4`，`(run_id, as_of)` 唯一）按自然日保存表现汇总与个股明细。`POST /api/v1/screener/runs/{run_id}/performance/snapshot` 计算并保存当日快照（同日重复调用幂等覆盖），`GET /api/v1/screener/runs/{run_id}/performance/history` 返回历史快照。`core/performance_schedule.py` 按 `PERFORMANCE_SNAPSHOT_SCHEDULE`（默认工作日 17:10）为最近 30 天完成的运行自动记录快照；也可用 `POST /api/v1/scheduler/run/performance_snapshot` 手动触发。前端表现面板新增「记录快照」与历史快照表。
 
-### 选股 → 研究中心交接（2026-10-24）
+### 数据质量前置检查（2026-10-24）
 
-`POST /api/v1/screener/runs/{run_id}/to-research`：把该轮**推荐股**创建为研究中心会话（`screener/handoff.py`）。body 可选 `tickers`（只挑指定票）与 `limit`（默认 5，≤50）；不传则按深判置信度从高到低取前 `limit` 只。会话 `auto_plan=False`，tag 为 `["screener", run_id]`，metadata 记录 `screener_run_id` / `screener_ticker`；同一 run 下同一 ticker 重复调用会跳过。返回 `{run_id, created, skipped, requested}`。前端历史运行表新增「送入」按钮。
+`GET /api/v1/screener/data-quality` 返回最新财务期与关键指标覆盖（ROE/营收/净利/经营现金流/总资产/ROIC/FCFF）、A 股公司行情覆盖（≥200 根日线）、最新行情日期、知识库文档/切片数，以及聚合告警（知识库为空、行情覆盖 <50%、财务库为空）。前端选股页「数据质量」卡片展示并高亮缺口；运行历史增加 全部/进行中/已完成/失败/已取消 筛选。
 
-**数据质量前置检查（2026-10-24）**：`GET /api/v1/screener/data-quality` 返回最新财务期与关键指标覆盖（ROE/营收/净利/经营现金流/总资产/ROIC/FCFF）、A 股公司行情覆盖（≥200 根日线）、最新行情日期、知识库文档/切片数，以及聚合告警（知识库为空、行情覆盖 <50%、财务库为空）。前端选股页「数据质量」卡片展示并高亮缺口；运行历史增加 全部/进行中/已完成/失败/已取消 筛选。
-
-**加入自选（2026-10-24）**：`POST /api/v1/screener/runs/{run_id}/watchlist`（body 可选 `tickers` / `limit`）把该轮推荐股或指定 ticker 置为 `Company.is_active=True`，返回 `{added, already, missing}`；重复加入幂等，无公司记录的票进 `missing`。前端「运行明细」面板可逐只「送入研究」/「自选」。
+**加入自选（2026-10-24）**：`POST /api/v1/screener/runs/{run_id}/watchlist`（body 可选 `tickers` / `limit`）把该轮推荐股或指定 ticker 置为 `Company.is_active=True`，返回 `{added, already, missing}`；重复加入幂等，无公司记录的票进 `missing`。前端「运行明细」面板可逐只「自选」。
 
 **数据采集（2026-10-22 东财风控后）**：全市场快照走新浪 `Market_Center` 分页接口；财务三表均为市场级一次调用——业绩报表 `stock_yjbb_em`（含 eps/营收同比/净利同比）、资产负债表 `stock_zcfz_em`、现金流量表 `stock_xjll_em`，全部经 `_AKSHARE_PROLOGUE` 反风控头（浏览器 UA + 直连 + IPv4 + urllib3 重试）。流动/速动比率、资产/存货/应收周转率、eps 与成长率另走东财 F10 主要指标 `RPT_F10_FINANCE_MAINFINADATA`（`LD`/`SD`/`TOAZZL`/`CHZZL`/`YSZKZZL`），分页 500/页、只保留 A 股前缀。`stock_zcfz_em` 原始表没有 `CURRENT_RATIO` 列，旧实现的 `CURRENT_RATIO÷100` 不会生效；单只报表接口仅作兜底保留。
 
@@ -174,8 +173,6 @@ ALL_PROXY= all_proxy= PYTHONPATH=. ./.venv/Scripts/python.exe -X utf8 scripts/ev
 
 - **定量层**：Market 中心是数字唯一事实源（akshare 直连入库 `market` schema）。报告/图表/比率引用财务数字只能走 Market 数据
 - **定性层**：Document/Knowledge 管定性正文（MD&A/风险/附注/公告）。`document_chunks.content_type` 在解析时打标（`document/content_classifier.py` 纯函数），`/knowledge/search` 支持 `content_type=` 过滤
-- **报告双轨**：Evidence 带 `content_nature`（quantitative/qualitative，LLM 批量分类）。数字论断走「已核实事实」/Market 区块禁止改写；定性论断内联 `[ev:id]`，前端可点击回跳证据卡
-- **交叉验证**：`research/fact_validator.py` 把 structured_facts（财报抽取）与 Market 接口值比对，偏差 ≥10% → `Observation(attention)` 口径差异事件
 
 ## 启动
 
@@ -202,13 +199,11 @@ PostgreSQL 用 schema 做模块隔离，初始化 SQL 见 `docker/init.sql`：
 | `company` | companies, company_tags |
 | `market` | stock_prices, financial_metrics（含 announcement_date，PIT）, valuation_history（估值历史，PE/PB 分位源）, stock_industry（申万/新浪行业）, data_freshness |
 | `document` | documents, document_chunks（含 content_type：mda/risk/notes/announcement/other） |
-| `research` | research_sessions, research_evidences（含 content_nature：quantitative/qualitative）, research_reports |
-| `portfolio` | holdings, investment_journal |
-| `ai` | prompt_templates |
+| `research` / `portfolio` / `ai` | **代码已删除（2026-11-24），表保留未清理** |
 | `core` | event_log, task_records, observations |
-| `screener` | screener_rules, screener_runs, screener_judgements, screener_metric_defs, screener_presets |
+| `screener` | screener_rules, screener_runs, screener_judgements, screener_metric_defs, screener_presets, screener_portfolios, performance_snapshots |
 
-- `knowledge` / `dashboard` 无独立 schema：knowledge 复用 document 表 + Qdrant 向量，dashboard 跨 schema 聚合查询
+- `knowledge` 无独立 schema：复用 document 表 + Qdrant 向量
 - 行情/财务数据统一入库 PG（`market` schema），采集走 akshare 子进程直连（无外部 MySQL 依赖）
 
 ### Event Log（审计追踪）
@@ -230,7 +225,7 @@ PYTHONPATH=. alembic current / history                 # 查看
 ```bash
 PYTHONPATH=. python scripts/seed_data.py
 ```
-导入 8 家公司 + 1 条 NVDA 研究会话 + 默认 AI 模板。
+导入示例公司与默认数据（研究相关 seeding 已随模块删除）。
 
 ## API 约定
 
@@ -290,7 +285,7 @@ PYTHONPATH=. python scripts/seed_data.py
 | 公司/行情浏览 | 无 |
 | 文档索引 | Embedding 需 Ollama（`OLLAMA_EMBEDDING_MODEL`，本机 bge-m3） |
 | 知识库搜索 | 无（纯向量 + BM25，无需 LLM） |
-| 研究观点/问答/研究报告/证据分类 | DeepSeek / Ollama / OpenAI |
+| 知识库问答 / Screener 深判 | DeepSeek / Ollama / OpenAI |
 
 Ollama 版本过旧（<0.3.0）时 `/api/embed` 不可用，Embedding 降级为 BM25 稀疏检索 + RRF 融合，功能不受影响。
 
@@ -315,7 +310,7 @@ cd backend
 
 ## 后台任务
 
-`core/task_manager.py`：PostgreSQL 持久化 `core.task_records` + worker 循环 + 自动重试 + `(type,key)` 去重 + 启动恢复。快速研究（`research/quick.py`）通过它后台跑 计划→搜集→报告 链，SSE 推流进度。
+`core/task_manager.py`：PostgreSQL 持久化 `core.task_records` + worker 循环 + 自动重试 + `(type,key)` 去重 + 启动恢复。
 
 APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工作日 2:00）、`financial_data_update`（工作日 3:15，全市场财务三表刷新，三类数据源 SAVEPOINT 隔离）、`screener_schedule`（工作日 16:30，定时选股 + 变化日报）、`performance_snapshot`（工作日 17:10，最近运行表现快照）、`observation_cycle`（工作日 5:30）、`event_log_cleanup`（周一 3:00）。状态见 `GET /api/v1/scheduler/status`。
 
@@ -324,4 +319,4 @@ APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工�
 ```bash
 make test        # pytest，专用 airesearch_test 库 + 隔离 Qdrant 集合
 ```
-当前全量 **391 passed / 2 failed / 2 skipped**；2 项失败为既有 research 证据继承用例（依赖本地小模型结构化输出，当前 Ollama 模型返回截断 JSON），与选股模块无关。screener + financial_sync 专项 **324 passed**。
+2026-11-24 瘦身删除了 research/portfolio/ai 相关用例（瘦身前 391 passed / 2 failed / 2 skipped，2 项失败为既有 research 证据继承用例）；screener + financial_sync 专项 **324 passed**。

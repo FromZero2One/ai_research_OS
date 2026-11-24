@@ -1,90 +1,80 @@
 # AI Research OS
 
-> **Research First, not AI First** — AI is a capability in the research flow, not the center of the system.
+> **Screener First, not AI First** — 数据与规则管筛选，AI 只做有据可查的深判。
 
-A personal AI-powered investment research assistant. Company → Knowledge → AI → Research → Portfolio.
+一个个人 AI 价值投资筛选器：行情/财务数据 + 年报知识库 → 预设量化初筛 → LLM 逐条深判 → 回测验证 → 定时推送。
+
+> **2026-11-24 项目瘦身**：已删除研究中心（research）、投资组合（portfolio）、AI 中心（prompt 模板）、仪表盘（dashboard）四个模块的代码，聚焦价值筛选核心链路。数据库表与迁移历史保留（回捡请 `git revert`）。裁剪设计见 `docs/superpowers/specs/2026-11-24-slim-to-value-screener-design.md`。
 
 ## 文档
 
-- **[USAGE.md](USAGE.md)** — 全栈使用手册（启动、功能模块详解、投研流程、FAQ）
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — 架构文档（模块、依赖规则、Screener 流水线、数据架构）
+- **[USAGE.md](USAGE.md)** — 使用手册（启动、功能模块详解、FAQ）
 - **[backend/README.md](backend/README.md)** — 后端开发文档（数据库、API、配置、AI、测试）
 - **[frontend/README.md](frontend/README.md)** — 前端开发文档（技术栈、目录、类型生成）
 
 ## Architecture
 
 ```text
-                    User
-                     │
-              Research Workspace
-              (Vue 3 Dashboard)
-                     │
-                     ▼
-              API Gateway (FastAPI)
-                     │
-   ┌────────────────────────────────┐
-   │       Application Layer        │
-   ├────────────────────────────────┤
-   │  Company     │   Research      │
-   │  Center      │   Center        │
-   │              │                 │
-   │  Market      │   AI            │
-   │  Center      │   Center        │
-   │              │                 │
-   │  Document    │   Portfolio     │
-   │  Center      │   Center        │
-   │              │                 │
-   │  Knowledge   │                 │
-   │  Center      │                 │
-   └────────────────────────────────┘
-                     │
-   ┌────────────────────────────────┐
-   │          Core Layer            │
-   ├────────────────────────────────┤
-   │  DB  │  Vector  │  LLM  │  Cache│
-   └────────────────────────────────┘
+                User
+                 │
+          Screener Workspace
+          (Vue 3 Dashboard)
+                 │
+                 ▼
+          API Gateway (FastAPI)
+                 │
+  ┌──────────────────────────────────────┐
+  │          Application Layer           │
+  ├──────────────────────────────────────┤
+  │  Company  │  Market   │  Document    │
+  │  Center   │  Center   │  Center      │
+  │           │           ├──────────────┤
+  │           │           │  Knowledge   │
+  │           │           │  Center(RAG) │
+  │           │           ├──────────────┤
+  │           │           │  Screener    │
+  │           │           │  筛选+深判+回测│
+  └──────────────────────────────────────┘
+                 │
+  ┌──────────────────────────────────────┐
+  │             Core Layer               │
+  ├──────────────────────────────────────┤
+  │  DB │ Vector │ LLM │ Cache │ Scheduler│
+  └──────────────────────────────────────┘
 ```
 
 > **数据源架构**：A 股/港股统一走 akshare 子进程直连（Tencent/Sina/Eastmoney），数据落 PG（`market` schema）；美股走 yfinance（需代理）。日常行情/财务无外部 MySQL 依赖；仅预设回测可选读取外部 MySQL 历史前复权日线（`BACKTEST_MYSQL_URL`，未配置时回测不可用）。
 
-## 7 Business Centers
+## 核心链路
 
-| Center | Responsibility | Tech |
+| 模块 | 职责 | Tech |
 |--------|---------------|------|
-| **Company Center** | Company profiles, industry, tags | PostgreSQL |
-| **Market Center** | Stock prices, financials, valuation history percentiles, ratio layer (no analysis) | yfinance / AKShare |
-| **Document Center** | Ingest → Parse → Chunk → Embed → Index（后台任务，PDF 表格结构化提取） | PyMuPDF + pdfplumber + BGE-M3 |
-| **Knowledge Center** | Hybrid RAG: dense + sparse + rerank（中文停用词、查询扩展、命中高亮） | Qdrant + BM25 + RRF + BGE Reranker |
-| **AI Center** | Prompt mgmt, LLM orchestration, summarization | DeepSeek V4 Flash (默认) / Ollama / OpenAI 兼容 |
-| **Research Center** | Question → Evidence → Report → Decision → Thesis | LangGraph-ready |
-| **Portfolio Center** | 关注公司（并入公司中心）、持仓、投资日志（后端） | PostgreSQL |
-| **Screener** | 预设标准库选股：42 指标（TTM 估值 + 现金流质量 + 因子深度 + 银行/保险专属）+ 8 内置预设 + 股票池卫生 + 行业隔离/相对排名 + 三态结论 + 定时筛选/变化日报 + 推荐后表现跟踪 + 组合构建 + LLM 深判评测 + 推荐股送入研究中心 + 变化日报 Webhook + 失败告警 + 调度状态/立即运行 + CSV 导出 + 组合保存 + 回测面板/分段稳健性 + 运行明细/逐只送入研究与自选 + 数据质量面板/运行筛选 + 表现快照定时记录 + 组合再平衡 + 运行取消 + 近似命中报告（2026-10-24） | AKShare + LLM 深判 |
+| **Company Center** | 公司档案、行业、标签、自选（is_active） | PostgreSQL |
+| **Market Center** | 股价、财务、估值、比率层（无分析） | yfinance / AKShare |
+| **Document Center** | 上传 → 解析 → 切片 → 嵌入 → 索引（年报 PDF 表格结构化） | PyMuPDF + pdfplumber + BGE-M3 |
+| **Knowledge Center** | 混合 RAG：稠密 + 稀疏 + 重排——深判的证据来源 | Qdrant + BM25 + RRF + BGE Reranker |
+| **Screener** | 42 指标 + 8 内置预设选股、LLM 逐条深判（证据守卫）、预设回测（Sharpe/Sortino/Calmar）、定时筛选 + 变化日报/失败告警 Webhook、组合构建/再平衡、CSV 导出、表现跟踪与快照 | AKShare + LLM 深判 |
 
 > **Screener 数据管道（2026-10-22）**：全市场快照走新浪源（东财风控应对）；财务三表（业绩/资产负债/现金流）均为市场级一次调用（~5000 只/期），不再逐只拉取；流动/速动/周转/成长率走东财 F10 主要指标（`RPT_F10_FINANCE_MAINFINADATA`）分页补采。已知缺口见 Roadmap。
 
 ## Data Flow
 
 ```text
-Company
+Company (股票池)
   ↓
-Market + Document
+Market + Document (数据 + 年报)
   ↓
-Knowledge (Hybrid RAG)
+Knowledge (混合 RAG — 深判证据)
   ↓
-AI (LLM)
+Screener (量化初筛 → LLM 深判 → 报告)
   ↓
-Research (Thesis → Decision)
-  ↓
-Portfolio
+回测验证 + 定时推送 (Webhook)
 ```
 
 > 自选列表已并入 Company Center：`is_active` 即关注状态，`priority/target_price/reason` 挂在公司上。
-> Portfolio Center 当前为持仓与投资日志（后端就绪，前端随 V2 P&L 一起提供）。
->
-> **比率层数据流（2026-10-15）**：`financial_metrics` → `compute_ratios` 纯函数 → `/market/ratios/{ticker}`；
-> `valuation_history`（PG，首次经 akshare `stock_a_indicator_lg` 拉全量）→ `percentile_rank` → `/market/ratios/{ticker}/valuation-percentile`；
-> 两者经 `build_ratio_block` 进报告上下文（标注"禁止改写"，与 period/peer 区块并列）。
 
-**Dependency rule**: Dependencies go UP only. Research can call Knowledge; Knowledge cannot call Research.
+**Dependency rule**: Dependencies go UP only. Screener can call Knowledge; Knowledge cannot call Screener.
 
 ## Quick Start
 
@@ -135,15 +125,13 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 
 | 模块 | 完成度 | 备注 |
 |------|:---:|------|
-| 公司中心 | ~90% | CRUD/搜索/Thesis/自选（is_active）全可用 |
+| 公司中心 | ~90% | CRUD/搜索/Thesis（手动）/自选（is_active）全可用 |
 | 市场中心 | ~90% | A股行情/财务/估值 akshare 直连全链路 + 数据覆盖矩阵（含量性维度）+ 比率层 + PE/PB 历史分位；美股 yfinance 备选 |
 | 文档中心 | ~90% | 后台异步索引、PDF 表格结构化、切片内容类型打标、关联公司；OCR 待 V2 |
 | 知识中心 | ~90% | 混合 RAG + Reranker + 文档问答（模型切换）+ 内容类型过滤 |
-| AI 中心 | ~60% | Prompt 模板管理/执行 + Token 用量；摘要/提取已砍（与 RAG 问答重叠，AI 能力内嵌研究流程） |
-| 研究中心 | ~95% | 全链路 + LLM 证据分类（含定量/定性双轨）+ 多周期比对 + 报告可视化 + [ev:id] 引用回溯 + structured_facts 交叉验证 |
-| 投资组合 | ~40% | 自选已并入公司；持仓/日志后端就绪，前端随 V2 |
-| 系统/调度 | ~85% | 调度/观察/持久任务/事件/新鲜度可用 |
-| 智能选股 | ~97% | 42 指标（TTM 估值 + 现金流质量 + 因子深度 + 银行/保险专属）+ 8 内置预设；股票池卫生 + 行业隔离/相对排名；深判知识库/证据守卫 + 三态结论 + 评测器；预设回测（Sharpe/Sortino/Calmar）；定时筛选 + 变化日报 + 推荐后表现（含沪深300超额）+ 组合构建 + 推荐股送入研究中心 + 变化日报/失败告警 Webhook（企微/飞书/钉钉）+ 调度状态/立即运行 + CSV 导出 + 组合保存/再平衡 + 回测面板/分段稳健性 + 表现快照 + 运行取消 + 近似命中；财务数据工作日定时更新 |
+| 智能选股 | ~97% | 42 指标（TTM 估值 + 现金流质量 + 因子深度 + 银行/保险专属）+ 8 内置预设；股票池卫生 + 行业隔离/相对排名；深判知识库/证据守卫 + 三态结论 + 评测器；预设回测（Sharpe/Sortino/Calmar）；定时筛选 + 变化日报 + 推荐后表现（含沪深300超额）+ 组合构建 + 变化日报/失败告警 Webhook（企微/飞书/钉钉）+ 调度状态/立即运行 + CSV 导出 + 组合保存/再平衡 + 回测面板/分段稳健性 + 表现快照 + 运行取消 + 近似命中；财务数据工作日定时更新 |
+
+> 已删除模块（2026-11-24）：研究中心、投资组合、AI 中心（Prompt 模板）、仪表盘——数据库表保留，详见文首瘦身说明。
 
 ### 智能选股评估快照（2026-10-25）
 
@@ -155,8 +143,8 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 
 深判链路：逐条标准检索 → 证据守卫（必须有 `[n]` 引用）→ 三态结论；`confidence` 为 LLM 自评、未校准，只用于排序/权重。详见 [backend/README.md](backend/README.md)「选股数据底座与预设评估」。
 
-总体：V1.1 目标基本达成，后端 **391 passed / 2 failed / 2 skipped**（2 项失败为既有 research 证据继承依赖本地 LLM 结构化输出，与选股改动无关）；screener + financial_sync 专项 **324 passed**；前端 vue-tsc/build 通过。改动文件 ruff 通过（仓库仍保留历史 E501 债务）。
-已知缺口：①知识库已入库 103 份年报（55,135 切片），但**深度价值/GARP 的事实性标准仍判不了**——应改为文本匹配 + 财务指标确定性判定，LLM 只判叙事类标准；②`BACKTEST_MYSQL_URL` 本机已配（外部 akshare 库），回测可用；③行情已覆盖主板 2,111/2,111、全库 5,313 只，推荐后表现/回测样本充足；④`valuation_history` 为空且上游 `stock_a_indicator_lg` 本机无数据，估值历史分位暂未接入选股；⑤深判评测仍为脚本，无 CI/历史面板；⑥置信度未校准（0.95/0.92/0.85 三档聚集），暂不能当胜率或仓位依据。其余历史缺口（美股已移除、持仓/日志前端、Market.vue 动态列）见 [memory/ai-research-os-session.md](memory/ai-research-os-session.md)。
+总体：后端测试随瘦身删除了 research/portfolio/ai 相关用例（瘦身前 391 passed / 2 failed / 2 skipped，2 项失败为既有 research 证据继承用例，已随模块删除）；前端 vue-tsc/build 通过（2026-11-24 瘦身后验证）。改动文件 ruff 通过（仓库仍保留历史 E501 债务）。
+已知缺口：①知识库已入库 103 份年报（55,135 切片），但**深度价值/GARP 的事实性标准仍判不了**——应改为文本匹配 + 财务指标确定性判定，LLM 只判叙事类标准；②`BACKTEST_MYSQL_URL` 本机已配（外部 akshare 库），回测可用；③行情已覆盖主板 2,111/2,111、全库 5,313 只，推荐后表现/回测样本充足；④`valuation_history` 为空且上游 `stock_a_indicator_lg` 本机无数据，估值历史分位暂未接入选股；⑤深判评测仍为脚本，无 CI/历史面板；⑥置信度未校准（0.95/0.92/0.85 三档聚集），暂不能当胜率或仓位依据。其余历史缺口见 [memory/ai-research-os-session.md](memory/ai-research-os-session.md)。
 
 ## API (when backend is running)
 
@@ -166,10 +154,10 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 
 1. **No Knowledge Graph** — V2 upgrade path, not V1 complexity
 2. **No LlamaIndex** — Hand-rolled SentenceTransformer + Qdrant for control
-3. **No Trading Agents** — V2 feature, Research First
-4. **Event Log** — Write-once audit trail for research process traceability
+3. **No Trading Agents** — V2 feature, not now
+4. **Event Log** — Write-once audit trail for process traceability
 5. **Core Layer = Interfaces, not Implementations** — Protocols > concrete classes
-6. **Workspace First, not Module First** — V1.1: Dashboard as default entry, not function list
+6. **Screener First** — 2026-11-24 瘦身后首页即智能选股；数据/规则管筛选，AI 只做有据可查的深判
 7. **AI = Capability, not Center** — LLM provider swappable (DeepSeek/Ollama/OpenAI)
 8. **自选列表并入公司中心** — watched == is_active，priority/target_price/reason 挂在公司上，消除两套列表重复
 9. **文档表格结构化** — 财报类 PDF 表格按词坐标重建为 Markdown（保留集团/母公司列组），整块入库、问答不丢列含义
@@ -185,22 +173,19 @@ Visit **http://localhost:5173** — the Research Workspace dashboard.
 
 ## Roadmap
 
-已明确放弃：multi-agent、trading agents、LangGraph DAG 工作流（单用户工具过度设计，已于 2026-10 移除 AI 工作流）。
+已明确放弃：multi-agent、trading agents、LangGraph DAG 工作流（单用户工具过度设计）；2026-11-24 进一步删除研究中心/投资组合/AI 中心/仪表盘，聚焦价值筛选。
 
-核心数据分工原则（2026-10-14）：**接口管"数"，PDF 管"事"** — Market 中心是数字唯一事实源；文档链路管定性正文（MD&A/风险/附注/公告）；structured_facts 仅作交叉验证质检器。
+核心数据分工原则（2026-10-14）：**接口管"数"，PDF 管"事"** — Market 中心是数字唯一事实源；文档链路管定性正文（MD&A/风险/附注/公告）。
 
 当前方向（分析师优先级排序）：
 
 | 方向 | 状态 | 内容 |
 |---|---|---|
 | ~~数据质量看板~~ | ✅ | 覆盖矩阵 `GET /market/freshness/coverage` + Market 页卡片 |
-| ~~报告引用回溯~~ | ✅ | 报告内联 `[ev:id]`，前端点击回跳证据卡（含定量/定性双轨打标） |
-| ~~structured_facts 交叉验证~~ | ✅ | 财报抽取值 vs 接口值偏差≥10% → 观察事件（口径差异提示） |
 | ~~比率层 + 历史分位~~ | ✅ 2026-10-15 | `market/ratio_service.py` 派生毛利率/净利率+透出 ROE/负债率/周转率等；`market.valuation_history` 表（akshare `stock_a_indicator_lg` 全序列入 PG）算 PE/PB 历史分位；API `/market/ratios/{ticker}[/valuation-percentile]`；报告区块 + CompanyDetail 卡片 |
 | ~~覆盖矩阵定性维度~~ | ✅ 2026-10-15 | 矩阵新增定性列：已索引文档含 mda/risk 切片 → ok；仅已索引 → partial；无 → missing；纳入 worst_health |
-| ~~证据继承~~ | ✅ 2026-10-16 | auto-gather 自动带入同公司已完成会话证据（上限 10 条/去重/幂等），标 inherited_from_session_id，前端「📥 历史已核实」徽标可跳原会话 |
-| **差异日报** | 未开始 | 旧晨报已删（2026-10-14），从零构建"只报变化"日报：新公告、财报日历临近、价格异动、证据与旧结论冲突 |
 | ~~预设标准库（Screener v1.5）~~ | ✅ 2026-10-24 | 42 指标（TTM 估值 + 现金流质量 + 因子深度 + 银行/保险专属）+ 8 内置预设（含银行/保险价值）+ 组合模式；股票池卫生；申万行业分类与金融行业隔离；回测风险指标（Sharpe/Sortino/Calmar/年化超额） |
+| ~~项目瘦身聚焦价值筛选~~ | ✅ 2026-11-24 | 删除 research/portfolio/ai/dashboard 四模块代码，数据库表保留；文档同步更新 |
 
 收尾待办（小项）：Market.vue 覆盖网格列数动态化（当前硬编码 `repeat(5, 90px)`）；test_finalize_session 补 LLM mock（真实 LLM 调用挂起）；qualColor 硬编码色值统一 CSS 变量。
 

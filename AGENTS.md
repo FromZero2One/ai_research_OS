@@ -8,14 +8,14 @@ Personal AI investment-research assistant. FastAPI backend in `backend/` (Python
 - **Backend must start from `backend/`** — `UPLOAD_DIR=data/uploads` is a relative path. Use `start-backend.ps1` / `start-dev.cmd`, or `cd backend` then `PYTHONPATH=. uvicorn api.app:app --reload --port 8000`.
 - **First run**: deps stack up → `cd backend && PYTHONPATH=. alembic upgrade head` → `PYTHONPATH=. python scripts/seed_data.py` → needs `OPENAI_API_KEY` in `backend/.env` for AI features.
 - **Tests** (from `backend/`, docker Postgres + Qdrant must be up): `.venv\Scripts\python -m pytest -v`; single file/test: `... pytest tests/test_market.py -k name` (pytest-asyncio `auto` mode — no markers needed). conftest auto-creates the dedicated `airesearch_test` DB (override via `TEST_DATABASE_URL`) and **refuses to run against the dev DB**; vectors go to a separate `documents_test` Qdrant collection.
-- **Known-failing tests**: 2 research evidence-inheritance tests fail because the local LLM returns truncated JSON (per README). Pre-existing — don't chase them in unrelated changes.
+- **Known-failing tests**: none known as of 2026-11-24 (the 2 pre-existing research evidence-inheritance failures went away when the research module was deleted).
 - **Migrations**: from `backend/`, `PYTHONPATH=. alembic upgrade head` / `alembic revision --autogenerate -m "..."`. Linear chain (~30 versions).
 - **Annual reports (knowledge base)**: `cd backend && .venv\Scripts\python tools\fetch_cninfo_reports.py` (cninfo latest annual PDFs for the latest screener run) then `tools\upload_reports.py` (upload + index, idempotent; needs backend + Ollama running). Feeds qualitative presets and doc Q&A.
 
 ## Lint / typecheck debt — important
 
 - **Full `ruff check` and `ruff format --check` fail repo-wide** (~200 errors, ~100 unformatted files — historical debt). Only run ruff on files you touched; never run repo-wide `ruff format` (would create a massive diff).
-- mypy scope is deliberately narrow (`core`, `market/domain.py`, `market/repositories.py`, `research/schemas.py`) — see `[tool.mypy]` in `backend/pyproject.toml`.
+- mypy scope is deliberately narrow (`core`, `market/domain.py`, `market/repositories.py`) — see `[tool.mypy]` in `backend/pyproject.toml`.
 - pre-commit enforces ruff --fix + format on changed files and the scoped mypy: `pre-commit run --files <changed files>`.
 
 ## Environment quirks
@@ -29,10 +29,10 @@ Personal AI investment-research assistant. FastAPI backend in `backend/` (Python
 
 ## Architecture rules
 
-- Modules under `backend/`: company, market, document, knowledge, research, portfolio, screener (+ core, api, ai, dashboard). **Dependencies go up only**: company → market/document → knowledge → research → portfolio. Knowledge/dashboard have no own DB schema (reuse `document` tables / cross-schema aggregation).
+- Modules under `backend/`: company, market, document, knowledge, screener (+ core, api). **Dependencies go up only**: company → market/document → knowledge → screener. Knowledge has no own DB schema (reuses `document` tables). 2026-11-24: research/portfolio/ai/dashboard code deleted (DB tables kept).
 - **Data division**: Market center is the ONLY source of numbers (akshare → PG `market` schema); Document/Knowledge handle qualitative text; `structured_facts` is cross-validation only. Don't source numbers from PDFs.
 - DI via `core/container.py`; routes get services through `Depends(get_container)`. Errors flow through `core/exceptions.py` handlers (structured JSON: 404/422/409/502/...). Timestamps are UTC ISO-8601 everywhere.
-- PostgreSQL: one schema per module (company/market/document/research/portfolio/ai/core/screener). `core.event_log` is a write-once audit trail — never update/delete.
+- PostgreSQL: one schema per module (company/market/document/core/screener; research/portfolio/ai schemas remain in DB but their code is gone). `core.event_log` is a write-once audit trail — never update/delete.
 - Screener: deterministic screening; LLM only for per-stock deep judgement. Metric/preset definitions in `screener/seeds.py`; Markdown reports land in `screener/reports/`.
 - Screener deep judgement: evidence is retrieved **per criterion** (`judge._retrieve_per_criterion`), and the evidence guard rejects any `hit=true` whose evidence lacks a `[n]` citation. `confidence` is the LLM's uncalibrated self-score — use it for ordering only, never as a probability. Fact-like criteria (audit opinion, litigation, cash coverage) should become deterministic text/metric checks, not LLM prompts; qualitative criteria must be phrased so an annual report can actually evidence them.
 - Backend tasks: persistent PG-backed queue (`core/task_manager.py`) + APScheduler jobs in `core/scheduler.py` (see `GET /api/v1/scheduler/status`).

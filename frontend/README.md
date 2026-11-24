@@ -16,8 +16,8 @@ Vue 3 前端。完整使用手册见根目录 [`USAGE.md`](../USAGE.md)。
 src/
 ├── main.ts            # 应用入口
 ├── App.vue            # 根组件
-├── router/            # Vue Router（13 条路由，懒加载）
-├── views/             # 页面视图（13 个）
+├── router/            # Vue Router（7 条路由，懒加载）
+├── views/             # 页面视图（6 个）
 ├── components/        # 共享组件
 ├── stores/api.ts      # 数据层：fetch + TanStack Query 泛型 hooks
 ├── types/             # OpenAPI 生成类型（`npm run gen` 后生成 api.ts，默认空）
@@ -40,15 +40,15 @@ npm run dev            # http://localhost:5173
 
 | 路由 | 视图 | 说明 |
 |------|------|------|
-| `/` | Dashboard | 工作台聚合 |
-| `/research` | ResearchList / ResearchQuick / ResearchTimeline / ResearchDetail | 研究中心 |
+| `/` | — | 重定向到 `/screener` |
+| `/screener` | Screener | 智能选股（首页） |
 | `/companies` | Companies / CompanyDetail | 公司中心（自选已并入） |
 | `/market` | Market | 市场中心 |
 | `/documents` | Documents | 文档中心 |
 | `/knowledge` | Knowledge | 知识中心 |
-| `/ai` | AICenter | AI 中心 |
-| `/portfolio` | Portfolio | 投资组合（持仓前端待 V2） |
 | `/system` | System | 系统/调度状态 |
+
+> 2026-11-24 瘦身：Dashboard、Research×4、Portfolio、AICenter 视图已删除。
 
 ## 数据层（stores/api.ts）
 
@@ -62,7 +62,7 @@ npm run dev            # http://localhost:5173
 | `StockChart.vue` | ECharts K 线图（MA5/MA20/成交量/dataZoom） |
 | `CommandPalette.vue` | ⌘K 全局命令面板 |
 | `Sidebar.vue` | 侧边栏导航 |
-| `FinancialBars.vue` | 财务指标条 |
+| `PresetManager.vue` | Screener 预设管理抽屉 |
 
 ## 类型生成（按需）
 

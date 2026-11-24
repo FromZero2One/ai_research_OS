@@ -1,6 +1,8 @@
 # AI Research OS 使用手册
 
-> **Research First, not AI First** — AI是研究流程中的能力,不是系统的中心。
+> **Screener First, not AI First** — 数据与规则管筛选,AI 只做有据可查的深判。
+
+> **2026-11-24 项目瘦身**：研究中心、投资组合、AI 中心（Prompt 模板）、仪表盘四个模块的代码已删除，系统聚焦价值筛选核心链路。数据库表保留。本手册已按裁剪后架构更新。
 
 ---
 
@@ -14,7 +16,7 @@
 └──────────────────────────────────────────────┘
               ↓
 ┌──────────────────────────────────────────────┐
-│  PostgreSQL (pgvector)  ← 公司/研究/行情/财务│
+│  PostgreSQL (pgvector)  ← 公司/行情/财务/选股│
 │  Qdrant (向量数据库)    ← 知识库索引         │
 │  Redis                  ← 缓存               │
 └──────────────────────────────────────────────┘
@@ -268,26 +270,17 @@ make ingest-sample # 加载示例数据
 
 ## 四、功能模块详解
 
-### 4.1 工作台 Dashboard
+### 4.1 智能选股首页 `/screener`
 
-**访问地址**: http://localhost:5173
+**访问地址**: http://localhost:5173 （首页即智能选股，2026-11-24 瘦身后）
 
-进入系统后的首页,自动展示面板:
-
-| 模块 | 说明 |
-|------|------|
-| **研究提醒** | 超过14天未研究的自选股,按需研究程度排序 |
-| **自选股行情** | 关注公司(is_active)的最新价格和涨跌 |
-| **行情概览** | 自选公司最新价/涨跌幅/行业 |
-| **最近研究** | 最近开展的投研会话,点击可继续 |
-
-> **旧晨报已下线**（2026-10-14）：原"Morning Brief"新闻聚合卡已移除，将由"差异日报"（只报变化）替代——见 Roadmap。
+全市场价值股筛选是系统的核心出口，详见下方「4.6 智能选股」。
 
 ---
 
 ### 4.2 公司中心 `/companies`
 
-功能:管理和浏览投资研究标的。
+功能:管理和浏览筛选标的。
 
 **已入库公司** (Seed数据):
 AAPL (Apple), AMZN (Amazon), GOOGL (Alphabet), MSFT (Microsoft), NVDA (NVIDIA), TSLA (Tesla), JPM (JPMorgan), BRK.B (Berkshire)
@@ -299,7 +292,6 @@ AAPL (Apple), AMZN (Amazon), GOOGL (Alphabet), MSFT (Microsoft), NVDA (NVIDIA), 
 - 查看公司详细信息(描述、行业、员工数、官网、创建时间等)
 - 给公司打标签 (tech/ai/ev/megacap/value等)
 - 查看/更新公司的投资观点(Thesis): Bull/Bear/Neutral + 决策(buy/sell/hold/watch/pass)
-- 公司工作区:聚合视图(Thesis+最近研究+证据统计)
 - **比率与估值分位卡片**: 公司详情页展示财务比率(毛利率/净利率/ROE等)与 A 股 PE/PB 历史分位 (`GET /api/v1/market/ratios/{ticker}`、`GET /api/v1/market/ratios/{ticker}/valuation-percentile`)
 - **关注/自选**: 自选已并入公司中心 — `is_active=true` 即自选。添加: `POST /api/v1/companies/watch`;移除: `PATCH /api/v1/companies/{id}` 设 `is_active=false`;优先级/目标价/理由挂在公司上 (`priority`/`target_price`/`reason`)
 
@@ -387,26 +379,18 @@ GET /api/v1/knowledge/search/document/{document_id}?query=...  # 只搜索指定
 
 ---
 
-### 4.6 AI中心 `/ai`
+### 4.6 AI 能力（内嵌于各模块）
 
-功能:提示词模板管理、模板执行、Token 用量统计。
+> **AI 中心已删除**（2026-11-24 瘦身）：Prompt 模板管理/执行界面与 `/api/v1/ai/templates` 等端点随模块移除。AI 能力内嵌于各模块——知识库问答、Screener 深判均直接使用 `.env` 配置的 LLM（DeepSeek/Ollama 可切换）。
 
-**核心能力**:
-- **提示词模板**: 预定义的System+User Prompt模板,可变量替换,支持temperature/max_tokens配置
-- **模板执行**: `POST /api/v1/ai/generate` 按模板+变量生成（知识中心的 `knowledge_ask` 模板覆盖机制也读这里的模板表）
-- **Token 用量统计**: `GET /api/v1/ai/usage` 按模型汇总调用次数与输入/输出 tokens（进程级统计，服务重启清零）；系统页（/system）有实时展示卡片
-
-> **AI 是能力不是中心**（2026-10-14 瘦身）：文本摘要/结构化提取已移除——与知识中心 RAG 问答、研究流程内嵌的 LLM 能力重叠；AI 工作流此前已移除。
-
-**依赖**: 必须配置 DeepSeek (或 Ollama/OpenAI 兼容 API)
+**保留的用量统计**：`GET /api/v1/ai/usage` 按模型汇总调用次数与输入/输出 tokens（进程级统计，服务重启清零）；系统页（/system）有实时展示卡片。该端点由 `core/system_routes.py` 提供。
 
 ### 共享组件
 
 | 组件 | 用途 |
 |------|------|
-| StockSearch.vue | 可复用股票搜索下拉 (v-model, 300ms防抖, 键盘导航, 5个视图共用) |
+| StockSearch.vue | 可复用股票搜索下拉 (v-model, 300ms防抖, 键盘导航) |
 | StockChart.vue | ECharts K 线图 (MA5/MA20/成交量/dataZoom) |
-| ReportCharts.vue | 报告可视化：证据方向分布饼图 + 财务指标多周期趋势线（数据来自 structured_facts） |
 | CommandPalette.vue | ⌘K 全局命令面板 |
 | Sidebar.vue | 侧边栏导航 |
 
@@ -420,140 +404,9 @@ cd frontend && npm run gen
 # 生成: backend/scripts/generate_openapi.py → openapi.json → src/types/api.ts
 ```
 
-**API示例**:
-```bash
-# 列出提示词模板
-GET  /api/v1/ai/templates
-
-# 创建提示词模板
-POST /api/v1/ai/templates
-Body: {"name": "research_summary", "system_prompt": "你是研究分析师", "user_prompt_template": "总结关于{company}的{topic}", "temperature": 0.7}
-
-# 执行提示词模板
-POST /api/v1/ai/generate
-Body: {"prompt_name": "research_summary", "variables": {"company": "AAPL", "topic": "AI战略"}}
-
-# Token 用量汇总（进程级统计，系统页有展示卡片）
-GET /api/v1/ai/usage
-```
-
 ---
 
-### 4.7 研究中心 `/research` — 核心功能
-
-功能:标准投研工作流,从问题提出到决策记录全流程管理。
-
-**标准工作流**:
-```
-选择公司 → 提出研究问题 → 收集证据(Evidence) → 形成Thesis → 记录决策
-```
-
-**详细步骤**:
-
-**Step 1 — 创建研究会话**
-```
-POST /api/v1/research/sessions
-Body: {"company_id": "...", "question": "NVDA在AI芯片市场的竞争优势能持续多久?", "status": "draft"}
-```
-
-状态流转: `draft` → `researching` → `reviewing` → `completed`(界面显示为中文:草稿/研究中/评审中/已完成;决策显示为 买入/卖出/持有/关注/跳过)
-
-**Step 2 — 收集证据 (Evidence)**
-
-两种方式:
-- **系统自动搜集** — `POST /api/v1/research/sessions/{id}/auto-gather` 自动从知识库搜索相关文档片段作为证据
-- **手动添加** — `POST /api/v1/research/sessions/{id}/evidences` 手动输入网络研究、财报数据等
-
-每条证据标记类型: `supporting` (支持) / `opposing` (反对) / `neutral` (中性)。类型由两级分类判定：先关键词初值，收集完成后再由 LLM 批量复核覆盖（证据卡上显示 🤖 AI分类 徽标；`EVIDENCE_CLASSIFIER` 开关控制）。
-
-每条证据还带**论断性质** `content_nature`（证据卡徽标：🔢 定量 / 💬 定性）：数字论断引用 Market 接口数据或已核实事实，定性论断供报告内联引用回跳。
-
-财报类文档证据会自动抽取**结构化事实**（structured_facts，只取原文数字，禁推算），报告生成时据此计算 **多周期比对（YoY/QoQ）** 并从财务指标库生成 **同业中位对比**（均显式标注为计算值）。研究详情页的"数据可视化"卡片用 ECharts 展示证据方向分布与指标趋势。
-
-> **交叉验证（质检器）**：抽取出的结构化事实会与 Market 接口聚合值自动比对，偏差 ≥10% 时生成"口径差异"观察事件（System 页可见），提示复核合并/归母口径——结构化事实只做质检，不替代 Market 数据。
-
-证据列表: `GET /api/v1/research/sessions/{id}/evidences`
-删除证据: `DELETE /api/v1/research/evidences/{evidence_id}`
-
-**Step 3 — 生成研究计划**
-```
-POST /api/v1/research/sessions/{id}/plan
-Body: {"focus_areas": ["竞争格局", "财务数据", "估值"]}
-```
-获取计划: `GET /api/v1/research/sessions/{id}/plan`
-
-> 创建会话（含一键研究）时可指定 `plan_type`: `initial`（首次覆盖）/ `earnings`（财报点评）/ `thesis_check`（论点检验）/ `industry`（行业对比）——命中预置模板则零 LLM 调用直接生成计划；留空则由 AI 根据问题自动生成。
-
-**Step 4 — 形成观点 (Thesis)**
-
-综合所有证据,给出投资观点:
-- **Thesis** — 综合论述(文字)
-- **Decision** — 决策方向: buy / sell / hold / watch / pass
-- **Confidence** — 信心度 0.0~1.0
-
-更新会话: `PATCH /api/v1/research/sessions/{id}`
-
-**Step 5 — 生成报告(可选,需AI服务)**
-```
-POST /api/v1/research/sessions/{id}/generate-report
-Body: {"report_type": "detailed"}
-
-# 最终化(锁定证据和观点)
-POST /api/v1/research/sessions/{id}/finalize
-```
-
-获取报告: `GET /api/v1/research/sessions/{id}/reports`
-对比报告差异: `GET /api/v1/research/reports/{report_id}/diff`
-
-> **报告双轨 + 引用回溯**（2026-10-14 起）：报告中的**定性论断**末尾带 `[ev:xxx]` 引用编号，前端渲染为「📎证据」可点击锚点——点击自动滚动到对应证据卡并高亮闪烁；**数字论断**只使用「已核实事实」或 Market 数据区块给出的数字并标注口径，报告 AI 不改写不推算。
-
-**相关页面**:
-- `/research` — 所有研究会话列表
-- `/research/[id]` — 某个会话的详情和工作台
-- `/research/quick` — 快速研究(AI辅助,SSE流式输出)
-- `/research/timeline` — 研究时间线视图
-
----
-
-### 4.8 投资组合 `/portfolio`
-
-功能:自选列表（已并入公司中心）、持仓记录、投资日记。
-
-**自选列表 (Watchlist — 已并入 Company)**:
-自选 = `is_active=True` 的公司。关注/取消关注直接操作公司：
-```
-GET  /api/v1/companies?is_active=true          # 列出关注中的公司
-POST /api/v1/companies/watch                   # 加入自选 Body: {"ticker": "AAPL", "name": "...", "priority": 1, "reason": "..."}
-PATCH /api/v1/companies/{company_id}           # 取消关注: {"is_active": false}
-```
-
-股票状态标签: `normal`(正常,绿色) / `attention`(关注,橙色) / `need_research`(需研究,红色)
-系统自动追踪距上次研究的天数，>14天标记 attention，>30天标记 need_research。
-
-**持仓管理 (Holdings)**:
-```
-GET  /api/v1/portfolio/holdings                # 所有持仓
-POST /api/v1/portfolio/holdings               # 记录持仓 Body: {"ticker": "AAPL", "shares": 100, "avg_cost_basis": 150.0}
-PATCH /api/v1/portfolio/holdings/{holding_id} # 更新持仓(如增持)
-POST /api/v1/portfolio/holdings/{holding_id}/close  # 平仓
-```
-
-**投资日记 (Journal)**:
-```
-GET  /api/v1/portfolio/journal                 # 日记列表
-POST /api/v1/portfolio/journal                # 写日记 Body: {"entry_type": "idea", "ticker": "...", "title": "...", "content": "..."}
-GET  /api/v1/portfolio/journal/{entry_id}     # 日记详情
-```
-
-> 持仓与投资日志当前仅有后端接口,前端页面待 V2(P&L 追踪)一并提供。
-
-**相关页面**:
-- `/portfolio` — 自选列表
-- `/portfolio/journal` — 投资日记
-
----
-
-### 4.9 调度中心 `/scheduler`
+### 4.7 调度中心 `/scheduler`
 
 功能:手动触发定时任务、查看观察报告。
 
@@ -561,7 +414,7 @@ GET  /api/v1/portfolio/journal/{entry_id}     # 日记详情
 | 任务名 | 默认时间 | 功能 |
 |--------|---------|------|
 | `market_data_update` | 工作日2am | 更新市场数据 |
-| `observation_cycle` | 工作日5:30am | 运行自选股观察周期,更新研究提醒 |
+| `observation_cycle` | 工作日5:30am | 运行自选股观察周期（价格异动/行业异动） |
 
 **手动触发**:
 ```
@@ -576,7 +429,7 @@ GET /api/v1/scheduler/observations      # 最近的观察报告列表
 POST /api/v1/scheduler/observe          # 手动触发一次观察
 ```
 
-### 4.10 智能选股 `/screener`（2026-10-24）
+### 4.8 智能选股 `/screener`（2026-10-24）
 
 功能：预设标准库驱动的全市场选股。两种模式：
 
@@ -594,8 +447,8 @@ POST /api/v1/scheduler/observe          # 手动触发一次观察
 - **数据质量卡片**：最新财务期、7 个关键指标覆盖、行情覆盖、知识库文档数；缺数据/知识库为空直接告警。
 - **定时任务卡片**：cron/预设/下次运行/Webhook 状态，可后台「立即运行定时选股」。
 - **预设回测卡片**：选预设与年数启动回测，展示汇总指标、前半/后半分段稳健性、逐年明细。
-- **历史运行**：按状态筛选；每行支持 报告/CSV/明细/日报/表现/组合/取消/送入。
-- **运行明细**：逐只结论（推荐/未通过/数据不足/深判失败）、置信度、行业、价格、理由；推荐股可逐只「送入研究」「自选」。
+- **历史运行**：按状态筛选；每行支持 报告/CSV/明细/日报/表现/组合/取消。
+- **运行明细**：逐只结论（推荐/未通过/数据不足/深判失败）、置信度、行业、价格、理由；推荐股可逐只「自选」。
 - **日报**：默认对比同口径上一轮，也可选择任意已完成运行作为基线；规则变更时明确提示不可比。
 - **表现**：T+1 买入的 1/3/6/12 月收益与沪深300超额；可「记录快照」并查看历史快照。
 - **组合**：按资金与单票/行业上限构建，可保存；载入已保存组合后可计算再平衡（漂移/买卖股数与金额）。
@@ -624,7 +477,6 @@ GET  /api/v1/screener/backtests             # 最近回测列表
 POST /api/v1/screener/backtests             # 触发预设回测（Body: {"preset_id": "...", "years": 5}）
 GET  /api/v1/screener/backtests/{id}        # 回测详情（含 split_sample）
 GET  /api/v1/screener/backtests/{id}/report # 回测 Markdown 报告
-POST /api/v1/screener/runs/{id}/to-research # 推荐股 → 研究中心会话（Body 可选 {"tickers": [...], "limit": 5}）
 POST /api/v1/screener/runs/{id}/watchlist    # 推荐股 → 自选（Body 可选 {"tickers": [...], "limit": 50}）
 ```
 
@@ -744,51 +596,46 @@ OPENAI_API_KEY=<你的Key>
 
 ---
 
-## 十一、投研标准流程 (实践指南)
+## 十一、价值筛选标准流程 (实践指南)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  1. 发现机会                                               │
-│     例: 看到NVDA财报超预期,想深入研究是否值得加仓           │
+│  1. 确保数据底座就绪                                        │
+│     数据质量卡片或 GET /api/v1/screener/data-quality        │
+│     （行情覆盖 / 财务期 / 知识库文档数）                    │
 └─────────────────────────┬───────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
-│  2. 创建研究会话                                           │
-│     POST /api/v1/research/sessions                         │
-│     Body: {"company_id": "NVDA公司ID", "question": "..."}  │
+│  2. 运行筛选                                                │
+│     POST /api/v1/screener/runs                              │
+│     Body: {"mode": "presets", "preset_ids": [...],          │
+│            "combine": "union"}                              │
+│     （工作日 16:30 也会定时自动运行）                       │
 └─────────────────────────┬───────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
-│  3. 收集证据                                               │
-│     a) POST /api/v1/research/sessions/{id}/auto-gather     │
-│        → AI从知识库自动搜索相关文档片段作为证据              │
-│     b) POST /api/v1/research/sessions/{id}/evidences        │
-│        → 手动输入财报数据/逻辑推理等                         │
-│     c) 证据标记: supporting / opposing / neutral           │
+│  3. 看报告与深判                                            │
+│     报告落 backend/screener/reports/                        │
+│     逐只结论：推荐/未通过/数据不足（含证据引用）            │
 └─────────────────────────┬───────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
-│  4. 生成研究计划                                           │
-│     POST /api/v1/research/sessions/{id}/plan               │
-│     Body: {"focus_areas": ["竞争格局", "财务", "估值"]}     │
+│  4. 回测验证预设                                            │
+│     POST /api/v1/screener/backtests                         │
+│     Body: {"preset_id": "...", "years": 5}                  │
+│     （Sharpe/Sortino/Calmar + 分段稳健性）                  │
 └─────────────────────────┬───────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
-│  5. 得出观点,更新会话                                      │
-│     PATCH /api/v1/research/sessions/{id}                   │
-│     Body: {"thesis": "...", "decision": "buy",             │
-│            "confidence": 0.75, "status": "completed"}      │
+│  5. 组合构建与自选                                          │
+│     POST /api/v1/screener/runs/{id}/portfolio  （资金分配） │
+│     POST /api/v1/screener/runs/{id}/watchlist  （加入自选） │
 └─────────────────────────┬───────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
-│  6. (可选) 生成研究报告                                    │
-│     POST /api/v1/research/sessions/{id}/generate-report    │
-└─────────────────────────┬───────────────────────────────────┘
-                          ↓
-┌─────────────────────────────────────────────────────────────┐
-│  7. 关联Portfolio                                         │
-│     → 自选股添加thesis + 设置研究提醒                      │
-│     → 投资日记记录决策理由                                 │
+│  6. 持续跟踪                                                │
+│     变化日报 Webhook（新推荐/掉出推荐）                     │
+│     表现快照（1/3/6/12 月收益 vs 沪深300超额）              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -816,7 +663,7 @@ ai_research_os/
 │   │   ├── event_service.py / event_log.py / event_routes.py / event_cleanup.py
 │   │   ├── task_manager.py    # 持久任务队列(Postgres+worker)
 │   │   ├── llm_usage.py       # LLM token 用量累计器
-│   │   ├── shared_queries.py  # 跨模块批量查询(dashboard取数管道)
+│   │   ├── system_routes.py   # /ai/usage 用量端点（AI 模块删除后保留）
 │   │   ├── security.py        # JWT工具(V1未启用,有意保留)
 │   │   └── adapters/          # 外部服务适配器
 │   │       ├── llm.py         # DeepSeek(OpenAI兼容)/Ollama适配器,分级路由
@@ -830,17 +677,9 @@ ai_research_os/
 │   ├── market/                # 市场中心(service/+routes/子目录+domain/repositories/akshare_executor)
 │   ├── document/              # 文档中心(含 content_classifier.py 内容打标 + table_extractor.py 表格结构化)
 │   ├── knowledge/             # 知识中心(混合RAG,读写document表+Qdrant)
-│   ├── ai/                    # AI中心(prompt模板CRUD+执行+token用量)
-│   ├── research/              # 研究中心
-│   │   ├── session_service.py / planner.py / gather_service.py / evidence_service.py
-│   │   ├── report_service.py / thesis_service.py / timeline_service.py
-│   │   ├── fact_validator.py  # structured_facts vs Market 交叉验证(纯函数)
-│   │   ├── period_compare.py  # YoY/QoQ/同业比对(纯函数)
-│   │   └── quick.py           # 一键快速研究(SSE流式)
-│   ├── portfolio/             # 投资组合(持仓/日志,后端)
-│   ├── dashboard/             # 仪表盘聚合(自选/提醒/行情概览/最近研究)
+│   ├── screener/              # 智能选股(筛选/深判/回测/组合/日报,编排型模块)
 │   ├── alembic/versions/      # 数据库迁移脚本
-│   ├── tests/                 # pytest(14个测试文件,专用 airesearch_test 库)
+│   ├── tests/                 # pytest(专用 airesearch_test 库)
 │   └── scripts/               # 工具脚本(seed_data/ingest_financials/reembed等)
 ├── frontend/
 │   └── src/
@@ -848,16 +687,18 @@ ai_research_os/
 │       ├── App.vue            # 根组件
 │       ├── router/            # Vue Router 路由
 │       ├── stores/api.ts      # TanStack VueQuery hooks(全部API调用集中于此)
-│       ├── components/        # 共享组件(StockSearch/StockChart/ReportCharts/CommandPalette等)
-│       └── views/             # 13个页面视图
+│       ├── components/        # 共享组件(StockSearch/StockChart/CommandPalette等)
+│       └── views/             # 6个页面视图
 ├── docker/
 │   ├── docker-compose.yml     # 数据库基础设施(postgres/qdrant/redis)
 │   ├── Dockerfile.backend
-│   └── init.sql               # 9个schema初始化
+│   └── init.sql               # 8个schema初始化
 ├── start-dev.cmd              # Windows一键启动(依赖栈+后端+前端)
 ├── USAGE.md                   # 本文档
 └── README.md
 ```
+
+> 已删除模块（2026-11-24）：`research/`、`portfolio/`、`ai/`、`dashboard/` 及前端对应视图——数据库表保留，回捡 `git revert`。
 
 ---
 
@@ -899,75 +740,21 @@ ai_research_os/
 2. 查看 K 线图（日线数据）
 3. 下方财务指标：ROE、净息差、不良率、拨备覆盖率等
 
-### Step 5 — AI 中心模板管理
+### Step 5 — 运行智能选股（核心）
 
-**页面：** 底部导航 → AI
+**页面：** 首页 `/` → 智能选股
 
-- **浏览模板：** 系统预设的提示词模板列表
-- **执行模板：** 点击执行 → 弹窗填写变量 → 发送到 AI
-- **编辑模板：** 点击编辑 → 修改名称/内容 → 保存
-- **删除模板：** 点击删除
+1. 「数据质量」卡片确认行情/财务/知识库覆盖无告警
+2. 预设模式：勾选预设（如 金融价值/深度价值）→ union → 触发运行
+3. 等待 2-10 分钟（快照 + 财务补采 + LLM 深判），查看报告与逐只结论
+4. 「预设回测」卡片验证预设历史表现（需 `BACKTEST_MYSQL_URL`）
 
-### Step 6 — 研究会话（核心）
+### Step 6 — 跟踪与行动
 
-**页面：** 底部导航 → 研究 → 新建会话
-
-**6.1 新建会话**
-
-| 字段 | 说明 |
-|------|------|
-| 标题 | 工商银行深度研究 |
-| 关联公司 | 选择已创建的公司 |
-| 提问 | 对公司的投资价值分析问题 |
-
-**6.2 研究计划**
-- 系统自动拆分 3-6 个研究子问题
-- 逐一展示计划列表，可手动调整
-
-**6.3 搜集证据**
-- 点击"搜集证据" → 自动搜索知识库 + 市场数据
-- 返回支持/反对/中性的证据列表（含来源引用）
-- 也可手动添加证据
-
-**6.4 生成研究报告**
-- 点击"生成报告" → AI 综合计划+证据生成完整研报
-- 输出包含财务分析、行业对比、估值判断等
-
-**6.5 完结会话**
-- 选择投资决定：buy / sell / hold / watch / pass
-- 填写置信度（0.0~1.0）
-
-### Step 7 — 投资组合
-
-**页面：** 底部导航 → 投资组合
-
-**7.1 创建自选列表**
-- 点击"+ 新建" → 填写列表名称（如"银行股"）→ 填写描述 → 创建
-- 创建时可选择同时添加股票代码
-
-**7.2 添加股票**
-- 展开列表下的"+ 添加股票" → 输入代码 → 确认
-
-**7.3 编辑/删除列表**
-- 点列表右上角"编辑" → 修改名称/描述 → 保存
-- 点"删除" → 确认后删除整个列表
-
-**7.4 移除股票**
-- 点股票标签上的 × 按钮 → 从列表中移除
-
-**7.5 持仓记录（可选）**
-- 点"+ 添加" → 填写代码、持股数量、平均成本 → 保存
-
-### Step 8 — 工作台 Dashboard
-
-**页面：** 首页 `/`
-
-| 模块 | 说明 |
-|------|------|
-| 👁️ 关注列表 | 自选股最新行情、涨跌、研究状态 |
-| ⏰ 研究提醒 | 超过 14 天未研究的股票标记 |
-| 📋 最近研究 | 最近 5 条研究会话，点击可继续 |
+- 历史运行表：报告/CSV/明细/日报/表现/组合
+- 推荐股「自选」一键加入关注（`is_active`）
+- 配置 `SCREENER_WEBHOOK_URL` 后，工作日 16:30 定时筛选的变化自动推送企微/飞书/钉钉
 
 ---
 
-*本文档随项目迭代更新. 最后更新: 2026-10-14*
+*本文档随项目迭代更新. 最后更新: 2026-11-24*
