@@ -30,7 +30,6 @@ from fastapi.responses import JSONResponse
 # so SQLAlchemy metadata and mapper configuration are always complete.
 import company.models  # noqa: F401  # 注册模型到 Base.metadata
 import core.event_log  # noqa: F401
-import core.observation  # noqa: F401
 import core.task_manager  # noqa: F401
 import document.models  # noqa: F401
 import document.tasks  # noqa: F401
@@ -56,7 +55,6 @@ from document.routes import router as document_router
 from knowledge.routes import router as knowledge_router
 from market.routes.financial_routes import router as market_financial_router
 from market.routes.freshness_routes import router as market_freshness_router
-from market.routes.news_routes import router as market_news_router
 from market.routes.price_routes import router as market_price_router
 from market.routes.profile_routes import router as market_profile_router
 from market.routes.ratio_routes import router as market_ratio_router
@@ -115,7 +113,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         from core.event_cleanup import event_log_cleanup
         from core.financial_sync import financial_data_update
         from core.market_sync import market_data_update
-        from core.observation_engine import run_observation_cycle
         from core.performance_schedule import scheduled_performance_snapshot
         from core.scheduler import register_job, start_scheduler
         from core.screener_schedule import scheduled_screener_update
@@ -124,7 +121,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         register_job("financial_data_update", financial_data_update)
         register_job("screener_schedule", scheduled_screener_update)
         register_job("performance_snapshot", scheduled_performance_snapshot)
-        register_job("observation_cycle", run_observation_cycle)
         register_job("event_log_cleanup", event_log_cleanup)
         start_scheduler()
         logger.info("Scheduler started (enabled=%s)", settings.SCHEDULER_ENABLED)
@@ -255,7 +251,6 @@ def create_app() -> FastAPI:
     app.include_router(market_financial_router, prefix="/api/v1")
     app.include_router(market_profile_router, prefix="/api/v1")
     app.include_router(market_ratio_router, prefix="/api/v1")
-    app.include_router(market_news_router, prefix="/api/v1")
     app.include_router(market_search_router, prefix="/api/v1")
     app.include_router(market_freshness_router, prefix="/api/v1")
     app.include_router(document_router, prefix="/api/v1")

@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useHealth, useLLMUsage, useObservations, useSchedulerStatus } from '@/stores/api'
+import { useHealth, useLLMUsage, useSchedulerStatus } from '@/stores/api'
 
 const { data: scheduler } = useSchedulerStatus()
-const { data: obsData } = useObservations()
 const { data: llmUsage } = useLLMUsage()
 
 const hCompanies = useHealth('/companies?limit=1')
@@ -12,7 +11,6 @@ const hScheduler = useHealth('/scheduler/status')
 const stats = computed(() => [
   { label: 'API 状态', value: hCompanies.isSuccess.value ? '正常' : '异常' },
   { label: '调度器', value: scheduler.value?.running ? '运行中' : '已停止' },
-  { label: '观测记录', value: obsData.value?.observations?.length || 0 },
 ])
 const healthList = computed(() => [
   { name: '公司', isLoading: hCompanies.isLoading.value, isError: hCompanies.isError.value },
@@ -55,18 +53,6 @@ const healthList = computed(() => [
         <div class="usage-total">合计：{{ llmUsage.totals.calls }} 次调用 · {{ llmUsage.totals.total_tokens.toLocaleString() }} tokens（输入 {{ llmUsage.totals.prompt_tokens.toLocaleString() }} / 输出 {{ llmUsage.totals.completion_tokens.toLocaleString() }}）</div>
       </div>
       <el-empty v-else description="暂无 LLM 调用记录" />
-    </el-card>
-
-    <el-card shadow="never">
-      <template #header><div class="flex items-center justify-between"><span>👁️ 最近观测</span><span class="text-xs text-secondary">{{ obsData?.observations?.length || 0 }} 条记录</span></div></template>
-      <div v-if="obsData?.observations?.length" class="space-y-2">
-        <div v-for="obs in obsData.observations" :key="obs.id" class="item-block flex-col">
-          <div class="flex items-center justify-between w-full"><span class="font-medium text-sm">{{ obs.company_name || obs.ticker }}</span><el-tag :type="obs.status === 'stale' ? 'danger' : 'warning'" size="small">{{ obs.status }}</el-tag></div>
-          <div class="text-xs text-secondary mt-1">{{ obs.reasons?.join('、') || '无信号' }}</div>
-          <div class="text-xs text-gray mt-1">{{ obs.observed_at ? new Date(obs.observed_at).toLocaleString('zh-CN') : '' }}</div>
-        </div>
-      </div>
-      <el-empty v-else description="暂无观测记录。运行调度器或手动触发观察。" />
     </el-card>
 
     <el-card shadow="never">

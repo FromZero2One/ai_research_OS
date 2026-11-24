@@ -319,10 +319,6 @@ export function useSchedulerStatus() {
   })
 }
 
-export function useObservations(limit = 10) {
-  return useGet<{ observations: any[] }>(['observations'], `/scheduler/observations?limit=${limit}`)
-}
-
 export function useHealth(path: string) {
   return useQuery<unknown>({
     queryKey: ['health', path],

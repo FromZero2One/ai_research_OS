@@ -52,13 +52,6 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4o"
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
 
-    # LLM 分级路由：light=分类/抽取等高频轻任务（默认本地小模型，零 API 成本）；
-    # heavy=报告/晨报等重任务（None=跟随主 LLM_PROVIDER 配置）。
-    LLM_TIER_LIGHT_PROVIDER: Literal["ollama", "openai"] | None = "ollama"
-    LLM_TIER_LIGHT_MODEL: str = "qwen2.5:7b"
-    LLM_TIER_HEAVY_PROVIDER: Literal["ollama", "openai"] | None = None
-    LLM_TIER_HEAVY_MODEL: str | None = None
-
     # 证据分类器：llm=批量 LLM 分类（失败自动降级），keyword=纯关键词启发式
     EVIDENCE_CLASSIFIER: Literal["llm", "keyword"] = "llm"
 
@@ -93,9 +86,6 @@ class Settings(BaseSettings):
     AKSHARE_MCP_DIR: str = "/home/wsm/codes/akshare_mcp"
     # Optional cloud MCP endpoint (fallback layer). Empty disables the layer.
     AKSHARE_CLOUD_MCP_URL: str = ""
-    # NewsNow MCP server script (tsx) + upstream base URL.
-    NEWSNOW_MCP_SERVER_PATH: str = "/home/wsm/codes/newsnow/tools/mcp-server.ts"
-    NEWSNOW_BASE_URL: str = "https://newsnow.busiyi.world"
     # Backtest: external read-only MySQL for historical qfq daily bars
     # (mysql+pymysql://user:pass@host:3306/db). Empty disables the source.
     BACKTEST_MYSQL_URL: str = ""
@@ -123,8 +113,6 @@ class Settings(BaseSettings):
     SCREENER_WEBHOOK_TIMEOUT: float = 10.0
     SCREENER_WEBHOOK_NOTIFY_ON: str = "changes"  # changes | always
     PERFORMANCE_SNAPSHOT_SCHEDULE: str = "10 17 * * 1-5"  # Weekdays after close
-    REPORT_SCHEDULE: str = "0 6 * * 1-5"  # Weekdays 6am
-    OBSERVATION_SCHEDULE: str = "30 5 * * 1-5"  # Weekdays 5:30am (before brief)
     EVENT_LOG_CLEANUP_SCHEDULE: str = "0 3 * * 1"  # Weekly Monday 3am
     EVENT_LOG_RETENTION_DAYS: int = 90
 

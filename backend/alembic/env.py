@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 # Import all models so Alembic can detect them
 import company.models  # noqa: F401
 import core.event_log  # noqa: F401
-import core.observation  # noqa: F401
 import core.task_manager  # noqa: F401
 import document.models  # noqa: F401
 import market.models  # noqa: F401

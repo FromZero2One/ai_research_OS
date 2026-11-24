@@ -89,13 +89,6 @@ def start_scheduler() -> AsyncIOScheduler:
             settings.PERFORMANCE_SNAPSHOT_SCHEDULE,
         )
 
-    # Register observation cycle job (daily)
-    if hasattr(settings, "OBSERVATION_SCHEDULE") and settings.OBSERVATION_SCHEDULE:
-        _add_cron_job(
-            "observation_cycle",
-            settings.OBSERVATION_SCHEDULE,
-        )
-
     # Register event log retention cleanup job (weekly)
     if hasattr(settings, "EVENT_LOG_CLEANUP_SCHEDULE") and settings.EVENT_LOG_CLEANUP_SCHEDULE:
         _add_cron_job(
