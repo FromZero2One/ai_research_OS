@@ -42,7 +42,7 @@ def _fmt_conf(value) -> str:
         return "-" if value is None else str(value)
 
 
-def _normalize_criterion(text: str, preset_names: list[str]) -> str:
+def _normalize_criterion_with_presets(text: str, preset_names: list[str]) -> str:
     """去掉 LLM 返回的预设前缀，合并「[深度价值] 现金充裕」与「深度价值 - 现金充裕」。"""
     s = str(text).strip()
     s = re.sub(r"^\[[^\]]+\]\s*", "", s)
@@ -102,8 +102,6 @@ def _preset_label(snapshot: dict) -> str:
 
 def _normalize_criterion(text: str) -> str:
     """标准化判定条目：去除首尾空格、剥离合并模式下的预设前缀（如 "[核心资产] "）、折叠内部空白。"""
-    import re
-
     t = text.strip()
     # 剥离 "[预设名] " 前缀
     t = re.sub(r"^\[[^\]]+\]\s*", "", t)
@@ -235,7 +233,9 @@ def build_report(
         stats: dict[str, dict] = {}
         for j in ok_judgements:
             for h in j.get("criteria_hits") or []:
-                criterion = _normalize_criterion(str(h.get("criterion", "")), preset_names)
+                criterion = _normalize_criterion_with_presets(
+                    str(h.get("criterion", "")), preset_names
+                )
                 if not criterion:
                     continue
                 if criterion not in stats:

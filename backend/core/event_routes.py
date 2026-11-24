@@ -16,10 +16,10 @@ router = APIRouter(prefix="/events", tags=["Event Log"])
 @router.get("")
 async def list_events(
     source: str | None = Query(
-        None, description="Filter by source (e.g. company, research, observation)"
+        None, description="Filter by source (e.g. company, market, screener)"
     ),
     event_type: str | None = Query(
-        None, description="Filter by event type (e.g. company.created, research.started)"
+        None, description="Filter by event type (e.g. company.created, screener.completed)"
     ),
     entity_id: str | None = Query(None, description="Filter by entity ID"),
     entity_type: str | None = Query(None, description="Filter by entity type"),

@@ -76,7 +76,7 @@ def _ensure_test_db() -> None:
             conn.execute(text(f'CREATE DATABASE "{TEST_DB_NAME}"'))
     admin_engine.dispose()
 
-    # 2. Extensions + schemas (models reference e.g. company.* / ai.*) then
+    # 2. Extensions + schemas (models reference e.g. company.*) then
     #    create tables. Models are already registered on Base.metadata by the
     #    `from api.app import create_app` import above.
     test_engine = create_engine(_sync(TEST_DATABASE_URL), pool_pre_ping=True)
@@ -88,9 +88,6 @@ def _ensure_test_db() -> None:
             "market",
             "document",
             "knowledge",
-            "ai",
-            "research",
-            "portfolio",
             "screener",
             "core",
             "akshare",
@@ -190,12 +187,6 @@ ALL_TABLES = [
     "market.stock_industry",
     "document.documents",
     "document.document_chunks",
-    "ai.prompt_templates",
-    "research.research_sessions",
-    "research.research_evidences",
-    "research.research_reports",
-    "portfolio.holdings",
-    "portfolio.investment_journal",
     "core.event_log",
     "screener.screener_judgements",
     "screener.screener_runs",

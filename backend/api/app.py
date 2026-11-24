@@ -28,10 +28,16 @@ from fastapi.responses import JSONResponse
 # registration can no longer rely on route modules importing services
 # transitively. Import every model explicitly (same list as alembic/env.py)
 # so SQLAlchemy metadata and mapper configuration are always complete.
-from company.models import *  # noqa: F401, F403
+import company.models  # noqa: F401  # 注册模型到 Base.metadata
+import core.event_log  # noqa: F401
+import core.observation  # noqa: F401
+import core.task_manager  # noqa: F401
+import document.models  # noqa: F401
+import document.tasks  # noqa: F401
+import market.models  # noqa: F401
+import screener.models  # noqa: F401
 from company.routes import router as company_router
 from core.config import settings
-from core.event_log import *  # noqa: F401, F403
 from core.event_routes import router as event_router
 from core.exceptions import (
     AIResearchOSError,
@@ -44,17 +50,10 @@ from core.exceptions import (
     ValidationError,
 )
 from core.logging import configure_logging, logger
-from core.observation import *  # noqa: F401, F403
 from core.scheduler_routes import router as scheduler_router
-from core.task_manager import *  # noqa: F401, F403
 from core.system_routes import router as system_router
-from document.models import *  # noqa: F401, F403
 from document.routes import router as document_router
-from document.tasks import *  # noqa: F401, F403
-from screener.models import *  # noqa: F401, F403
-from screener.routes import router as screener_router
 from knowledge.routes import router as knowledge_router
-from market.models import *  # noqa: F401, F403
 from market.routes.financial_routes import router as market_financial_router
 from market.routes.freshness_routes import router as market_freshness_router
 from market.routes.news_routes import router as market_news_router
@@ -62,6 +61,7 @@ from market.routes.price_routes import router as market_price_router
 from market.routes.profile_routes import router as market_profile_router
 from market.routes.ratio_routes import router as market_ratio_router
 from market.routes.search_routes import router as market_search_router
+from screener.routes import router as screener_router
 
 
 @asynccontextmanager
@@ -91,13 +91,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
             logger.debug("Embedding model lazy-load deferred: %s", e)
 
     # Start background task worker (persistent task queue)
-    from core.task_manager import _recover_interrupted_tasks, _task_worker_loop, stop_worker
-
     # 持久任务 handler 必须在 worker 启动前导入注册；否则只有被路由/容器
     # 首次间接导入的 handler 生效（例如回测任务曾因此报 no handler）。
     import core.performance_schedule  # noqa: F401
     import screener.backtest_service  # noqa: F401
     import screener.service  # noqa: F401
+    from core.task_manager import _recover_interrupted_tasks, _task_worker_loop, stop_worker
 
     await _recover_interrupted_tasks()
     worker_task = asyncio.create_task(_task_worker_loop())

@@ -13,7 +13,6 @@ import psycopg2
 import company.models  # noqa: F401
 import document.models  # noqa: F401
 import market.models  # noqa: F401
-import portfolio.models  # noqa: F401
 import screener.models  # noqa: F401
 from core.container import create_container
 from core.database import managed_session
