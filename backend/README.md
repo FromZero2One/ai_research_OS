@@ -18,7 +18,7 @@ Python/FastAPI 后端。完整使用手册见根目录 [`USAGE.md`](../USAGE.md)
 Company → Market + Document → Knowledge(RAG) → Screener(确定性筛选)
 ```
 
-> 2026-11-24 瘦身：research/portfolio/ai/dashboard 四模块代码已删除（数据库表保留）。2026-11-25 三次简化：LLM 深判整体退役（judge/judge_eval/eval 与 `core/llm_usage.py`、`core/system_routes.py` 均已删除），运行链路零 LLM（知识库问答除外）。
+> 2026-11-24 瘦身：research/portfolio/ai/dashboard 四模块代码已删除（数据库表保留）。2026-11-25 三次简化：LLM 深判整体退役（judge/judge_eval/eval 已删除；`core/llm_usage.py` 保留（知识库问答共用），仅删 screener 引用与 system_routes），运行链路零 LLM（知识库问答除外）。
 
 各模块文件结构并不完全统一：
 

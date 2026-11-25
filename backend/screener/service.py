@@ -521,8 +521,8 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
                 settings.SCREENER_MAX_PER_INDUSTRY,
                 rules.get("candidate_limit", 50),
             )
-            # union 分支的 by-preset near-miss 尚未恢复（d8e0653 合并时移除），
-            # Task 6 统一重建 near-miss 逻辑；此处先不产出 union 擦边候选。
+            # union 分支的 by-preset near-miss 已删除，如需恢复另立项；
+            # 此处不产出 union 擦边候选。
         else:
             eval_pool = pool
             scope = rules.get("sector_scope", "all") if run.mode == "presets" else "all"

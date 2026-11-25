@@ -374,7 +374,6 @@ export interface ScreenerScheduleInfo {
   job: { id: string; next_run: string | null; trigger: string } | null
   schedule: string
   presets: string[]
-  webhook: { enabled: boolean; format: string; notify_on: string }
 }
 export function useScreenerSchedule() {
   return useGet<ScreenerScheduleInfo>(

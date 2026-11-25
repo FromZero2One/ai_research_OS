@@ -53,7 +53,7 @@ async function handleTrigger() {
   try {
     const run = await triggerPresets.mutateAsync(presetParams())
     activeRunId.value = run.id
-    ElMessage.info('筛选已启动（预设模式），深判需要几分钟...')
+    ElMessage.info('筛选已启动（预设模式），预计 1-2 分钟完成...')
   } catch (e: any) { ElMessage.error(e.message || '触发失败') }
 }
 
@@ -151,7 +151,7 @@ const statusLabel: Record<string, { label: string; type: string }> = {
 const stageDesc: Record<string, string> = {
   pending: '等待调度中，稍后开始初筛',
   screening: '正在采集全市场快照并执行量化初筛',
-  judging: '正在进行 LLM 逐只定性深判',
+  judging: '历史运行：深判阶段（已退役）',
   completed: '筛选完成，报告已生成',
   failed: '筛选失败，请查看错误信息',
 }
@@ -359,14 +359,6 @@ function viewDetail(run: ScreenerRunSummary) {
         <div><span class="text-secondary">计划：</span>{{ scheduleData.schedule }}</div>
         <div><span class="text-secondary">预设：</span>{{ scheduleData.presets.join('、') || '-' }}</div>
         <div><span class="text-secondary">下次：</span>{{ nextScheduleRun }}</div>
-        <div>
-          <span class="text-secondary">通知：</span>
-          <template v-if="scheduleData.webhook.enabled">
-            已启用（{{ scheduleData.webhook.format }}，
-            {{ scheduleData.webhook.notify_on === 'always' ? '每轮' : '有变化时' }}）
-          </template>
-          <template v-else>未配置 Webhook</template>
-        </div>
       </div>
       <div class="mt-2 flex items-center gap-2">
         <el-button
@@ -374,7 +366,7 @@ function viewDetail(run: ScreenerRunSummary) {
           :loading="runScheduleMutation.isPending.value"
           @click="runScheduleNow"
         >立即运行定时选股</el-button>
-        <span class="text-xs text-secondary">后台执行；失败会推送告警（已配置 Webhook 时）</span>
+        <span class="text-xs text-secondary">后台执行；失败仅记录日志（无推送）</span>
       </div>
     </el-card>
 
