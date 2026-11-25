@@ -11,6 +11,11 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-11-25（三次简化完成 + 四次简化立项）**:
+  - 三次简化 5 提交全部完成并评审通过（1100d32..d10d2f5，已推送）：深判退役 5fc43f3 / 删日报Webhook 0b57335 / 回测去框架化 6c008f3 / 死端点清理+归档+文档 7f6494d / 终审修复 d10d2f5。全量 pytest 325 passed / 7 failed 全豁免（总数 392→334）；冒烟实测 88 秒/轮（目标 ≤2 分钟）；judgements=8 confidence=1.0 确定性生成；9 条 deferred minors 终审裁定全部可留。
+  - **运维教训（重要）**：①全量 pytest 与实盘/冒烟严禁并发——pytest conftest 会清 dev 库 screener 表，互踩；②冒烟前先核对 dev 库 alembic 是否在 head（曾落后 5 个迁移致 GET /runs 500）；③npm build（vue-tsc）只验类型不验运行时——后端删响应字段必须同步 grep 前端消费点（webhook 字段运行时 TypeError 漏网教训）。
+  - **四次简化已立项（2026-11-26 执行）**：设计文档 docs/superpowers/specs/2026-11-26-infra-retire-simplify-design.md。Task A task_manager 退役（定时选股直跑协程，删 reset_stuck_runs）；Task B 事件查询/清理 API 删除（event_log 只写审计保留）。**开工前待用户拍板 3 项**：①DI 容器闲置 getter（勘察后自决）②ScreenerBacktestRun 历史回测数据是否还留 API 读取③CommandPalette 是否收缩。
+  - 架构文档 docs/ARCHITECTURE.md 已全面重写（11-25 口径：零 LLM 链路、三段报告、三轮瘦身全记录、§9 缺口清单含回测分层标注/分位数估值/券商口径 bug 候选）。
 - **2026-11-25（三次简化完成 — 深判退役）**:
   - **删除**: LLM 深判整体退役（`screener/judge.py`、`judge_eval.py`、`eval/`、`scripts/eval_judge.py`、`core/llm_usage.py` + `core/system_routes.py` 的 `/ai/usage` 端点；叙事标准不再进入执行路径）；变化日报 + 失败告警 Webhook（`screener/diff.py`/`diff_service.py`/`notify.py`、`GET /runs/{id}/diff`、调度 diff/Webhook 钩子、`SCREENER_WEBHOOK_*` 配置）；回测去框架化（`backtest_service.py`/`backtest_report.py` + `screener_backtest` 任务 handler，脚本直调纯函数）；死端点（`GET /runs/{id}/export` CSV 导出、`POST /runs/{id}/watchlist` 自选推送 + `screener/actions.py`——前端「自选」按钮一并移除）；历史排查脚本 15 个归档 `backend/tools/archive/`（`_db.py` 留原地，archive 内复制一份）。
   - **运行链路现状**: compose → 确定性初筛 + fact_checks 三检查器 → 确定性判定落 `ScreenerJudgement`（`_auto_pass_judgement` 改造为确定性生成器，历史明细不空）→ 三段报告（量化筛选/事实检查/不推荐与存疑原因）→ `latest-report`。**零 LLM**（知识库问答除外），单轮目标 ≤2 分钟。`ScreenerJudgement` 表与 ORM 保留（历史运行明细仍可查）。
