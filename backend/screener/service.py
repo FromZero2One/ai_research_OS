@@ -1,7 +1,7 @@
 """Screener 编排 — 触发、状态机推进、结果落库、报告落盘。
 
-状态机：pending → screening → judging → completed/failed。
-单只深判失败不拖垮整次运行（judge 层已隔离）；全链路异常 → run 置 failed。
+状态机：pending → screening → completed/failed（判定为确定性规则，零 LLM）。
+历史行可能仍含 judging 状态，状态枚举保留仅为兼容历史查询。
 """
 
 from __future__ import annotations
@@ -13,13 +13,11 @@ from datetime import UTC, datetime
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.adapters.llm import create_llm
 from core.config import settings
 from core.event_service import EventLogger
 from core.logging import logger
 from screener import screening
 from screener.industry_ranking import compute_industry_percentiles
-from screener.judge import judge_candidates
 from screener.models import ScreenerJudgement, ScreenerRun
 from screener.pool import filter_pool
 from screener.report import build_report, report_path_for
@@ -87,14 +85,14 @@ _JUDGE_SNAPSHOT_FIELDS = (
 
 
 def _create_knowledge(db: AsyncSession):
-    """深判用知识库（检索失败由 judge 层吞掉并按无资料处理）。"""
+    """事实检查用知识库（检索失败由 fact_checks 层吞掉并按 not_found 处理）。"""
     try:
         from knowledge.service import KnowledgeService
 
-        # 深判逐只检索，reranker 会显著拖慢批量任务，这里只用 hybrid RRF
+        # 事实检查逐只检索，reranker 会显著拖慢批量任务，这里只用 hybrid RRF
         return KnowledgeService(db, use_reranker=False)
     except Exception as e:  # noqa: BLE001 — 知识库不可用不应阻断选股
-        logger.warning("深判知识库初始化失败，按无资料处理: %s", e)
+        logger.warning("事实检查知识库初始化失败，按无资料处理: %s", e)
         return None
 
 
@@ -136,15 +134,21 @@ def _attach_financial_types(pool: list[dict], financials: dict[str, list]) -> No
             cand["financial_type"] = "other"
 
 
-def _auto_pass_judgement(candidate: dict) -> dict:
-    """无定性标准时跳过 LLM：确定性初筛已完整表达选股条件。"""
-    return {
+def _auto_pass_judgement(candidate: dict, fact_results: list[dict]) -> dict:
+    """确定性判定生成器（零 LLM）：初筛命中 + 事实检查三态合成。
+
+    verdict 规则：任一 fact fail → reject；否则任一 not_found → insufficient；
+    其余 → recommend。confidence 固定 1.0（确定性规则无需自评）。
+    criteria_hits 存事实检查条目（含 check/result/evidence/citation/detail/
+    criterion/hit 字段，report.py 按 check/result 识别）；量化命中明细在 snapshot。
+    """
+    judgement = {
         "ticker": candidate["ticker"],
         "name": candidate.get("name"),
         "recommend": True,
         "verdict": "recommend",
-        "reasons": ["通过全部量化规则（该标准无定性条目，未调用 LLM 深判）"],
-        "criteria_hits": [],
+        "reasons": [],
+        "criteria_hits": list(fact_results),
         "confidence": 1.0,
         "snapshot": {
             k: candidate.get(k)
@@ -154,6 +158,37 @@ def _auto_pass_judgement(candidate: dict) -> dict:
         "status": "ok",
         "error": None,
     }
+    if fact_results:
+        from screener.fact_checks import apply_fact_check_verdict
+
+        judgement.update(apply_fact_check_verdict(fact_results))
+    return judgement
+
+
+async def _resolve_company_id(db: AsyncSession, ticker: str) -> str | None:
+    """ticker → company.id（事实检查只检索本公司文档，避免跨公司证据污染）。"""
+    try:
+        from company.models import Company
+
+        cid = (
+            await db.execute(select(Company.id).where(Company.ticker == ticker))
+        ).scalar_one_or_none()
+        return str(cid) if cid else None
+    except Exception as e:  # noqa: BLE001 — 解析失败按无档案处理
+        logger.warning("解析公司档案失败 %s: %s", ticker, e)
+        return None
+
+
+def _latest_financials(entries: list) -> dict[str, float]:
+    """最新报告期的财务指标 → {metric: value}（现金覆盖等确定性检查用）。"""
+    best: dict[str, tuple] = {}
+    for e in entries:
+        if e.metric_value is None:
+            continue
+        key = (e.fiscal_year, e.fiscal_period)
+        if e.metric_name not in best or key > best[e.metric_name][0]:
+            best[e.metric_name] = (key, e.metric_value)
+    return {k: v[1] for k, v in best.items()}
 
 
 def metrics_without_any_data(
@@ -378,7 +413,7 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
     run.started_at = _now()
     await db.flush()
     # 中间状态独立提交：后台任务与 API 是不同 session，不提交的话
-    # 前端在整个运行期间只能看到 pending（screening/judging 永远不可见）。
+    # 前端在整个运行期间只能看到 pending（screening 永远不可见）。
     await db.commit()
 
     try:
@@ -386,7 +421,6 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
         from screener.compose import compose_rules
         from screener.models import CriteriaPreset
 
-        llm = create_llm()
         rows = (
             await db.execute(
                 select(CriteriaPreset).where(CriteriaPreset.id.in_(run.preset_ids))
@@ -429,8 +463,15 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
             needed_metrics = {r["metric"] for r in rules.get("quant_rules", [])}
         # pe/pb/ps 是派生指标：补采/预检/加载都要换成底层财务指标。
         # 额外加载行业排名指标（roe/成长/现金流/估值），但不因它们缺失而阻断 run。
+        # 事实检查所需的指标（如 cash_coverage 的 cash_ratio）也一并加载。
+        fact_checks = rules.get("fact_checks", [])
+        fact_metrics = {
+            (fc.get("metric") or "cash_ratio")
+            for fc in fact_checks
+            if fc.get("check") == "cash_coverage"
+        }
         check_metrics = required_data_metrics(needed_metrics)
-        load_metrics = required_data_metrics(needed_metrics | _RANKING_METRICS)
+        load_metrics = required_data_metrics(needed_metrics | _RANKING_METRICS) | fact_metrics
         await _ensure_market_data(db, load_metrics)
         # 按「所需指标 × 最新报告期」过滤加载（全市场多期数据全量加载不可持续）
         _date, _year, _period = _latest_fiscal()
@@ -499,41 +540,26 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
                 rules.get("candidate_limit", 50),
             )
         run.candidate_count = len(candidates)
-        run.status = "judging"
+        # 中间提交：前端轮询在运行期间能看到 candidate_count（不再经过 judging 状态）
         await db.flush()
         await db.commit()
 
-        # ③ 定性深判：接入知识库检索；无定性条目也无事实检查时跳过 LLM（确定性初筛即结论）
-        qualitative = rules.get("qualitative_criteria", [])
-        fact_checks = rules.get("fact_checks", [])
-        knowledge_docs: int | None = None
-        if qualitative or fact_checks:
-            from sqlalchemy import func
+        # ③ 确定性判定 + 事实检查（零 LLM）：事实检查逐只执行，
+        # 判定由 _auto_pass_judgement 按 fail/not_found/pass 三态合成。
+        knowledge = _create_knowledge(db) if fact_checks else None
+        from screener.fact_checks import run_fact_checks
 
-            from document.models import Document
-
-            knowledge_docs = int(
-                (
-                    await db.execute(
-                        select(func.count())
-                        .select_from(Document)
-                        .where(Document.is_indexed.is_(True))
-                    )
-                ).scalar()
-                or 0
-            )
-            if knowledge_docs == 0:
-                logger.warning("知识库为空：定性标准将按“数据不足”处理")
-        if qualitative or fact_checks:
-            knowledge = _create_knowledge(db)
-            judgements = await judge_candidates(
-                llm, candidates, run.criteria_text, knowledge=knowledge,
-                qualitative=qualitative,
-                financials_by_ticker=financials,
-                fact_checks=fact_checks,
-            )
-        else:
-            judgements = [_auto_pass_judgement(c) for c in candidates]
+        judgements: list[dict] = []
+        for cand in candidates:
+            if fact_checks:
+                company_id = await _resolve_company_id(db, cand["ticker"])
+                fin = _latest_financials(financials.get(cand["ticker"], []))
+                fact_results = await run_fact_checks(
+                    fact_checks, knowledge, company_id, fin
+                )
+            else:
+                fact_results = []
+            judgements.append(_auto_pass_judgement(cand, fact_results))
         # 幂等：任务被中断后重试会重跑整段，先清掉上一次已落库的判定，
         # 否则同一 run 会出现重复判定（曾出现 46 候选 92 条判定）
         await db.execute(
@@ -552,8 +578,8 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
             financial_asof=_financial_asof(financials),
             spot_taken_at=spot_taken_at,
             pool_stats=pool_stats,
-            knowledge_docs=knowledge_docs,
-            has_qualitative=bool(qualitative or fact_checks),
+            knowledge_docs=None,
+            has_qualitative=bool(fact_checks),
         )
         path = report_path_for(str(run.id))
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -107,32 +107,36 @@ class TestRobustness:
 
 
 class TestVerdictSynthesis:
+    """纯三态判定：fail→reject、not_found→insufficient、全 pass→recommend（无 LLM 结论合并）。"""
+
     def test_fail_rejects(self):
-        j = {"recommend": True, "verdict": "recommend", "reasons": ["x"], "criteria_hits": []}
         facts = [{"check": "audit_opinion", "result": "fail"}]
-        out = apply_fact_check_verdict(j, facts)
+        out = apply_fact_check_verdict(facts)
         assert out["recommend"] is False
         assert out["verdict"] == "reject"
+        assert out["reasons"]
 
     def test_not_found_insufficient(self):
-        j = {"recommend": True, "verdict": "recommend", "reasons": [], "criteria_hits": []}
         facts = [{"check": "audit_opinion", "result": "not_found"}]
-        out = apply_fact_check_verdict(j, facts)
+        out = apply_fact_check_verdict(facts)
         assert out["verdict"] == "insufficient"
         assert out["recommend"] is False
 
     def test_reject_beats_insufficient(self):
-        j = {"recommend": True, "verdict": "recommend", "reasons": [], "criteria_hits": []}
         facts = [
             {"check": "audit_opinion", "result": "not_found"},
             {"check": "litigation", "result": "fail"},
         ]
-        out = apply_fact_check_verdict(j, facts)
+        out = apply_fact_check_verdict(facts)
         assert out["verdict"] == "reject"
 
-    def test_all_pass_keeps_llm_conclusion(self):
-        j = {"recommend": True, "verdict": "recommend", "reasons": ["好"], "criteria_hits": []}
+    def test_all_pass_recommends(self):
         facts = [{"check": "audit_opinion", "result": "pass"}]
-        out = apply_fact_check_verdict(j, facts)
+        out = apply_fact_check_verdict(facts)
+        assert out["verdict"] == "recommend"
+        assert out["recommend"] is True
+
+    def test_empty_facts_recommends(self):
+        out = apply_fact_check_verdict([])
         assert out["verdict"] == "recommend"
         assert out["recommend"] is True

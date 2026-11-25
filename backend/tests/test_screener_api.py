@@ -1,15 +1,11 @@
-"""Screener API + 编排服务集成测试（mock akshare 快照与 LLM）。"""
+"""Screener API + 编排服务集成测试（mock akshare 快照；运行链路零 LLM）。"""
 
 from __future__ import annotations
-
-import json
-from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
-from core.interfaces import LLMResponse
-from screener.models import ScreenerRun
+from screener.models import ScreenerJudgement, ScreenerRun
 
 SPOT = [
     {"ticker": "600519", "name": "贵州茅台", "price": 1500.0, "turnover": 0.3, "market_cap": 1.88e12},
@@ -20,24 +16,9 @@ QUANT_RULES = [
     {"metric": "price", "op": "<", "value": 1000.0, "missing_data_policy": "exclude"}
 ]
 
-VALID_JUDGE = {
-    "recommend": True,
-    "reasons": ["符合标准"],
-    "criteria_hits": [{"criterion": "现金充裕", "hit": True, "evidence": "流动比率 4.0 倍"}],
-    "confidence": 0.8,
-}
 
-
-class FakeLLM:
-    async def generate(self, messages: Any, **kwargs: Any) -> LLMResponse:
-        return LLMResponse(
-            content=f"```json\n{json.dumps(VALID_JUDGE, ensure_ascii=False)}\n```",
-            model="fake", usage=None,
-        )
-
-
-def _create_preset() -> str:
-    """测试专用预设：价格 < 1000 + 定性「现金充裕」。"""
+def _create_preset(qualitative=None) -> str:
+    """测试专用预设：价格 < 1000（可选附加定性/事实检查条目）。"""
     import asyncio
 
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,8 +30,8 @@ def _create_preset() -> str:
         async with test_async_engine.connect() as conn:
             session = AsyncSession(bind=conn, expire_on_commit=False)
             preset = CriteriaPreset(
-                name="低价优质", description="价格低于 1000 且现金充裕",
-                style_tag="core", quant_rules=QUANT_RULES, qualitative=["现金充裕"],
+                name="低价优质", description="价格低于 1000",
+                style_tag="core", quant_rules=QUANT_RULES, qualitative=qualitative or [],
             )
             session.add(preset)
             await session.commit()
@@ -72,21 +53,14 @@ def preset_payload() -> dict:
 
 @pytest.fixture
 def screener_env(monkeypatch):
-    """mock 全市场快照 + LLM 创建。"""
+    """mock 全市场快照（运行链路零 LLM，无任何 LLM 桩）。"""
     monkeypatch.setattr("screener.screening.fetch_market_spot", lambda: _async(SPOT))
-    monkeypatch.setattr("screener.service.create_llm", lambda: FakeLLM())
 
     # API 测试不做真实财务数据补采
     async def _no_ingest(db, needed):
         return False
 
     monkeypatch.setattr("screener.service._ensure_market_data", _no_ingest)
-
-    class _NoKnowledge:
-        async def search(self, *args, **kwargs):
-            return []
-
-    monkeypatch.setattr("screener.service._create_knowledge", lambda db: _NoKnowledge())
 
 
 def _async(value):
@@ -284,6 +258,109 @@ class TestExportAndSchedule:
         data = resp.json()
         assert data["status"] == "queued"
         assert data["task_id"]
+
+
+class TestDeterministicJudgement:
+    """确定性判定（零 LLM）：fact fail → reject 且落库；报告三段结构。"""
+
+    def _seed_financial(self, ticker: str, metric: str, value: float) -> None:
+        import asyncio
+
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from market.models import FinancialMetric
+        from screener.service import _latest_fiscal
+        from tests.conftest import test_async_engine
+
+        _date, year, period = _latest_fiscal()
+
+        async def _go():
+            async with test_async_engine.connect() as conn:
+                session = AsyncSession(bind=conn, expire_on_commit=False)
+                session.add(
+                    FinancialMetric(
+                        ticker=ticker, metric_name=metric, metric_value=value,
+                        fiscal_year=year, fiscal_period=period,
+                    )
+                )
+                await session.commit()
+                await session.close()
+
+        asyncio.run(_go())
+
+    def _fact_preset_payload(self) -> dict:
+        pid = _create_preset(
+            qualitative=[
+                {"type": "fact_check", "check": "cash_coverage",
+                 "threshold": 1.0, "metric": "cash_ratio"},
+            ]
+        )
+        return {"mode": "presets", "pool": "all", "preset_ids": [pid], "combine": "union"}
+
+    def test_fact_fail_rejects_and_persists(
+        self, client: TestClient, screener_env
+    ):
+        self._seed_financial("300750", "cash_ratio", 0.5)  # 低于阈值 1.0 → fail
+        resp = client.post("/api/v1/screener/runs", json=self._fact_preset_payload())
+        assert resp.status_code == 201, resp.text
+        run = _run_screener_run(client, resp.json())
+        assert run["status"] == "completed"
+        assert run["result_count"] == 0
+        data = client.get(f"/api/v1/screener/runs/{run['id']}").json()
+        assert len(data["judgements"]) == 1
+        j = data["judgements"][0]
+        assert j["verdict"] == "reject"
+        assert j["recommend"] is False
+        assert j["confidence"] == 1.0
+        assert any(h.get("check") == "cash_coverage" for h in j["criteria_hits"])
+
+    def test_historical_run_detail_still_readable(self, client: TestClient):
+        """历史 run（completed + judgements）仍可查询 — 表与 ORM 保留。"""
+        import asyncio
+
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from tests.conftest import test_async_engine
+
+        async def _go():
+            async with test_async_engine.connect() as conn:
+                session = AsyncSession(bind=conn, expire_on_commit=False)
+                run = ScreenerRun(
+                    criteria_hash="legacy", criteria_text="历史运行",
+                    mode="presets", preset_ids=[], combine_mode="union",
+                    pool_override="all", status="completed",
+                    candidate_count=1, result_count=1,
+                )
+                session.add(run)
+                await session.flush()
+                session.add(
+                    ScreenerJudgement(
+                        run_id=run.id, ticker="600519", name="贵州茅台",
+                        recommend=True, verdict="recommend", reasons=[],
+                        criteria_hits=[], confidence=1.0, snapshot={}, status="ok",
+                    )
+                )
+                await session.commit()
+                rid = str(run.id)
+                await session.close()
+                return rid
+
+        rid = asyncio.run(_go())
+        resp = client.get(f"/api/v1/screener/runs/{rid}")
+        assert resp.status_code == 200
+        assert len(resp.json()["judgements"]) == 1
+
+    def test_report_three_sections_in_order(
+        self, client: TestClient, screener_env, preset_payload: dict
+    ):
+        resp = client.post("/api/v1/screener/runs", json=preset_payload)
+        run = _run_screener_run(client, resp.json())
+        report = client.get(f"/api/v1/screener/runs/{run['id']}/report").json()["report"]
+        i1 = report.index("量化筛选")
+        i2 = report.index("事实检查")
+        i3 = report.index("不推荐/存疑原因")
+        assert i1 < i2 < i3
+        assert "年报证据" not in report
 
 
 class TestTriggerValidation:

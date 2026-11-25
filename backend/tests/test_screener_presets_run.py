@@ -1,15 +1,11 @@
-"""presets 模式运行管线单测 — union 排名、确定性初筛。"""
+"""presets 模式运行管线单测 — union 排名、确定性初筛（运行链路零 LLM）。"""
 
 from __future__ import annotations
-
-import json
-from typing import Any
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.interfaces import LLMResponse
 from screener.models import CriteriaPreset, ScreenerJudgement
 from screener.service import run_screener, trigger_run
 
@@ -18,53 +14,20 @@ SPOT = [
     {"ticker": "300750", "name": "宁德时代", "price": 200.0, "turnover": 1.0, "market_cap": 8.8e11},
 ]
 
-VALID_JUDGE = {
-    "recommend": True,
-    "reasons": ["符合标准"],
-    "criteria_hits": [{"criterion": "盈利具有持续性", "hit": True, "evidence": "资料充分"}],
-    "confidence": 0.8,
-}
-
-judge_calls: list[str] = []
-
-
-class FakeLLM:
-    async def generate(self, messages: Any, **kwargs: Any) -> LLMResponse:
-        last = messages[-1].content
-        judge_calls.append(last[:50])
-        if "标准文档" in last:
-            payload = {
-                "stock_pool": {"type": "all"},
-                "quant_rules": [{"metric": "price", "op": "<", "value": 1000.0, "missing_data_policy": "exclude"}],
-                "qualitative_criteria": [],
-                "candidate_limit": 50,
-            }
-        else:
-            payload = VALID_JUDGE
-        return LLMResponse(content=f"```json\n{json.dumps(payload, ensure_ascii=False)}\n```", model="fake", usage=None)
-
 
 @pytest.fixture
 def screener_env(monkeypatch):
-    """mock 全市场快照 + LLM 创建。"""
+    """mock 全市场快照（无 LLM 桩 — 运行链路已零 LLM）。"""
     async def _spot():
         return SPOT
 
     monkeypatch.setattr("screener.screening.fetch_market_spot", _spot)
-    monkeypatch.setattr("screener.service.create_llm", lambda: FakeLLM())
 
     # 单测不做真实财务数据补采（网络 + 会改变“空财务数据”的断言）
     async def _no_ingest(db, needed):
         return False
 
     monkeypatch.setattr("screener.service._ensure_market_data", _no_ingest)
-
-    # 单测不连真实 Qdrant/Ollama：知识库固定返回空片段（走“无资料”证据守卫）
-    class _NoKnowledge:
-        async def search(self, *args, **kwargs):
-            return []
-
-    monkeypatch.setattr("screener.service._create_knowledge", lambda db: _NoKnowledge())
 
 
 async def _builtin_ids(db: AsyncSession, tags: list[str]) -> list:
@@ -151,7 +114,7 @@ async def test_presets_mode_without_financial_data_fails_explicitly(
 async def test_quant_only_preset_skips_llm(
     test_session: AsyncSession, screener_env, monkeypatch
 ):
-    """预设没有定性条目时，确定性初筛就是结论，不应再调用 LLM 深判。"""
+    """预设没有定性条目时，确定性初筛就是结论（运行链路零 LLM，判定照常落库）。"""
     from market.models import FinancialMetric
     from screener.service import _latest_fiscal
 
@@ -179,10 +142,6 @@ async def test_quant_only_preset_skips_llm(
         params={"mode": "presets", "pool": "all", "preset_ids": ids, "combine": "union"},
     )
 
-    async def _boom(*args, **kwargs):
-        raise AssertionError("无定性标准时不应调用 judge_candidates")
-
-    monkeypatch.setattr("screener.service.judge_candidates", _boom)
     done = await run_screener(test_session, run.id)
     assert done.status == "completed"
     assert done.candidate_count == 2
@@ -194,7 +153,8 @@ async def test_quant_only_preset_skips_llm(
         )
     ).scalars().all()
     assert all(j.recommend is True for j in judgements)
-    assert all("未调用 LLM" in " ".join(j.reasons or []) for j in judgements)
+    assert all(j.verdict == "recommend" for j in judgements)
+    assert all(j.confidence == 1.0 for j in judgements)
 
 
 async def test_presets_union_with_financials(test_session: AsyncSession, screener_env, monkeypatch):

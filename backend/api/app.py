@@ -50,7 +50,6 @@ from core.exceptions import (
 )
 from core.logging import configure_logging, logger
 from core.scheduler_routes import router as scheduler_router
-from core.system_routes import router as system_router
 from document.routes import router as document_router
 from knowledge.routes import router as knowledge_router
 from market.routes.financial_routes import router as market_financial_router
@@ -254,7 +253,6 @@ def create_app() -> FastAPI:
     app.include_router(knowledge_router, prefix="/api/v1")
     app.include_router(scheduler_router, prefix="/api/v1")
     app.include_router(event_router, prefix="/api/v1")
-    app.include_router(system_router, prefix="/api/v1")
     app.include_router(screener_router, prefix="/api/v1")
 
     return app

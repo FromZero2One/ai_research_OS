@@ -1,6 +1,6 @@
 """Markdown 报告生成 — 推荐列表 + 标准吻合度说明 + 附表（纯函数）。
 
-标准吻合度说明：对照标准原文的量化+定性条目逐条统计命中只数并给出代表例，
+标准吻合度说明：对照标准原文的量化条目逐条统计命中只数并给出代表例，
 让用户能核对"它说符合标准"到底是不是真符合。
 """
 
@@ -169,7 +169,7 @@ def build_report(
     preset_mode = _preset_mode(run, judgements)
     preset_names = _preset_names_for(run, judgements)
     if not recommended:
-        lines.append("本次无推荐 — 初筛候选均未通过定性判断。")
+        lines.append("本次无推荐 — 初筛候选均未通过确定性判定。")
     elif preset_mode:
         lines.append("| 代码 | 名称 | 行业 | 现价 | 总市值 | 置信度 | 命中预设 |")
         lines.append("|---|---|---|---|---|---|---|")
@@ -194,7 +194,7 @@ def build_report(
             )
         lines.append("")
 
-    # 推荐个股：四段固定结构（量化筛选 → 事实检查 → 年报证据 → 不推荐/存疑原因）
+    # 推荐个股：三段固定结构（量化筛选 → 事实检查 → 不推荐/存疑原因）
     for j in recommended:
         lines.append(f"### {j['name']}（{j['ticker']}）")
         lines.append("")
@@ -228,10 +228,6 @@ def build_report(
 
         hits = j.get("criteria_hits") or []
         fact_entries = [h for h in hits if isinstance(h, dict) and "check" in h and "result" in h]
-        narrative_hits = [
-            h for h in hits
-            if isinstance(h, dict) and "result" not in h and h.get("hit")
-        ]
 
         # ── 2 事实检查（确定性检查结果）──
         lines.append("")
@@ -244,23 +240,10 @@ def build_report(
                 cite = f"（{f['citation']}）" if f.get("citation") else ""
                 detail = f" {f.get('detail') or ''}".rstrip()
                 lines.append(f"- {f.get('criterion') or f['check']}：{f['result']}{cite}{detail}")
-
-        # ── 3 年报证据（LLM 叙事标准命中）──
-        lines.append("")
-        lines.append("**年报证据**")
-        lines.append("")
-        if not narrative_hits:
-            lines.append("- 无")
-        else:
-            for h in narrative_hits:
-                label = _normalize_criterion_with_presets(
-                    str(h.get("criterion", "")), preset_names
-                )
-                lines.append(f"- {label}：{h.get('evidence') or '见理由'}")
         for reason in j.get("reasons") or []:
             lines.append(f"- {reason}")
 
-        # ── 4 不推荐/存疑原因 ──
+        # ── 3 不推荐/存疑原因（数据来源：事实检查 not_found 项 + 缺数据排除项）──
         lines.append("")
         lines.append("**不推荐/存疑原因**")
         lines.append("")
@@ -268,6 +251,11 @@ def build_report(
             f"{f.get('criterion') or f['check']} 未检出（数据不足，非通过）"
             for f in fact_entries if f.get("result") == "not_found"
         ]
+        for c in excluded_missing_data:
+            if c.get("ticker") == j.get("ticker"):
+                missing = "、".join(c.get("missing") or [])
+                if missing:
+                    doubts.append(f"量化指标缺数据：{missing}")
         if doubts:
             for d in doubts:
                 lines.append(f"- {d}")
@@ -341,7 +329,7 @@ def build_report(
         lines.append("无")
     else:
         for j in rejected:
-            reason = "；".join((j.get("reasons") or [])[:2]) or "未通过定性判断"
+            reason = "；".join((j.get("reasons") or [])[:2]) or "未通过确定性判定"
             lines.append(f"- {j['name']}（{j['ticker']}）：{reason}")
     lines.append("")
 

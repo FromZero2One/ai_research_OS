@@ -113,14 +113,14 @@ class TestBuildReport:
         assert "本次无推荐" in report
 
 
-class TestFourSectionStockLayout:
-    """推荐股分区四段固定结构：量化筛选 → 事实检查 → 年报证据 → 不推荐/存疑原因。"""
+class TestThreeSectionStockLayout:
+    """推荐股分区三段固定结构：量化筛选 → 事实检查 → 不推荐/存疑原因。"""
 
     J_REC = {
         "ticker": "600519",
         "name": "贵州茅台",
         "recommend": True,
-        "reasons": ["ROE 高"],
+        "reasons": [],
         "criteria_hits": [
             {
                 "check": "audit_opinion", "result": "pass",
@@ -132,9 +132,8 @@ class TestFourSectionStockLayout:
                 "citation": None, "detail": "缺少指标 cash_ratio",
                 "criterion": "现金覆盖", "hit": False,
             },
-            {"criterion": "盈利具有持续性", "hit": True, "evidence": "[1] 连续十年 ROE>25%"},
         ],
-        "confidence": 0.9,
+        "confidence": 1.0,
         "snapshot": {
             "price": 1500.0, "market_cap": 1.88e12, "industry": "酿酒行业",
             "industry_percentiles": {"roe": 0.9},
@@ -142,13 +141,13 @@ class TestFourSectionStockLayout:
         "status": "ok",
     }
 
-    def test_four_sections_present_in_order(self):
+    def test_three_sections_present_in_order(self):
         report = build_report(RUN, [self.J_REC], RUN["criteria_text"], [])
         i1 = report.index("量化筛选")
         i2 = report.index("事实检查")
-        i3 = report.index("年报证据")
-        i4 = report.index("不推荐/存疑原因")
-        assert i1 < i2 < i3 < i4
+        i3 = report.index("不推荐/存疑原因")
+        assert i1 < i2 < i3
+        assert "年报证据" not in report
 
     def test_quant_section_has_values_and_percentile(self):
         report = build_report(RUN, [self.J_REC], RUN["criteria_text"], [])
@@ -161,14 +160,17 @@ class TestFourSectionStockLayout:
         assert "审计意见：pass" in report
         assert "现金覆盖：not_found" in report
 
-    def test_narrative_evidence_section_lists_llm_hits(self):
-        report = build_report(RUN, [self.J_REC], RUN["criteria_text"], [])
-        assert "盈利具有持续性" in report and "[1] 连续十年 ROE>25%" in report
-
     def test_doubt_section_lists_not_found(self):
         report = build_report(RUN, [self.J_REC], RUN["criteria_text"], [])
         doubt = report[report.index("不推荐/存疑原因"):report.index("标准吻合度")]
         assert "现金覆盖" in doubt
+
+    def test_doubt_section_nonempty_when_not_found(self):
+        """not_found 场景：不推荐/存疑段必须真实非空（不能只写「无」）。"""
+        report = build_report(RUN, [self.J_REC], RUN["criteria_text"], [])
+        doubt = report[report.index("不推荐/存疑原因"):report.index("标准吻合度")]
+        assert "- 无" not in doubt
+        assert "数据不足" in doubt
 
 
 class TestReportPath:

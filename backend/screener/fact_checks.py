@@ -164,26 +164,25 @@ async def run_fact_checks(
     return results
 
 
-def apply_fact_check_verdict(judgement: dict, fact_results: list[dict]) -> dict:
-    """verdict 合成（纯函数）：任一 fail → reject；否则任一 not_found → insufficient；
-    全 pass → 维持 LLM 结论。优先级 reject > insufficient > LLM。
+def apply_fact_check_verdict(fact_results: list[dict]) -> dict:
+    """确定性三态判定（纯函数，零 LLM）：任一 fail → reject；
+    否则任一 not_found → insufficient；全 pass（或无检查项）→ recommend。
+    优先级 reject > insufficient > recommend。
     """
     fails = [r for r in fact_results if r.get("result") == "fail"]
     missing = [r for r in fact_results if r.get("result") == "not_found"]
     if fails:
-        labels = "、".join(str(r.get("check")) for r in fails)
+        labels = "、".join(str(r.get("criterion") or r.get("check")) for r in fails)
         return {
-            **judgement,
             "recommend": False,
             "verdict": "reject",
-            "reasons": [f"事实检查未通过：{labels}", *(judgement.get("reasons") or [])],
+            "reasons": [f"事实检查未通过：{labels}"],
         }
     if missing:
-        labels = "、".join(str(r.get("check")) for r in missing)
+        labels = "、".join(str(r.get("criterion") or r.get("check")) for r in missing)
         return {
-            **judgement,
             "recommend": False,
             "verdict": "insufficient",
-            "reasons": [f"事实检查数据不足：{labels}", *(judgement.get("reasons") or [])],
+            "reasons": [f"事实检查数据不足：{labels}"],
         }
-    return judgement
+    return {"recommend": True, "verdict": "recommend", "reasons": []}

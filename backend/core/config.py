@@ -99,8 +99,6 @@ class Settings(BaseSettings):
     SCREENER_MIN_TURNOVER: float = 0.05  # 换手率下限（%）
     SCREENER_MIN_MARKET_CAP: float = 1e9  # 总市值下限（元，10亿）
     SCREENER_MAX_PER_INDUSTRY: int = 8  # 单次候选每个行业上限
-    SCREENER_MIN_CONFIDENCE: float = 0.0  # >0 时低于该置信度的推荐转为“数据不足”
-    SCREENER_JUDGE_CONCURRENCY: int = 8  # 深判 LLM 并发数（DeepSeek 云端 8 路无压力）
 
     SCHEDULER_ENABLED: bool = True
     MARKET_DATA_SCHEDULE: str = "0 18 * * 1-5"  # Weekdays 18:00 (after close, same-day bars)
