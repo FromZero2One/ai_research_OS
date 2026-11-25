@@ -12,11 +12,13 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+from collections import defaultdict
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.logging import logger
+from screener import backtest
 
 # 报告期 → (报告期截止日字符串, 披露完成截止日)
 _PERIOD_END = {"Q1": "0331", "Q2": "0630", "Q3": "0930", "Q4": "1231"}
@@ -242,6 +244,69 @@ async def sync_daily_to_pg(db: AsyncSession, daily: dict[str, list[dict]]) -> in
 # ── 历史财务按期补拉 ─────────────────────────────────────────────
 
 
+async def _load_financials_by_period(
+    db: AsyncSession,
+    periods: list[tuple[int, str]],
+    asof_by_period: dict[tuple[int, str], dt.date] | None = None,
+) -> dict[tuple[int, str], dict[str, list]]:
+    """{(year, period): {ticker: [FinancialMetricEntry]}}（仅所需报告期）。
+
+    Point-in-Time（截止日口径）：报告期法定披露截止日之后的调仓才可见。
+    东财 yjbb 的“最新公告日期”是**滚动最新值**（历史期会被污染成后续期公告日），
+    因此把公告日钳制到报告期截止日，避免历史期被整体误排除；缺失公告日同样按
+    截止日处理（回测报告会声明口径）。
+    """
+    from market.domain import FinancialMetricEntry
+    from market.models import FinancialMetric
+
+    deadlines = backtest.build_disclosure_map()
+    out: dict[tuple[int, str], dict[str, list]] = defaultdict(dict)
+    for year, period in periods:
+        rows = (
+            (
+                await db.execute(
+                    select(FinancialMetric).where(
+                        FinancialMetric.fiscal_year == year,
+                        FinancialMetric.fiscal_period == period,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        deadline = deadlines.get((year, period))
+        # 同票同期取最晚公告日（期末报告/更正），作为该票该期的可见日
+        announcements: dict[str, dt.date] = {}
+        for m in rows:
+            if m.announcement_date is None:
+                continue
+            previous = announcements.get(m.ticker)
+            if previous is None or m.announcement_date > previous:
+                announcements[m.ticker] = m.announcement_date
+
+        asof = (asof_by_period or {}).get((year, period))
+        by_ticker: dict[str, list] = defaultdict(list)
+        for m in rows:
+            announced = m.announcement_date or announcements.get(m.ticker)
+            # 滚动公告日 → 钳制到本期披露截止日（截止日为空则沿用原值）
+            if deadline is not None and announced is not None and announced > deadline:
+                announced = deadline
+            if asof is not None and announced is not None and announced > asof:
+                continue
+            by_ticker[m.ticker].append(
+                FinancialMetricEntry(
+                    fiscal_year=m.fiscal_year,
+                    fiscal_period=m.fiscal_period,
+                    metric_name=m.metric_name,
+                    metric_value=m.metric_value,
+                    announcement_date=m.announcement_date,
+                )
+            )
+        out[(year, period)] = dict(by_ticker)
+    return dict(out)
+
+
 _REQUIRED_METRICS = ("eps", "total_assets", "operating_cash_flow")
 # F10 主要指标族（ROIC/FCFF/流动比率等），至少出现一个才算该期已补齐
 _F10_MARKERS = ("roic", "fcff", "current_ratio")
@@ -353,7 +418,7 @@ async def fetch_index_daily(start: dt.date, end: dt.date) -> list[dict]:
         + "import akshare as ak, json\n"
         + "df = ak.stock_zh_index_daily(symbol='sh000300')\n"
         + 'print("__R__:" + json.dumps(df.to_dict(orient="records"), '
-        'ensure_ascii=False, default=str))\n'
+        "ensure_ascii=False, default=str))\n"
     )
     rows = await asyncio.to_thread(_run_child, code, 300)
     if not rows:
@@ -366,3 +431,138 @@ async def fetch_index_daily(start: dt.date, end: dt.date) -> list[dict]:
             out.append({"date": d, "close": float(r["close"])})
     out.sort(key=lambda x: x["date"])
     return out
+
+
+# ── 价格快照 / 总股本 / 基准收益 ────────────────────────────────
+
+
+async def _price_dates_from_pg(db: AsyncSession, start: dt.date, end: dt.date) -> list[dt.date]:
+    """区间内实际交易日历（从已灌入的日线推导）。"""
+    from market.models import StockPrice
+
+    rows = (
+        (
+            await db.execute(
+                select(StockPrice.date)
+                .where(StockPrice.date >= start, StockPrice.date <= end)
+                .distinct()
+                .order_by(StockPrice.date)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return list(rows)
+
+
+async def _load_day_closes(db: AsyncSession, day: dt.date, tickers: list[str]) -> dict[str, float]:
+    """某交易日各票前复权收盘价。"""
+    from market.models import StockPrice
+
+    rows = (
+        await db.execute(
+            select(StockPrice.ticker, StockPrice.close).where(
+                StockPrice.date == day, StockPrice.ticker.in_(tickers)
+            )
+        )
+    ).all()
+    return {t: c for t, c in rows if c is not None}
+
+
+async def _load_day_volumes(
+    db: AsyncSession, day: dt.date, tickers: list[str]
+) -> dict[str, float | None]:
+    """某交易日成交量（用于停牌/不可交易判断）。"""
+    from market.models import StockPrice
+
+    rows = (
+        await db.execute(
+            select(StockPrice.ticker, StockPrice.volume).where(
+                StockPrice.date == day, StockPrice.ticker.in_(tickers)
+            )
+        )
+    ).all()
+    return {t: v for t, v in rows}
+
+
+def _fetch_shares_sync(url: str) -> dict[str, float]:
+    """外部库最新交易日的总股本快照（symbol → TOTAL_SHARES）。"""
+    import pymysql
+
+    conn = pymysql.connect(
+        host=_parse_host(url),
+        user=_parse_user(url),
+        password=_parse_password(url),
+        database=_parse_db(url),
+        port=_parse_port(url),
+        connect_timeout=10,
+    )
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT v.symbol, v.TOTAL_SHARES FROM akshare.stock_value_entity v "
+                "JOIN (SELECT max(TRADE_DATE) d FROM akshare.stock_value_entity) m "
+                "ON v.TRADE_DATE = m.d "
+                "WHERE v.TOTAL_SHARES IS NOT NULL AND v.TOTAL_SHARES > 0"
+            )
+            return {str(sym).strip(): float(sh) for sym, sh in cur.fetchall()}
+    finally:
+        conn.close()
+
+
+async def _fetch_total_shares(db: AsyncSession, tickers: list[str]) -> dict[str, float]:
+    """当前总股本（近似市值用）：外部库 stock_value_entity 最新快照优先，akshare 兜底。
+
+    返回 {ticker: 总股本}；缺失的票不在返回中（该票 market_cap=None）。
+    """
+    from core.config import settings
+
+    want = set(tickers)
+    if settings.BACKTEST_MYSQL_URL:
+        try:
+            all_shares = await asyncio.to_thread(_fetch_shares_sync, settings.BACKTEST_MYSQL_URL)
+            out = {t: all_shares[t] for t in want if all_shares.get(t, 0) > 0}
+            if out:
+                logger.info("总股本：外部库快照命中 %d/%d 只", len(out), len(want))
+                return out
+            logger.warning("外部库总股本快照为空，回退 akshare")
+        except Exception as e:  # noqa: BLE001 — 外部库失败回退 akshare
+            logger.warning("外部库总股本拉取失败，回退 akshare: %s", str(e)[:150])
+
+    # 兜底：akshare 东财快照（可能被风控，失败则市值规则整体缺数据）
+    from screener.ingest import _AKSHARE_PROLOGUE, _run_child
+
+    code = (
+        _AKSHARE_PROLOGUE
+        + "import akshare as ak, json\n"
+        + "df = ak.stock_zh_a_spot_em()\n"
+        + 'cols = {"代码": "ticker", "总股本": "shares"}\n'
+        + "df = df[list(cols)].rename(columns=cols)\n"
+        + 'print("__R__:" + json.dumps(df.to_dict(orient="records"), '
+        "ensure_ascii=False, default=str))\n"
+    )
+    try:
+        rows = await asyncio.to_thread(_run_child, code, 300)
+    except Exception as e:  # noqa: BLE001 — 兜底数据源失败不应毁掉整个回测
+        logger.warning("总股本兜底拉取失败，市值规则将缺数据: %s", str(e)[:150])
+        return {}
+    if not rows:
+        logger.warning("总股本拉取失败，市值规则将全部缺数据")
+        return {}
+    out: dict[str, float] = {}
+    for r in rows:
+        t = str(r.get("ticker", "")).strip()
+        if t in want and r.get("shares") not in (None, "", "-"):
+            try:
+                out[t] = float(r["shares"])
+            except (TypeError, ValueError):
+                continue
+    return out
+
+
+def _bench_return(bench: list[dict], buy_day: dt.date, sell_day: dt.date) -> float:
+    """基准在 [buy_day, sell_day] 的收益（取区间内首末收盘）。"""
+    in_window = [b["close"] for b in bench if buy_day <= b["date"] <= sell_day]
+    if len(in_window) < 2 or not in_window[0]:
+        return 0.0
+    return in_window[-1] / in_window[0] - 1.0

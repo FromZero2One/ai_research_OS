@@ -89,8 +89,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # Start background task worker (persistent task queue)
     # 持久任务 handler 必须在 worker 启动前导入注册；否则只有被路由/容器
-    # 首次间接导入的 handler 生效（例如回测任务曾因此报 no handler）。
-    import screener.backtest_service  # noqa: F401
+    # 首次间接导入的 handler 生效。
     import screener.service  # noqa: F401
     from core.task_manager import _recover_interrupted_tasks, _task_worker_loop, stop_worker
 

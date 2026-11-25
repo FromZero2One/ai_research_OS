@@ -7,7 +7,7 @@ import datetime as dt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from market.models import FinancialMetric
-from screener.backtest_service import _load_financials_by_period
+from screener.backtest_data import _load_financials_by_period
 
 
 async def test_announcement_date_filters_future_data(test_session: AsyncSession):
