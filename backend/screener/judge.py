@@ -377,8 +377,13 @@ async def judge_one(
     criteria: list[str],
     knowledge=None,
     financials: dict[str, float] | None = None,
+    fact_checks: list[dict] | None = None,
 ) -> dict:
-    """单只候选深判。两次尝试都失败 raise ValueError（调用方决定隔离策略）。"""
+    """单只候选深判。两次尝试都失败 raise ValueError（调用方决定隔离策略）。
+
+    fact_checks 为确定性事实检查清单（audit_opinion/litigation/cash_coverage）：
+    LLM 调用前执行，任一 fail 直接判 reject（不调用 LLM）；结果摘要进上下文。
+    """
     # 知识库检索：失败静默吞掉（资料是加分项，不是必需品）
     snippets: list[str] = []
     if knowledge is not None:
@@ -413,10 +418,39 @@ async def judge_one(
         else:
             logger.info("深判无公司档案，跳过知识检索 %s", candidate.get("ticker"))
 
+    # 确定性事实检查：LLM 调用前执行，任一 fail 直接 reject（不问 LLM）
+    fact_results: list[dict] = []
+    if fact_checks:
+        from screener.fact_checks import apply_fact_check_verdict, run_fact_checks
+
+        fact_results = await run_fact_checks(
+            fact_checks, knowledge, company_id, financials or {}
+        )
+        if any(r.get("result") == "fail" for r in fact_results):
+            return apply_fact_check_verdict(
+                {
+                    "recommend": True, "reasons": [],
+                    "criteria_hits": fact_results,
+                    "confidence": 1.0,
+                },
+                fact_results,
+            )
+
     user_msg = (
         f"{build_judge_context(candidate, snippets, financials=financials)}\n\n"
         f"定性标准：\n" + "\n".join(f"- {c}" for c in criteria)
     )
+    if fact_results:
+        summary = "\n".join(
+            f"- {r.get('criterion') or r['check']}: {r['result']}"
+            + (f"（{r['citation']}）" if r.get("citation") else "")
+            + f" {r.get('detail') or ''}".rstrip()
+            for r in fact_results
+        )
+        user_msg += (
+            "\n\n事实检查结果（系统已确定性判定，仅供复核参考，不得改判事实项）：\n"
+            + summary
+        )
     messages = [
         LLMMessage(role="system", content=_JUDGE_SYSTEM_PROMPT),
         LLMMessage(role="user", content=user_msg),
@@ -443,6 +477,11 @@ async def judge_one(
             last_error = f"LLM 输出解析失败: {e}"
             continue
         out = _apply_evidence_guard(out, snippets)
+        # 事实检查结果前置进 criteria_hits（报告/导出按 check/result 识别），
+        # 再合成 verdict：reject > insufficient > LLM 结论
+        if fact_checks:
+            out["criteria_hits"] = [*fact_results, *(out.get("criteria_hits") or [])]
+            out = apply_fact_check_verdict(out, fact_results)
         out.setdefault("verdict", "recommend" if out.get("recommend") else "reject")
         return out
     raise ValueError(last_error)
@@ -459,10 +498,12 @@ async def judge_candidates(
     qualitative: list[str] | None = None,
     financials_by_ticker: dict[str, list] | None = None,
     max_concurrency: int | None = None,
+    fact_checks: list[dict] | None = None,
 ) -> list[dict]:
     """并发深判；单只失败 → 该只 status=failed，其余不受影响。
 
     qualitative 为结构化规则里的定性条目；未提供时退回用标准原文整段判断。
+    fact_checks 为确定性事实检查清单（经 compose 拆分的 dict 条目）。
     financials_by_ticker 提供候选的最新财务指标（进入深判上下文）。
     max_concurrency 限制同时在途的 LLM 调用数（Semaphore）；None 时取
     settings.SCREENER_JUDGE_CONCURRENCY。
@@ -477,7 +518,8 @@ async def judge_candidates(
     async def _judge_with_limits(cand: dict) -> dict:
         async with semaphore:
             return await _judge_single(
-                llm, cand, criteria, criteria_text, knowledge, financials_by_ticker
+                llm, cand, criteria, criteria_text, knowledge, financials_by_ticker,
+                fact_checks,
             )
 
     tasks = [
@@ -520,6 +562,7 @@ async def _judge_single(
     criteria_text: str,
     knowledge=None,
     financials_by_ticker: dict[str, list] | None = None,
+    fact_checks: list[dict] | None = None,
 ) -> dict:
     """单只候选深判（含失败隔离），返回一条结果 dict。"""
     # 最新一期财务指标 → 简化 dict（metric → value）
@@ -536,7 +579,8 @@ async def _judge_single(
         fin = {k: v[1] for k, v in best.items()} if best else None
     try:
         judgement = await judge_one(
-            llm, cand, criteria or [criteria_text], knowledge=knowledge, financials=fin
+            llm, cand, criteria or [criteria_text], knowledge=knowledge, financials=fin,
+            fact_checks=fact_checks,
         )
         recommend = bool(judgement["recommend"])
         text = " ".join(

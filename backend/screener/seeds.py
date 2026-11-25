@@ -186,7 +186,15 @@ BUILTIN_PRESETS: list[dict] = [
             {"metric": "pb", "op": "<", "value": 3, "missing_data_policy": _EX},
             {"metric": "market_cap", "op": ">", "value": 5e9, "missing_data_policy": _EX},
         ],
-        "qualitative": ["现金充裕", "非壳公司", "无暴雷风险"],
+        "qualitative": [
+            {"type": "fact_check", "check": "audit_opinion"},
+            {"type": "fact_check", "check": "litigation"},
+            {
+                "type": "fact_check", "check": "cash_coverage",
+                "metric": "cash_ratio", "threshold": 1.0,
+                "label": "现金充裕（现金比率 ≥ 1.0）",
+            },
+        ],
         "suggested_pool": "all",
     },
     {
@@ -230,7 +238,15 @@ BUILTIN_PRESETS: list[dict] = [
             {"metric": "roe", "op": ">", "value": 8, "missing_data_policy": _EX},
             {"metric": "market_cap", "op": ">", "value": 1e10, "missing_data_policy": _EX},
         ],
-        "qualitative": ["资产质量稳健", "拨备/资本充足", "无重大监管处罚"],
+        "qualitative": [
+            {"type": "fact_check", "check": "audit_opinion"},
+            {"type": "fact_check", "check": "litigation"},
+            {
+                "type": "fact_check", "check": "cash_coverage",
+                "metric": "first_adequacy_ratio", "threshold": 10.0,
+                "label": "资本充足（一级资本充足率 ≥ 10%）",
+            },
+        ],
         "suggested_pool": "all",
     },
     {

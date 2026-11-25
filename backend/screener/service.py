@@ -503,10 +503,11 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
         await db.flush()
         await db.commit()
 
-        # ③ 定性深判：接入知识库检索；无定性条目时跳过 LLM（确定性初筛即结论）
+        # ③ 定性深判：接入知识库检索；无定性条目也无事实检查时跳过 LLM（确定性初筛即结论）
         qualitative = rules.get("qualitative_criteria", [])
+        fact_checks = rules.get("fact_checks", [])
         knowledge_docs: int | None = None
-        if qualitative:
+        if qualitative or fact_checks:
             from sqlalchemy import func
 
             from document.models import Document
@@ -523,12 +524,13 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
             )
             if knowledge_docs == 0:
                 logger.warning("知识库为空：定性标准将按“数据不足”处理")
-        if qualitative:
+        if qualitative or fact_checks:
             knowledge = _create_knowledge(db)
             judgements = await judge_candidates(
                 llm, candidates, run.criteria_text, knowledge=knowledge,
                 qualitative=qualitative,
                 financials_by_ticker=financials,
+                fact_checks=fact_checks,
             )
         else:
             judgements = [_auto_pass_judgement(c) for c in candidates]
@@ -551,7 +553,7 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
             spot_taken_at=spot_taken_at,
             pool_stats=pool_stats,
             knowledge_docs=knowledge_docs,
-            has_qualitative=bool(qualitative),
+            has_qualitative=bool(qualitative or fact_checks),
         )
         path = report_path_for(str(run.id))
         path.parent.mkdir(parents=True, exist_ok=True)

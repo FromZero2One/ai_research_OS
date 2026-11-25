@@ -159,6 +159,38 @@ class TestJudgeOne:
         assert out["recommend"] is True
         assert out["verdict"] == "recommend"
 
+    async def test_fact_check_fail_rejects_without_llm_call(self):
+        """事实检查 fail → 直接 reject，LLM 完全不被调用。"""
+        from types import SimpleNamespace
+
+        CID = "cid-1"
+
+        class FakeResult:
+            def scalar_one_or_none(self):
+                return CID
+
+        class FakeSession:
+            async def execute(self, stmt):
+                return FakeResult()
+
+        class AuditKnowledge:
+            session = FakeSession()
+
+            async def search(self, *a: Any, **kw: Any) -> list:
+                return [SimpleNamespace(content="会计师事务所出具了保留意见的审计报告。")]
+
+        llm = FakeLLM([])
+        results = await judge_candidates(
+            llm, [CAND], "标准文本", knowledge=AuditKnowledge(),
+            fact_checks=[{"check": "audit_opinion"}],
+            max_concurrency=1,
+        )
+        assert results[0]["recommend"] is False
+        assert results[0]["verdict"] == "reject"
+        assert llm.calls == 0
+        fact = results[0]["criteria_hits"][0]
+        assert fact["check"] == "audit_opinion" and fact["result"] == "fail"
+
     async def test_retry_raises_token_budget_and_asks_for_compact_output(self):
         """截断重试不能原样重发：第二轮要放大 max_tokens 并追加压缩提示。"""
         llm = FakeLLM(["坏输出", _json_text(VALID_JUDGE)])
