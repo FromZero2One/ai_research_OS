@@ -430,22 +430,6 @@ export function useScreenerDataQuality() {
   )
 }
 
-export interface ScreenerWatchlistResult {
-  run_id: string
-  added: { ticker: string; name: string }[]
-  already: { ticker: string; name: string }[]
-  missing: { ticker: string; name: string }[]
-}
-export function usePushScreenerToWatchlist(id: MaybeRefOrGetter<string | null>) {
-  return useMutation<ScreenerWatchlistResult, Error, { tickers?: string[]; limit?: number }>({
-    mutationFn: (payload) =>
-      fetchApi(`/screener/runs/${toValue(id) ?? ''}/watchlist`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      }),
-  })
-}
-
 // ── Screener 预设库（v1.5）──
 export interface ScreenerMetricDef {
   key: string; name_cn: string; category: string

@@ -176,44 +176,7 @@ class TestTriggerAndRun:
         assert second.status_code == 409
 
 
-class TestExportAndSchedule:
-    def test_export_csv(self, client: TestClient, screener_env, preset_payload: dict):
-        resp = client.post("/api/v1/screener/runs", json=preset_payload)
-        run = _run_screener_run(client, resp.json())
-        resp = client.get(f"/api/v1/screener/runs/{run['id']}/export")
-        assert resp.status_code == 200
-        assert resp.headers["content-type"].startswith("text/csv")
-        assert "attachment" in resp.headers["content-disposition"]
-        text = resp.content.decode("utf-8-sig")
-        assert text.startswith("代码,名称,结论,推荐")
-        assert "300750" in text and "宁德时代" in text
-
-    def test_push_recommendation_to_watchlist(
-        self, client: TestClient, screener_env, preset_payload: dict
-    ):
-        company = client.post(
-            "/api/v1/companies",
-            json={"ticker": "300750", "name": "宁德时代"},
-        ).json()
-        client.patch(
-            f"/api/v1/companies/{company['id']}", json={"is_active": False}
-        )
-        trigger = client.post("/api/v1/screener/runs", json=preset_payload)
-        run = _run_screener_run(client, trigger.json())
-
-        resp = client.post(
-            f"/api/v1/screener/runs/{run['id']}/watchlist",
-            json={"tickers": ["300750"]},
-        )
-        assert resp.status_code == 200, resp.text
-        assert [x["ticker"] for x in resp.json()["added"]] == ["300750"]
-        again = client.post(
-            f"/api/v1/screener/runs/{run['id']}/watchlist",
-            json={"tickers": ["300750"]},
-        )
-        assert again.json()["added"] == []
-        assert [x["ticker"] for x in again.json()["already"]] == ["300750"]
-
+class TestSchedule:
     def test_data_quality(self, client: TestClient):
         resp = client.get("/api/v1/screener/data-quality")
         assert resp.status_code == 200

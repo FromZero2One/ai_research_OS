@@ -1,12 +1,14 @@
 # AI Research OS
 
-> **Screener First, not AI First** — 数据与规则管筛选，AI 只做有据可查的深判。
+> **Screener First, not AI First** — 数据与规则管筛选，AI 只在知识库问答里出现。
 
-一个个人 AI 价值投资筛选器：行情/财务数据 + 年报知识库 → 预设量化初筛 → 事实检查确定性化 + LLM 深判 → **每日自动产出 Markdown 价值推荐清单（股票 + 理由）**。
+一个个人 AI 价值投资筛选器：行情/财务数据 + 年报知识库 → 预设量化初筛 → 事实检查确定性判定 → **每日自动产出 Markdown 价值推荐清单（股票 + 理由）**。运行链路零 LLM，单轮 ≤2 分钟。
 
 > **2026-11-24 项目瘦身**：已删除研究中心（research）、投资组合（portfolio）、AI 中心（prompt 模板）、仪表盘（dashboard）四个模块的代码，聚焦价值筛选核心链路。数据库表与迁移历史保留（回捡请 `git revert`）。裁剪设计见 `docs/superpowers/specs/2026-11-24-slim-to-value-screener-design.md`。
 >
 > **2026-11-25 二次瘦身（价值推荐聚焦）**：删除组合构建/再平衡、推荐后表现跟踪与快照、回测交互路由（回测引擎保留为脚本 `tools/run_backtest_queue.py`）、freeform 自由文本模式（预设为唯一运行入口）、运行取消、近似命中；预设只读化；新增事实检查确定性化 `screener/fact_checks.py`（审计意见/诉讼/现金覆盖三检查器，LLM 只判叙事标准）；报告改为四段投资理由结构；新增 `GET /api/v1/screener/latest-report`；前端收缩为价值推荐清单视图。设计见 `docs/superpowers/specs/2026-11-24-slim-to-value-recommendation-design.md`。
+>
+> **2026-11-25 三次简化（深判退役）**：LLM 深判整体退役（叙事标准不再进入执行路径）、变化日报/失败告警 Webhook 全删、回测去框架化（脚本直调纯函数落 JSON）、死端点清理（CSV 导出/自选推送）、历史排查脚本归档 `backend/tools/archive/`。运行链路 = compose → 确定性初筛 + fact_checks → 三段报告 → `latest-report`，零 LLM 依赖（知识库问答除外）。设计见 `docs/superpowers/specs/2026-11-25-llm-retire-simplify-design.md`。
 
 ## 文档
 
@@ -36,7 +38,7 @@
   │           │           │  Center(RAG) │
   │           │           ├──────────────┤
   │           │           │  Screener    │
-  │           │           │  筛选+深判+回测│
+  │           │           │  确定性筛选   │
   └──────────────────────────────────────┘
                  │
   ┌──────────────────────────────────────┐
@@ -55,8 +57,8 @@
 | **Company Center** | 公司档案、行业、标签、自选（is_active） | PostgreSQL |
 | **Market Center** | 股价、财务、估值、比率层（无分析） | yfinance / AKShare |
 | **Document Center** | 上传 → 解析 → 切片 → 嵌入 → 索引（年报 PDF 表格结构化） | PyMuPDF + pdfplumber + BGE-M3 |
-| **Knowledge Center** | 混合 RAG：稠密 + 稀疏 + 重排——深判的证据来源 | Qdrant + BM25 + RRF + BGE Reranker |
-| **Screener** | 42 指标 + 8 内置预设选股（预设只读、唯一运行入口）、事实检查确定性化（审计意见/诉讼/现金覆盖）、LLM 逐条深判叙事标准（证据守卫）、定时筛选 + 变化日报/失败告警 Webhook、API CSV 导出（`GET /runs/{id}/export`）、`latest-report` 报告指针 | AKShare + LLM 深判 |
+| **Knowledge Center** | 混合 RAG：稠密 + 稀疏 + 重排——知识库问答与事实检查证据来源 | Qdrant + BM25 + RRF + BGE Reranker |
+| **Screener** | 42 指标 + 8 内置预设选股（预设只读、唯一运行入口）、确定性初筛 + 事实检查三检查器（审计意见/诉讼/现金覆盖）、三段报告、`latest-report` 报告指针；无 LLM、无 Webhook、无 CSV 导出 | AKShare 纯确定性 |
 
 > **Screener 数据管道（2026-10-22）**：全市场快照走新浪源（东财风控应对）；财务三表（业绩/资产负债/现金流）均为市场级一次调用（~5000 只/期），不再逐只拉取；流动/速动/周转/成长率走东财 F10 主要指标（`RPT_F10_FINANCE_MAINFINADATA`）分页补采。已知缺口见 Roadmap。
 
@@ -67,11 +69,11 @@ Company (股票池)
   ↓
 Market + Document (数据 + 年报)
   ↓
-Knowledge (混合 RAG — 深判证据)
+Knowledge (混合 RAG — 知识库问答/事实检查证据)
   ↓
-Screener (量化初筛 → 事实检查 + LLM 深判 → 报告)
+Screener (量化初筛 → 事实检查确定性判定 → 报告)
   ↓
-Markdown 价值推荐清单 + 定时推送 (Webhook)
+Markdown 价值推荐清单（三段：量化筛选 / 事实检查 / 不推荐与存疑原因）
 ```
 
 > 自选列表已并入 Company Center：`is_active` 即关注状态，`priority/target_price/reason` 挂在公司上。
@@ -117,8 +119,8 @@ npm install   # first time only
 npm run dev   # starts on http://localhost:5173
 ```
 
-> **LLM config**: By default the system uses **DeepSeek V4 Flash** (cloud API).
-> Set `OPENAI_API_KEY` in `backend/.env` before using AI features.
+> **LLM config**: 运行链路已零 LLM（2026-11-25 深判退役）；仅知识库问答（document/knowledge）仍用 LLM。
+> 仍需在 `backend/.env` 设置 `OPENAI_API_KEY` 供知识库问答使用（默认 DeepSeek V4 Flash）。
 > See [USAGE.md](USAGE.md) for alternative providers (Ollama, other OpenAI-compatible APIs).
 
 Visit **http://localhost:5173** — the Screener workspace（价值推荐清单视图）.
@@ -131,9 +133,9 @@ Visit **http://localhost:5173** — the Screener workspace（价值推荐清单�
 | 市场中心 | ~90% | A股行情/财务/估值 akshare 直连全链路 + 数据覆盖矩阵（含量性维度）+ 比率层 + PE/PB 历史分位；美股 yfinance 备选 |
 | 文档中心 | ~90% | 后台异步索引、PDF 表格结构化、切片内容类型打标、关联公司；OCR 待 V2 |
 | 知识中心 | ~90% | 混合 RAG + Reranker + 文档问答（模型切换）+ 内容类型过滤 |
-| 智能选股 | ~97% | 42 指标（TTM 估值 + 现金流质量 + 因子深度 + 银行/保险专属）+ 8 内置预设（只读）；股票池卫生 + 行业隔离/相对排名；事实检查确定性化（`fact_checks.py`：审计意见/诉讼/现金覆盖，LLM 只判叙事标准）+ 深判知识库/证据守卫 + 三态结论；报告四段投资理由结构 + `latest-report` 指针；定时筛选 + 变化日报/失败告警 Webhook（企微/飞书/钉钉）+ 调度状态/立即运行 + API CSV 导出（`GET /runs/{id}/export`）；财务数据工作日定时更新 |
+| 智能选股 | ~97% | 42 指标（TTM 估值 + 现金流质量 + 因子深度 + 银行/保险专属）+ 8 内置预设（只读）；股票池卫生 + 行业隔离/相对排名；确定性初筛 + 事实检查三检查器（`fact_checks.py`：审计意见/诉讼/现金覆盖）；报告三段结构 + `latest-report` 指针；运行链路零 LLM（单轮 ≤2 分钟）；定时筛选 + 调度状态/立即运行；财务数据工作日定时更新 |
 
-> 已删除模块（2026-11-24）：研究中心、投资组合、AI 中心（Prompt 模板）、仪表盘——数据库表保留，详见文首瘦身说明。2026-11-25 二次瘦身再删除：组合/再平衡、表现跟踪/快照、回测交互路由（引擎保留为脚本）、freeform 模式、运行取消、近似命中。
+> 已删除模块（2026-11-24）：研究中心、投资组合、AI 中心（Prompt 模板）、仪表盘——数据库表保留，详见文首瘦身说明。2026-11-25 二次瘦身再删除：组合/再平衡、表现跟踪/快照、回测交互路由（引擎保留为脚本）、freeform 模式、运行取消、近似命中。三次简化再删除：LLM 深判（judge/judge_eval/eval 目录）、diff/notify/Webhook、回测 service 层（backtest_service/backtest_report）、CSV 导出与自选推送端点。
 
 ### 智能选股评估快照（2026-10-25）
 
@@ -141,12 +143,12 @@ Visit **http://localhost:5173** — the Screener workspace（价值推荐清单�
 
 5 年回测（15 期，基准 −4.56%）：**金融价值 +6.89%（超额 +11.45%，3 年/5 年一致）** > 深度价值 +5.60% > 周期反转 −0.87% > 高成长 −6.90% > 核心资产 −14.92% > GARP −23.61%。
 
-实时深判：高成长 15/46 推荐（可作候选池，部分证据偏软）、金融价值 2/10（杭州银行、青岛银行，证据为年报硬指标）、深度价值 0/50（定性标准属事实性检查，LLM 判不了，待改为确定性判定）。
+实时判定（2026-11-25 深判退役前留存）：高成长 15/46 推荐（可作候选池，部分证据偏软）、金融价值 2/10（杭州银行、青岛银行，证据为年报硬指标）、深度价值 0/50（定性标准属事实性检查，LLM 判不了——现已改为确定性判定）。
 
-深判链路：逐条标准检索 → 证据守卫（必须有 `[n]` 引用）→ 三态结论；事实检查（审计意见/诉讼/现金覆盖）已确定性化（`fact_checks.py`），LLM 只判叙事类标准；`confidence` 为 LLM 自评、未校准，只用于排序/权重。详见 [backend/README.md](backend/README.md)「选股数据底座与预设评估」。
+判定链路（现口径）：确定性初筛（量化规则）→ 事实检查三检查器（审计意见/诉讼/现金覆盖，`fact_checks.py`）→ 确定性判定落 `ScreenerJudgement`（历史明细仍可查）→ 三段报告。历史评估快照中的深判数据仅作存档。详见 [backend/README.md](backend/README.md)「选股数据底座与预设评估」。
 
 总体：后端测试随两次瘦身删除了 research/portfolio/ai 及组合/表现/取消/近似命中相关用例；前端 vue-tsc/build 通过（2026-11-25 二次瘦身后验证）。改动文件 ruff 通过（仓库仍保留历史 E501 债务）。
-已知缺口：①知识库已入库 103 份年报（55,135 切片），事实性标准（审计意见/诉讼/现金覆盖）已改为 `fact_checks.py` 确定性判定，LLM 只判叙事类标准；②回测引擎保留为脚本（`tools/run_backtest_queue.py`，需 `BACKTEST_MYSQL_URL`），交互路由已删除；③行情已覆盖主板 2,111/2,111、全库 5,313 只；④`valuation_history` 为空且上游 `stock_a_indicator_lg` 本机无数据，估值历史分位暂未接入选股；⑤深判评测仍为脚本，无 CI/历史面板；⑥置信度未校准（0.95/0.92/0.85 三档聚集），暂不能当胜率或仓位依据。其余历史缺口见 [memory/ai-research-os-session.md](memory/ai-research-os-session.md)。
+已知缺口：①知识库已入库 103 份年报（55,135 切片），事实性标准（审计意见/诉讼/现金覆盖）走 `fact_checks.py` 确定性判定，叙事类标准已随深判退役不再进入执行路径；②回测为脚本直调纯函数（`tools/run_backtest_queue.py`，需 `BACKTEST_MYSQL_URL`，结果落 JSON），service 层已删除；③行情已覆盖主板 2,111/2,111、全库 5,313 只；④`valuation_history` 为空且上游 `stock_a_indicator_lg` 本机无数据，估值历史分位暂未接入选股。其余历史缺口见 [memory/ai-research-os-session.md](memory/ai-research-os-session.md)。
 
 ## API (when backend is running)
 
@@ -159,7 +161,7 @@ Visit **http://localhost:5173** — the Screener workspace（价值推荐清单�
 3. **No Trading Agents** — V2 feature, not now
 4. **Event Log** — Write-once audit trail for process traceability
 5. **Core Layer = Interfaces, not Implementations** — Protocols > concrete classes
-6. **Screener First** — 2026-11-24 瘦身后首页即智能选股；数据/规则管筛选，AI 只做有据可查的深判
+6. **Screener First** — 2026-11-24 瘦身后首页即智能选股；数据/规则管筛选与判定，AI 仅存在于知识库问答
 7. **AI = Capability, not Center** — LLM provider swappable (DeepSeek/Ollama/OpenAI)
 8. **自选列表并入公司中心** — watched == is_active，priority/target_price/reason 挂在公司上，消除两套列表重复
 9. **文档表格结构化** — 财报类 PDF 表格按词坐标重建为 Markdown（保留集团/母公司列组），整块入库、问答不丢列含义
@@ -189,6 +191,7 @@ Visit **http://localhost:5173** — the Screener workspace（价值推荐清单�
 | ~~预设标准库（Screener v1.5）~~ | ✅ 2026-10-24 | 42 指标（TTM 估值 + 现金流质量 + 因子深度 + 银行/保险专属）+ 8 内置预设（含银行/保险价值）+ 组合模式；股票池卫生；申万行业分类与金融行业隔离；回测风险指标（Sharpe/Sortino/Calmar/年化超额） |
 | ~~项目瘦身聚焦价值筛选~~ | ✅ 2026-11-24 | 删除 research/portfolio/ai/dashboard 四模块代码，数据库表保留；文档同步更新 |
 | ~~二次瘦身：价值推荐聚焦~~ | ✅ 2026-11-25 | 删组合/再平衡、表现跟踪/快照、回测交互路由（引擎保留为脚本）、freeform 模式、运行取消、近似命中；预设只读化；新增 `fact_checks.py` 确定性事实检查、报告四段投资理由结构、`GET /screener/latest-report`；前端收缩为价值推荐清单视图 |
+| ~~三次简化：深判退役~~ | ✅ 2026-11-25 | 删 LLM 深判（judge/eval）、diff/notify/Webhook、回测 service 层、CSV 导出与自选推送端点；报告改三段（量化筛选/事实检查/不推荐与存疑原因）；运行链路零 LLM、单轮 ≤2 分钟；历史排查脚本归档 `backend/tools/archive/` |
 
 收尾待办（小项）：Market.vue 覆盖网格列数动态化（当前硬编码 `repeat(5, 90px)`）；test_finalize_session 补 LLM mock（真实 LLM 调用挂起）；qualColor 硬编码色值统一 CSS 变量。
 

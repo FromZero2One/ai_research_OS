@@ -1,10 +1,12 @@
 # AI Research OS 使用手册
 
-> **Screener First, not AI First** — 数据与规则管筛选,AI 只做有据可查的深判。
+> **Screener First, not AI First** — 数据与规则管筛选,AI 只在知识库问答里出现（运行链路零 LLM）。
 
 > **2026-11-24 项目瘦身**：研究中心、投资组合、AI 中心（Prompt 模板）、仪表盘四个模块的代码已删除，系统聚焦价值筛选核心链路。数据库表保留。
 >
 > **2026-11-25 二次瘦身（价值推荐聚焦）**：组合构建/再平衡、表现跟踪与快照、回测交互路由（引擎保留为脚本）、freeform 自由文本模式、运行取消、近似命中、前端 Knowledge 页/PresetManager/ReportCharts 均已删除；预设只读化；新增事实检查确定性化（`fact_checks.py`）与 `GET /api/v1/screener/latest-report`；报告改为四段投资理由结构。本手册已按裁剪后架构更新。
+>
+> **2026-11-25 三次简化（深判退役）**：LLM 深判整体退役、变化日报/失败告警 Webhook 全删、回测去框架化（脚本直调纯函数落 JSON）、CSV 导出与自选推送端点删除、历史排查脚本归档 `backend/tools/archive/`。运行链路 = 预设量化初筛 → 事实检查确定性判定 → 三段报告 → `latest-report`，零 LLM、单轮 ≤2 分钟（知识库问答仍用 LLM）。本手册已按三次简化口径更新。
 
 ---
 
@@ -353,9 +355,9 @@ GET /api/v1/market/ratios/600519/valuation-percentile  # A股 PE/PB 历史分位
 
 > **注意**: 由于 Embedding 当前配置走 Ollama 本地 API，若 Ollama 版本过旧(<0.3.0)可能返回零向量，此时稠密检索会失效。系统自动降级为稀疏检索(BM25+RRF)，效果仍然可用。
 >
-> **2026-11-25 二次瘦身**：前端 Knowledge 页（`/knowledge`）已删除；知识库作为 Screener 深判的证据来源（逐条标准检索 + 事实检查）与后端 API 继续保留。
+> **2026-11-25 二次瘦身**：前端 Knowledge 页（`/knowledge`）已删除；知识库作为事实检查的证据来源与后端 API 继续保留。
 
-**知识库在链路中的角色**: Screener 深判对每条定性标准独立检索年报切片，事实检查器（审计意见/诉讼）也依赖知识库检索。知识库为空时这些检查会判 `not_found` → 运行判「数据不足」。
+**知识库在链路中的角色**: Screener 事实检查器（审计意见/诉讼）依赖知识库检索年报切片。知识库为空时这些检查会判 `not_found` → 运行判「数据不足」。知识库问答（`POST /knowledge/ask`）仍使用 LLM。
 
 **文档问答 API（保留）**:
 ```
@@ -379,9 +381,9 @@ GET /api/v1/knowledge/search/document/{document_id}?query=...  # 只搜索指定
 
 ### 4.6 AI 能力（内嵌于各模块）
 
-> **AI 中心已删除**（2026-11-24 瘦身）：Prompt 模板管理/执行界面与 `/api/v1/ai/templates` 等端点随模块移除。AI 能力内嵌于各模块——知识库问答、Screener 深判均直接使用 `.env` 配置的 LLM（DeepSeek/Ollama 可切换）。
+> **AI 中心已删除**（2026-11-24 瘦身）：Prompt 模板管理/执行界面与 `/api/v1/ai/templates` 等端点随模块移除。AI 能力内嵌于各模块——知识库问答直接使用 `.env` 配置的 LLM（DeepSeek/Ollama 可切换）；Screener 运行链路已零 LLM（2026-11-25 深判退役）。
 
-**保留的用量统计**：`GET /api/v1/ai/usage` 按模型汇总调用次数与输入/输出 tokens（进程级统计，服务重启清零）；系统页（/system）有实时展示卡片。该端点由 `core/system_routes.py` 提供。
+**保留的用量统计**：~~`GET /api/v1/ai/usage`~~ 已随 2026-11-25 深判退役删除（`core/system_routes.py` 整个端点移除）；进程级 token 统计无消费方。
 
 ### 共享组件
 
@@ -423,9 +425,9 @@ POST /api/v1/scheduler/run/market_data_update
 GET /api/v1/scheduler/status            # 调度器状态(运行中/停止)
 ```
 
-### 4.8 智能选股 `/screener`（2026-10-24；2026-11-25 二次瘦身）
+### 4.8 智能选股 `/screener`（2026-10-24；2026-11-25 深判退役）
 
-功能：预设标准库驱动的全市场选股，产出**Markdown 价值推荐清单（股票 + 四段投资理由）**。预设是唯一运行入口（freeform 模式已删除）。
+功能：预设标准库驱动的全市场选股，产出**Markdown 价值推荐清单（三段报告：量化筛选 → 事实检查 → 不推荐/存疑原因）**。预设是唯一运行入口（freeform 模式已删除）。运行链路零 LLM，单轮 ≤2 分钟。
 
 **运行方式（预设模式）**：
 1. 打开 `/screener`，多选预设（8 套内置：核心资产/高成长/深度价值/质量价值GARP/周期反转 + 金融价值/银行价值/保险价值，只读；首次进入默认勾选全部内置预设）
@@ -436,31 +438,27 @@ GET /api/v1/scheduler/status            # 调度器状态(运行中/停止)
 
 **页面功能**：
 - **数据质量卡片**：最新财务期、7 个关键指标覆盖、行情覆盖、知识库文档数；缺数据/知识库为空直接告警。
-- **定时任务卡片**：cron/预设/下次运行/Webhook 状态，可后台「立即运行定时选股」。
-- **报告视图**：最新报告指针 `GET /api/v1/screener/latest-report`；推荐股报告为四段投资理由结构——量化筛选（数值 + 行业分位）→ 事实检查 → 年报证据 → 不推荐/存疑原因。
-- **历史运行**：按状态筛选；每行支持 报告/明细/日报（CSV 仅 API 导出：`GET /api/v1/screener/runs/{id}/export`）。
-- **运行明细**：逐只结论（推荐/未通过/数据不足/深判失败）、置信度、行业、价格、理由；推荐股可逐只「自选」。
-- **日报**：默认对比同口径上一轮，也可选择任意已完成运行作为基线；规则变更时明确提示不可比。
+- **定时任务卡片**：cron/预设/下次运行，可后台「立即运行定时选股」。
+- **报告视图**：最新报告指针 `GET /api/v1/screener/latest-report`；报告为三段结构——量化筛选（数值 + 行业分位）→ 事实检查 → 不推荐/存疑原因（fact_checks not_found 项 + 缺数据项）。
+- **历史运行**：按状态筛选；每行支持 报告/明细。
+- **运行明细**：逐只确定性判定结论（推荐/未通过/数据不足）、理由（量化命中 + fact_checks 结果）、行业、价格。
 
 **API**：
 ```
 GET  /api/v1/screener/metrics              # 42 个标准化指标（估值/质量/因子/银行保险）
 GET  /api/v1/screener/presets              # 预设列表（含内置，只读）
 POST /api/v1/screener/runs                 # Body: {"mode": "presets", "pool": "all", "preset_ids": [...], "combine": "union"}
-GET  /api/v1/screener/runs/{id}            # 运行详情（含逐只判断）
+GET  /api/v1/screener/runs/{id}            # 运行详情（含逐只确定性判定，历史运行仍可查）
 GET  /api/v1/screener/latest-report        # 最近一次 completed 运行的报告指针（404 优雅降级）
 GET  /api/v1/screener/runs/{id}/report     # Markdown 报告
-GET  /api/v1/screener/runs/{id}/diff       # 变化日报（可加 ?base_run_id=... 指定任意基线）
-GET  /api/v1/screener/runs/{id}/export      # 导出该轮判断为 CSV
-GET  /api/v1/screener/schedule              # 定时快照（cron/预设/下次运行/Webhook 状态）
+GET  /api/v1/screener/schedule              # 定时快照（cron/预设/下次运行）
 POST /api/v1/screener/schedule/run          # 后台立即运行一轮定时选股
-GET  /api/v1/screener/runs/{id}/watchlist    # 推荐股 → 自选（POST，Body 可选 {"tickers": [...], "limit": 50}）
 GET  /api/v1/screener/data-quality          # 财务期/指标覆盖/行情覆盖/知识库状态与告警
 ```
 
-> **2026-11-25 已删除的端点**：`POST /runs/{id}/cancel`（运行取消）、`/runs/{id}/portfolio*` 与 `/portfolios/*`（组合/再平衡）、`/runs/{id}/performance*`（表现跟踪/快照）、`/backtests*`（回测交互路由——回测引擎保留为脚本 `backend/tools/run_backtest_queue.py`，需 `BACKTEST_MYSQL_URL`）。
+> **2026-11-25 已删除的端点**：`POST /runs/{id}/cancel`（运行取消）、`/runs/{id}/portfolio*` 与 `/portfolios/*`（组合/再平衡）、`/runs/{id}/performance*`（表现跟踪/快照）、`/backtests*`（回测交互路由——回测脚本 `backend/tools/run_backtest_queue.py` 直调纯函数）、`GET /runs/{id}/diff`（变化日报）、`GET /runs/{id}/export`（CSV 导出）、`POST /runs/{id}/watchlist`（自选推送）。
 
-> 全流程约 2-10 分钟（全市场快照 + 财务补采 + 事实检查 + LLM 深判）。报告落 `backend/screener/reports/`。
+> 全流程约 ≤2 分钟（全市场快照 + 财务补采 + 事实检查确定性判定，无 LLM 调用）。报告落 `backend/screener/reports/`。
 >
 > **数据来源**：业绩报表（`stock_yjbb_em`）提供 ROE/毛利率/净利率/EPS/营收与净利同比；资产负债表与现金流（`stock_zcfz_em`/`stock_xjll_em`）提供规模、负债率与经营现金流；流动/速动比率与三项周转率来自东财 F10 主要指标（`RPT_F10_FINANCE_MAINFINADATA`）。缺失指标会在初筛前按需补采。
 >
@@ -592,16 +590,15 @@ OPENAI_API_KEY=<你的Key>
 └─────────────────────────┬───────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
-│  3. 看报告与深判                                            │
+│  3. 看报告与判定                                            │
 │     报告落 backend/screener/reports/                        │
 │     GET /api/v1/screener/latest-report 取最新报告指针       │
-│     逐只结论：推荐/未通过/数据不足（四段投资理由）          │
+│     逐只确定性结论：推荐/未通过/数据不足（三段报告）        │
 └─────────────────────────┬───────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
 │  4. 自选与跟踪                                              │
-│     POST /api/v1/screener/runs/{id}/watchlist （加入自选）  │
-│     变化日报 Webhook（新推荐/掉出推荐）                     │
+│     自选状态在公司中心维护（Company.is_active）             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -626,8 +623,6 @@ ai_research_os/
 │   │   ├── market_sync.py     # 市场数据定时采集
 │   │   ├── event_service.py / event_log.py / event_routes.py / event_cleanup.py
 │   │   ├── task_manager.py    # 持久任务队列(Postgres+worker)
-│   │   ├── llm_usage.py       # LLM token 用量累计器
-│   │   ├── system_routes.py   # /ai/usage 用量端点（AI 模块删除后保留）
 │   │   ├── security.py        # JWT工具(V1未启用,有意保留)
 │   │   └── adapters/          # 外部服务适配器
 │   │       ├── llm.py         # DeepSeek(OpenAI兼容)/Ollama适配器
@@ -640,7 +635,7 @@ ai_research_os/
 │   ├── market/                # 市场中心(service/+routes/子目录+domain/repositories/akshare_executor)
 │   ├── document/              # 文档中心(含 content_classifier.py 内容打标 + table_extractor.py 表格结构化)
 │   ├── knowledge/             # 知识中心(混合RAG,读写document表+Qdrant)
-│   ├── screener/              # 智能选股(筛选/事实检查/深判/报告,编排型模块)
+│   ├── screener/              # 智能选股(筛选/事实检查/报告,编排型模块,零LLM)
 │   ├── alembic/versions/      # 数据库迁移脚本
 │   ├── tests/                 # pytest(专用 airesearch_test 库)
 │   └── scripts/               # 工具脚本(seed_data/ingest_financials/reembed等)
@@ -693,7 +688,7 @@ ai_research_os/
 **方式：** API 或 Swagger（http://localhost:8000/docs）——前端 Knowledge 页已随二次瘦身删除
 
 - `GET /api/v1/knowledge/search?query=工商银行 净息差`
-- 知识库是 Screener 事实检查与深判的证据来源；文档中心上传/索引后即生效
+- 知识库是 Screener 事实检查的证据来源（也是知识库问答的语料）；文档中心上传/索引后即生效
 
 ### Step 4 — 查看行情
 
@@ -709,14 +704,13 @@ ai_research_os/
 
 1. 「数据质量」卡片确认行情/财务/知识库覆盖无告警
 2. 预设模式：勾选预设（如 金融价值/深度价值）→ union → 触发运行
-3. 等待 2-10 分钟（快照 + 财务补采 + 事实检查 + LLM 深判），查看报告与逐只结论
-4. 回测验证用脚本 `backend/tools/run_backtest_queue.py`（需 `BACKTEST_MYSQL_URL`）
+3. 等待 ≤2 分钟（快照 + 财务补采 + 事实检查确定性判定，无 LLM 调用），查看报告与逐只结论
+4. 回测验证用脚本 `backend/tools/run_backtest_queue.py`（需 `BACKTEST_MYSQL_URL`，结果落 JSON）
 
 ### Step 6 — 跟踪与行动
 
-- 历史运行表：报告/明细/日报（CSV 仅 API 导出）
-- 推荐股「自选」一键加入关注（`is_active`）
-- 配置 `SCREENER_WEBHOOK_URL` 后，工作日 16:30 定时筛选的变化自动推送企微/飞书/钉钉
+- 历史运行表：报告/明细（逐只确定性判定）
+- 自选状态在公司中心维护（`is_active`）
 
 ---
 

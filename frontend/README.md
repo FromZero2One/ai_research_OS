@@ -48,7 +48,8 @@ npm run dev            # http://localhost:5173
 | `/system` | System | 系统/调度状态 |
 
 > 2026-11-24 瘦身：Dashboard、Research×4、Portfolio、AICenter 视图已删除。
-> 2026-11-25 二次瘦身：Knowledge 视图已删除（知识库保留为 Screener 深判的证据来源与后端 API）；Screener 页收缩为价值推荐清单视图（PresetManager、ReportCharts 组件随预设只读化与报告改造删除）。
+> 2026-11-25 二次瘦身：Knowledge 视图已删除（知识库保留为 Screener 事实检查的证据来源与后端 API）；Screener 页收缩为价值推荐清单视图（PresetManager、ReportCharts 组件随预设只读化与报告改造删除）。
+> 2026-11-25 三次简化：Screener 明细弹窗的「自选」按钮随 `POST /runs/{id}/watchlist` 端点删除一并移除；报告视图对齐三段结构。
 
 ## 数据层（stores/api.ts）
 

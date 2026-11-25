@@ -14,7 +14,6 @@ import {
   useScreenerRuns,
   useScreenerSchedule,
   useTriggerScreenerRunPresets,
-  usePushScreenerToWatchlist,
   type ScreenerJudgement,
   type ScreenerPreset,
   type ScreenerRunSummary,
@@ -207,11 +206,9 @@ function backToLatest() {
   viewingRunId.value = null
 }
 
-// ── 运行明细 + 单只操作 ──
+// ── 运行明细 ──
 const detailRunId = ref<string | null>(null)
 const { data: detailData } = useScreenerRun(detailRunId)
-const watchlistRunId = ref<string | null>(null)
-const watchlistMutation = usePushScreenerToWatchlist(watchlistRunId)
 const verdictLabel: Record<string, { label: string; type: string }> = {
   recommend: { label: '推荐', type: 'success' },
   reject: { label: '未通过', type: 'danger' },
@@ -220,18 +217,6 @@ const verdictLabel: Record<string, { label: string; type: string }> = {
 }
 function viewDetail(run: ScreenerRunSummary) {
   detailRunId.value = run.id
-}
-async function addOneToWatchlist(row: ScreenerJudgement) {
-  if (!detailRunId.value) return
-  watchlistRunId.value = detailRunId.value
-  try {
-    const r = await watchlistMutation.mutateAsync({ tickers: [row.ticker] })
-    if (r.added.length) ElMessage.success(`${row.name} 已加入自选`)
-    else if (r.already.length) ElMessage.info(`${row.name} 已在自选中`)
-    else ElMessage.warning(`${row.name} 缺少公司记录，无法加入自选`)
-  } catch (e: any) {
-    ElMessage.error(e.message || '加入自选失败')
-  }
 }
 </script>
 
@@ -450,16 +435,6 @@ async function addOneToWatchlist(row: ScreenerJudgement) {
         <el-table-column label="理由/错误" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
             {{ row.error || (row.reasons || []).join('；') || '-' }}
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="110">
-          <template #default="{ row }">
-            <el-button
-              v-if="row.status === 'ok' && row.recommend"
-              size="small" link
-              :loading="watchlistMutation.isPending.value && watchlistRunId === detailRunId"
-              @click.stop="addOneToWatchlist(row)"
-            >自选</el-button>
           </template>
         </el-table-column>
       </el-table>

@@ -1,15 +1,13 @@
-"""Screener 运行 API — 触发、历史、详情、导出、报告、自选、调度。"""
+"""Screener 运行 API — 触发、历史、详情、报告、调度。"""
 
 from __future__ import annotations
 
-import csv
-import io
 import uuid
 from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,13 +27,6 @@ class TriggerParams(BaseModel):
     pool: str = "all"
     preset_ids: list[str] = Field(min_length=1)
     combine: str = "union"
-
-
-class WatchlistParams(BaseModel):
-    """POST /runs/{id}/watchlist body。"""
-
-    tickers: list[str] | None = None
-    limit: int = Field(default=50, ge=1, le=500)
 
 
 _DQ_METRICS = (
@@ -238,52 +229,6 @@ async def get_run(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     }
 
 
-@router.get("/runs/{run_id}/export")
-async def export_run(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    """导出该轮全部判断为 CSV（UTF-8 BOM，Excel 可直接打开）。"""
-    run = (
-        await db.execute(select(ScreenerRun).where(ScreenerRun.id == run_id))
-    ).scalar_one_or_none()
-    if run is None:
-        raise NotFoundError("ScreenerRun", str(run_id))
-    judgements = (
-        await db.execute(
-            select(ScreenerJudgement)
-            .where(ScreenerJudgement.run_id == run_id)
-            .order_by(ScreenerJudgement.created_at)
-        )
-    ).scalars().all()
-
-    buf = io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow([
-        "代码", "名称", "结论", "推荐", "置信度", "行业", "现价", "总市值",
-        "初筛得分", "命中预设", "理由", "标准命中", "状态", "错误",
-    ])
-    for j in judgements:
-        snap = j.snapshot or {}
-        recommend = "" if j.recommend is None else ("是" if j.recommend else "否")
-        hits = "；".join(
-            f"{h.get('criterion', '')}:{'命中' if h.get('hit') else '未命中'}"
-            for h in (j.criteria_hits or [])
-        )
-        writer.writerow([
-            j.ticker, j.name or "", j.verdict or "", recommend,
-            "" if j.confidence is None else j.confidence,
-            snap.get("industry") or "", snap.get("price") or "",
-            snap.get("market_cap") or "", snap.get("score") or "",
-            "、".join(snap.get("presets") or []),
-            "；".join(j.reasons or []), hits, j.status, j.error or "",
-        ])
-
-    filename = f"screener-run-{str(run.id)[:8]}.csv"
-    return Response(
-        content="﻿" + buf.getvalue(),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
 @router.get("/schedule")
 async def get_schedule():
     """定时选股配置与调度状态（配置项只读，来自环境变量）。"""
@@ -356,22 +301,3 @@ async def get_report(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     if not path.exists():
         raise NotFoundError("ScreenerReport", str(run_id))
     return {"report": path.read_text(encoding="utf-8")}
-
-
-@router.post("/runs/{run_id}/watchlist")
-async def push_to_watchlist(
-    run_id: uuid.UUID,
-    params: WatchlistParams,
-    db: AsyncSession = Depends(get_db),
-):
-    """把推荐股（或指定 ticker）加入自选（Company.is_active=True），幂等。"""
-    from screener.actions import add_to_watchlist
-
-    try:
-        result = await add_to_watchlist(
-            db, run_id, tickers=params.tickers, limit=params.limit
-        )
-    except ValueError as e:
-        raise NotFoundError("ScreenerRun", str(run_id)) from e
-    await db.commit()
-    return result
