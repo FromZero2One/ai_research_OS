@@ -1,4 +1,4 @@
-"""Screener 运行 API — 触发、历史、详情、导出、报告、diff、自选、调度。"""
+"""Screener 运行 API — 触发、历史、详情、导出、报告、自选、调度。"""
 
 from __future__ import annotations
 
@@ -304,11 +304,6 @@ async def get_schedule():
             for t in (settings.SCREENER_SCHEDULE_PRESETS or "").split(",")
             if t.strip()
         ],
-        "webhook": {
-            "enabled": bool(settings.SCREENER_WEBHOOK_URL),
-            "format": settings.SCREENER_WEBHOOK_FORMAT,
-            "notify_on": settings.SCREENER_WEBHOOK_NOTIFY_ON,
-        },
     }
 
 
@@ -361,29 +356,6 @@ async def get_report(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     if not path.exists():
         raise NotFoundError("ScreenerReport", str(run_id))
     return {"report": path.read_text(encoding="utf-8")}
-
-
-@router.get("/runs/{run_id}/diff")
-async def get_diff(
-    run_id: uuid.UUID,
-    base_run_id: uuid.UUID | None = None,
-    db: AsyncSession = Depends(get_db),
-):
-    """变化日报：默认对比同口径上一轮；base_run_id 可指定任意基线。"""
-    from screener.diff_service import build_run_diff
-    from screener.errors import ScreenerDiffError
-
-    try:
-        markdown, has_previous = await build_run_diff(db, run_id, base_run_id)
-    except ScreenerDiffError as e:
-        return JSONResponse(status_code=422, content={"error": str(e)})
-    except ValueError as e:
-        raise NotFoundError("ScreenerRun", str(run_id)) from e
-    return {
-        "diff": markdown,
-        "has_previous": has_previous,
-        "base_run_id": str(base_run_id) if base_run_id else None,
-    }
 
 
 @router.post("/runs/{run_id}/watchlist")

@@ -367,7 +367,7 @@ async def trigger_run(
         criteria_text += f"\n投资逻辑：{descriptions}"
 
     # criteria_hash = 组装规则（compose 输出）的稳定序列化哈希 —— 同一组预设
-    # 任意两次触发哈希一致，diff_service 据此匹配同口径基线。
+    # 任意两次触发哈希一致，历史运行匹配据此确认同口径基线。
     from screener.compose import compose_rules
 
     preview = compose_rules(ordered, pool, combine)
@@ -605,25 +605,6 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
         )
     await db.flush()
     await db.commit()
-    if run.status == "failed":
-        # 失败告警：Webhook 未配置时 send_* 会静默 no-op，不影响主流程
-        try:
-            from screener.notify import format_failure_text, send_screener_webhook
-
-            await send_screener_webhook(
-                format_failure_text(
-                    {
-                        "id": str(run.id),
-                        "criteria_text": run.criteria_text,
-                        "error": run.error,
-                        "finished_at": run.finished_at,
-                    }
-                ),
-                run_id=str(run.id),
-                event="run_failed",
-            )
-        except Exception as e:  # noqa: BLE001 — 告警不能影响运行结果
-            logger.warning("选股失败告警发送异常: %s", e)
     return run
 
 

@@ -1,7 +1,6 @@
-"""Scheduled screener run + change report.
+"""Scheduled screener run.
 
-Default schedule runs the quant-only `core` preset daily after close and writes a
-"what changed vs the previous same-preset run" Markdown report. Configure with:
+Default schedule runs the quant-only `core` preset daily after close. Configure with:
   SCREENER_SCHEDULE=30 16 * * 1-5
   SCREENER_SCHEDULE_PRESETS=core
 """
@@ -12,22 +11,17 @@ from sqlalchemy import select
 
 from core.config import settings
 from core.database import managed_session
-from core.event_service import EventLogger
 from core.logging import logger
 
 _ACTIVE = ("pending", "screening", "judging")
 
 
 async def _run_one(db, preset, tag: str) -> dict:
-    from screener.diff import diff_path_for
-    from screener.diff_service import build_run_diff_data
     from screener.models import ScreenerRun
     from screener.service import run_screener, trigger_run
 
     active = (
-        await db.execute(
-            select(ScreenerRun).where(ScreenerRun.status.in_(_ACTIVE)).limit(1)
-        )
+        await db.execute(select(ScreenerRun).where(ScreenerRun.status.in_(_ACTIVE)).limit(1))
     ).scalar_one_or_none()
     if active is not None:
         return {"status": "skipped", "reason": f"已有进行中的运行: {active.id}"}
@@ -53,63 +47,20 @@ async def _run_one(db, preset, tag: str) -> dict:
             "error": done.error,
         }
 
-    markdown, has_previous, diff = await build_run_diff_data(db, done.id)
-    path = diff_path_for(str(done.id))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(markdown, encoding="utf-8")
-    await EventLogger(db).record(
-        source="screener",
-        event_type="screener.diff",
-        entity_type="screener_run",
-        entity_id=str(done.id),
-        summary=(
-            f"定时选股 {preset.name}: 候选 {done.candidate_count}，"
-            f"推荐 {done.result_count}，变化报告 {path.name}"
-        ),
-    )
-    await db.commit()
-
-    from screener.notify import format_diff_text, send_screener_webhook, should_notify
-
-    notification = {"enabled": False, "sent": False}
-    if should_notify(diff, has_previous):
-        text = format_diff_text(
-            preset.name,
-            {
-                "id": str(done.id),
-                "created_at": done.created_at,
-                "candidate_count": done.candidate_count,
-                "result_count": done.result_count,
-            },
-            diff or {},
-            str(path),
-        )
-        notification = await send_screener_webhook(
-            text,
-            run_id=str(done.id),
-            preset=preset.name,
-            counts=(diff or {}).get("counts") or {},
-        )
-
     return {
         "status": "completed",
         "run_id": str(done.id),
         "candidate_count": done.candidate_count,
         "result_count": done.result_count,
-        "diff_path": str(path),
-        "has_previous": has_previous,
-        "notification": notification,
     }
 
 
 async def scheduled_screener_update() -> dict:
-    """Run configured presets and persist a change report for each."""
+    """Run configured presets and persist a report for each."""
     from screener.models import CriteriaPreset
 
     tags = [
-        tag.strip()
-        for tag in (settings.SCREENER_SCHEDULE_PRESETS or "").split(",")
-        if tag.strip()
+        tag.strip() for tag in (settings.SCREENER_SCHEDULE_PRESETS or "").split(",") if tag.strip()
     ]
     if not tags:
         return {"presets": {}, "message": "SCREENER_SCHEDULE_PRESETS 未配置"}
@@ -137,24 +88,9 @@ async def scheduled_screener_update() -> dict:
             try:
                 results[tag] = await _run_one(db, preset, tag)
             except Exception as e:  # noqa: BLE001 — 单个预设失败不阻断其余
-                logger.warning("定时选股 %s 失败: %s", tag, e)
+                # 失败仅记日志，不做任何推送
+                logger.error("定时选股 %s 失败: %s", tag, e)
                 results[tag] = {"status": "failed", "error": str(e)[:300]}
-                try:
-                    from screener.notify import format_failure_text, send_screener_webhook
-
-                    await send_screener_webhook(
-                        format_failure_text(
-                            {
-                                "id": "-",
-                                "criteria_text": f"定时选股预设：{tag}",
-                                "error": str(e),
-                            }
-                        ),
-                        event="schedule_failed",
-                        preset=tag,
-                    )
-                except Exception as notify_error:  # noqa: BLE001
-                    logger.warning("定时选股失败告警异常: %s", notify_error)
 
     return {"presets": results}
 

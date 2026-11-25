@@ -214,27 +214,6 @@ class TestExportAndSchedule:
         assert again.json()["added"] == []
         assert [x["ticker"] for x in again.json()["already"]] == ["300750"]
 
-    def test_diff_with_explicit_base(
-        self, client: TestClient, screener_env, preset_payload: dict
-    ):
-        first_resp = client.post("/api/v1/screener/runs", json=preset_payload)
-        first = _run_screener_run(client, first_resp.json())
-        second_resp = client.post("/api/v1/screener/runs", json=preset_payload)
-        second = _run_screener_run(client, second_resp.json())
-        resp = client.get(
-            f"/api/v1/screener/runs/{second['id']}/diff",
-            params={"base_run_id": first["id"]},
-        )
-        assert resp.status_code == 200
-        assert resp.json()["has_previous"] is True
-        assert resp.json()["base_run_id"] == first["id"]
-        # 基线与当前相同 → 422
-        bad = client.get(
-            f"/api/v1/screener/runs/{second['id']}/diff",
-            params={"base_run_id": second["id"]},
-        )
-        assert bad.status_code == 422
-
     def test_data_quality(self, client: TestClient):
         resp = client.get("/api/v1/screener/data-quality")
         assert resp.status_code == 200
@@ -250,7 +229,8 @@ class TestExportAndSchedule:
         assert resp.status_code == 200
         data = resp.json()
         assert "schedule" in data and "presets" in data
-        assert "enabled" in data["webhook"]
+        # 变化日报/Webhook 已退役：响应不得再含 webhook 字段
+        assert "webhook" not in data
 
     def test_schedule_run_queues_task(self, client: TestClient):
         resp = client.post("/api/v1/screener/schedule/run")

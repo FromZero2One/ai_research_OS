@@ -89,3 +89,40 @@ class TestSchedulerJobs:
 
         source = Path(core.scheduler.__file__).read_text(encoding="utf-8")
         assert "performance_snapshot" not in source
+
+
+class TestScreenerScheduleFailure:
+    """定时选股失败路径：仅记日志，不抛异常，不做任何 Webhook 推送。"""
+
+    async def test_failure_returns_failed_without_raising(self, monkeypatch):
+        from sqlalchemy import delete
+
+        from core.database import managed_session
+        from core.screener_schedule import scheduled_screener_update
+        from screener.models import ScreenerRun
+
+        # 清掉测试库里残留的进行中 run，避免调度被跳过
+        async with managed_session() as db:
+            await db.execute(delete(ScreenerRun))
+            await db.commit()
+
+        monkeypatch.setattr(settings, "SCREENER_SCHEDULE_PRESETS", "core")
+
+        async def boom(db, payload, enqueue=False):
+            raise RuntimeError("模拟选股失败")
+
+        monkeypatch.setattr("screener.service.trigger_run", boom)
+
+        result = await scheduled_screener_update()
+        entry = result["presets"]["core"]
+        assert entry["status"] == "failed"
+        assert "模拟选股失败" in entry["error"]
+        assert "notification" not in entry and "webhook" not in entry
+
+    def test_schedule_module_has_no_notify_dependency(self):
+        from pathlib import Path
+
+        import core.screener_schedule
+
+        source = Path(core.screener_schedule.__file__).read_text(encoding="utf-8")
+        assert "notify" not in source and "webhook" not in source.lower()
