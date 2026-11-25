@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from core.interfaces import LLMResponse
+from screener.models import ScreenerRun
 
 SPOT = [
     {"ticker": "600519", "name": "贵州茅台", "price": 1500.0, "turnover": 0.3, "market_cap": 1.88e12},
@@ -122,6 +123,44 @@ def _run_screener_run(client: TestClient, resp_json: dict) -> dict:
 
     asyncio.run(_go())
     return client.get(f"/api/v1/screener/runs/{resp_json['id']}").json()
+
+
+class TestLatestReport:
+    def _clear_completed_runs(self) -> None:
+        import asyncio
+
+        from sqlalchemy import delete
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from tests.conftest import test_async_engine
+
+        async def _go():
+            async with test_async_engine.connect() as conn:
+                session = AsyncSession(bind=conn, expire_on_commit=False)
+                await session.execute(delete(ScreenerRun).where(ScreenerRun.status == "completed"))
+                await session.commit()
+                await session.close()
+
+        asyncio.run(_go())
+
+    def test_latest_report_404_without_completed_run(self, client: TestClient):
+        self._clear_completed_runs()
+        resp = client.get("/api/v1/screener/latest-report")
+        assert resp.status_code == 404
+
+    def test_latest_report_returns_markdown(
+        self, client: TestClient, screener_env, preset_payload: dict
+    ):
+        self._clear_completed_runs()
+        resp = client.post("/api/v1/screener/runs", json=preset_payload)
+        assert resp.status_code == 201
+        run = _run_screener_run(client, resp.json())
+        assert run["status"] == "completed"
+        latest = client.get("/api/v1/screener/latest-report")
+        assert latest.status_code == 200
+        data = latest.json()
+        assert data["run_id"] == run["id"]
+        assert "推荐列表" in data["report"]
 
 
 class TestTriggerAndRun:

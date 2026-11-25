@@ -113,6 +113,64 @@ class TestBuildReport:
         assert "本次无推荐" in report
 
 
+class TestFourSectionStockLayout:
+    """推荐股分区四段固定结构：量化筛选 → 事实检查 → 年报证据 → 不推荐/存疑原因。"""
+
+    J_REC = {
+        "ticker": "600519",
+        "name": "贵州茅台",
+        "recommend": True,
+        "reasons": ["ROE 高"],
+        "criteria_hits": [
+            {
+                "check": "audit_opinion", "result": "pass",
+                "evidence": "年报披露无保留意见", "citation": "[1]",
+                "detail": "年报披露无保留意见", "criterion": "审计意见", "hit": True,
+            },
+            {
+                "check": "cash_coverage", "result": "not_found", "evidence": "",
+                "citation": None, "detail": "缺少指标 cash_ratio",
+                "criterion": "现金覆盖", "hit": False,
+            },
+            {"criterion": "盈利具有持续性", "hit": True, "evidence": "[1] 连续十年 ROE>25%"},
+        ],
+        "confidence": 0.9,
+        "snapshot": {
+            "price": 1500.0, "market_cap": 1.88e12, "industry": "酿酒行业",
+            "industry_percentiles": {"roe": 0.9},
+        },
+        "status": "ok",
+    }
+
+    def test_four_sections_present_in_order(self):
+        report = build_report(RUN, [self.J_REC], RUN["criteria_text"], [])
+        i1 = report.index("量化筛选")
+        i2 = report.index("事实检查")
+        i3 = report.index("年报证据")
+        i4 = report.index("不推荐/存疑原因")
+        assert i1 < i2 < i3 < i4
+
+    def test_quant_section_has_values_and_percentile(self):
+        report = build_report(RUN, [self.J_REC], RUN["criteria_text"], [])
+        assert "18800.00 亿" in report  # _fmt_money
+        assert "1500.00" in report      # _fmt_price
+        assert "ROE 90%" in report      # 行业分位
+
+    def test_fact_check_section_lists_results(self):
+        report = build_report(RUN, [self.J_REC], RUN["criteria_text"], [])
+        assert "审计意见：pass" in report
+        assert "现金覆盖：not_found" in report
+
+    def test_narrative_evidence_section_lists_llm_hits(self):
+        report = build_report(RUN, [self.J_REC], RUN["criteria_text"], [])
+        assert "盈利具有持续性" in report and "[1] 连续十年 ROE>25%" in report
+
+    def test_doubt_section_lists_not_found(self):
+        report = build_report(RUN, [self.J_REC], RUN["criteria_text"], [])
+        doubt = report[report.index("不推荐/存疑原因"):report.index("标准吻合度")]
+        assert "现金覆盖" in doubt
+
+
 class TestReportPath:
     def test_path_format(self):
         p = report_path_for("b1a2c3d4e5f67890")

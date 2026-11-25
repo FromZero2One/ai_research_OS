@@ -194,13 +194,21 @@ def build_report(
             )
         lines.append("")
 
-    # 推荐个股的理由（预设模式此前只输出表格，理由被丢弃）
+    # 推荐个股：四段固定结构（量化筛选 → 事实检查 → 年报证据 → 不推荐/存疑原因）
     for j in recommended:
         lines.append(f"### {j['name']}（{j['ticker']}）")
         lines.append("")
         snap = j.get("snapshot") or {}
+        # ── 1 量化筛选（数值 + 行业分位）──
+        lines.append("**量化筛选**")
+        lines.append("")
         if snap.get("industry"):
             lines.append(f"- 行业：{snap['industry']}")
+        lines.append(
+            f"- 现价 {_fmt_price(snap.get('price'))} ｜ 总市值 {_fmt_money(snap.get('market_cap'))}"
+        )
+        if snap.get("score") is not None:
+            lines.append(f"- 初筛得分：{snap['score']}")
         percentiles = snap.get("industry_percentiles") or {}
         if percentiles:
             labels = {
@@ -217,8 +225,54 @@ def build_report(
                 lines.append("- 行业分位：" + "、".join(parts))
         if preset_mode and snap.get("presets"):
             lines.append(f"- 命中：{_preset_label(snap)}")
+
+        hits = j.get("criteria_hits") or []
+        fact_entries = [h for h in hits if isinstance(h, dict) and "check" in h and "result" in h]
+        narrative_hits = [
+            h for h in hits
+            if isinstance(h, dict) and "result" not in h and h.get("hit")
+        ]
+
+        # ── 2 事实检查（确定性检查结果）──
+        lines.append("")
+        lines.append("**事实检查**")
+        lines.append("")
+        if not fact_entries:
+            lines.append("- 无")
+        else:
+            for f in fact_entries:
+                cite = f"（{f['citation']}）" if f.get("citation") else ""
+                detail = f" {f.get('detail') or ''}".rstrip()
+                lines.append(f"- {f.get('criterion') or f['check']}：{f['result']}{cite}{detail}")
+
+        # ── 3 年报证据（LLM 叙事标准命中）──
+        lines.append("")
+        lines.append("**年报证据**")
+        lines.append("")
+        if not narrative_hits:
+            lines.append("- 无")
+        else:
+            for h in narrative_hits:
+                label = _normalize_criterion_with_presets(
+                    str(h.get("criterion", "")), preset_names
+                )
+                lines.append(f"- {label}：{h.get('evidence') or '见理由'}")
         for reason in j.get("reasons") or []:
             lines.append(f"- {reason}")
+
+        # ── 4 不推荐/存疑原因 ──
+        lines.append("")
+        lines.append("**不推荐/存疑原因**")
+        lines.append("")
+        doubts = [
+            f"{f.get('criterion') or f['check']} 未检出（数据不足，非通过）"
+            for f in fact_entries if f.get("result") == "not_found"
+        ]
+        if doubts:
+            for d in doubts:
+                lines.append(f"- {d}")
+        else:
+            lines.append("- 无")
         lines.append("")
 
     # ── 标准吻合度说明：逐条对照标准原文 ──

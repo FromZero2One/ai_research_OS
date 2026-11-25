@@ -326,6 +326,27 @@ async def run_schedule_now(db: AsyncSession = Depends(get_db)):
     return {"status": "queued", "task_id": str(task.id), "task_key": key}
 
 
+@router.get("/latest-report")
+async def get_latest_report(db: AsyncSession = Depends(get_db)):
+    """最近一次 completed run 的报告 markdown（前端直载；无则 404）。"""
+    from pathlib import Path
+
+    run = (
+        await db.execute(
+            select(ScreenerRun)
+            .where(ScreenerRun.status == "completed")
+            .order_by(ScreenerRun.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if run is None or not run.report_path:
+        raise NotFoundError("ScreenerReport", "latest")
+    path = Path(run.report_path)
+    if not path.exists():
+        raise NotFoundError("ScreenerReport", str(run.id))
+    return {"run_id": str(run.id), "report": path.read_text(encoding="utf-8")}
+
+
 @router.get("/runs/{run_id}/report")
 async def get_report(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     """报告 markdown 原文。"""
