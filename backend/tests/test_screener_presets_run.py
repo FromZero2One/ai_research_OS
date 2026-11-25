@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -11,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.interfaces import LLMResponse
-from screener.models import CriteriaPreset, ScreenerJudgement, ScreenerRule, ScreenerRun
+from screener.models import CriteriaPreset, ScreenerJudgement, ScreenerRule
 from screener.service import run_screener, trigger_run
 
 SPOT = [

@@ -11,6 +11,11 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-11-25（二次瘦身完成 — 价值推荐聚焦）**:
+  - **删除**: 组合构建/保存/再平衡（`screener/portfolio.py`/`rebalance.py` + `/portfolios` 端点，表保留）；推荐后表现跟踪与表现快照（`screener/performance.py`、`performance_snapshots`、`performance_snapshot` 定时任务）；回测交互路由（`/backtests*` API + 前端回测卡片——引擎 `backtest*.py` 保留，运行入口改脚本 `tools/run_backtest_queue.py`）；freeform 自由文本模式（预设为唯一运行入口，`mode` 固定 `presets`）；运行取消（`POST /runs/{id}/cancel` + `cancel.py` + `cancelling/cancelled` 状态）；近似命中（`evaluate_near_misses`）；预设只读化（含自建，规则改动走种子脚本）。前端收缩为价值推荐清单视图：Knowledge 页、PresetManager、ReportCharts 已删。
+  - **新增**: ①事实检查确定性化 `screener/fact_checks.py`——审计意见（KB 检索+关键词）、诉讼/处罚（KB 检索命中即 fail）、现金覆盖（财务指标计算）三检查器，judge 调 LLM 前执行，任一 fail→reject、not_found→insufficient（优先级 reject > insufficient > LLM），LLM 只收叙事类标准；seeds.py 深度价值/金融价值 qualitative 改为结构化 fact_check 条目；新增 `test_fact_checks.py`。②报告改四段投资理由结构（量化筛选数值+行业分位 → 事实检查 → 年报证据 → 不推荐/存疑原因）。③`GET /api/v1/screener/latest-report` 最近报告指针（404 优雅降级）。
+  - **测试状态**: 全量 pytest 除 3 个既有失败（`test_announcement_date_filters_future_data`、`test_presets_union_with_financials`、`test_snippet_hit_with_citation_kept`）外全绿；前端 `npm run build`（vue-tsc 闸）绿；改动文件 ruff 通过。文档（README×4 + USAGE + tools/README + 本文件）已同步。
+  - **后续立项候选**: LLM 调用优化（结果缓存 + top N 截断）；测试提速（service 级测试 + TRUNCATE）。
 - **2026-10-25（行情收官 + 回测链路打通 + 首份成绩单）**:
   - **行情**: 主板 2,111/2,111 全覆盖（≥200 根 2,099，其余 12 只为 2025-26 新股），全库 5,156 只 ≥200 根、1,137 万行。采集支持 `--shard i/n` 分片并行（6 进程），`fail` 记录不再永久跳过（可重试）。12 只新股永远 <200 根，重跑会空转，无需再采集。
   - **历史推荐票补采**: `tools/ingest_recommended.py`，覆盖 183 只历史推荐票中 48 只主板清单外的票（002/300/301/688/001）。

@@ -7,7 +7,7 @@ Vue 3 前端。完整使用手册见根目录 [`USAGE.md`](../USAGE.md)。
 - **框架**: Vue 3.5 + Vite + TypeScript
 - **UI**: Element Plus + `@element-plus/icons-vue`
 - **数据**: TanStack Vue Query（`@tanstack/vue-query`）+ Pinia
-- **图表**: ECharts + vue-echarts
+- **图表**: ECharts + vue-echarts（Screener 页内引用）
 - **其他**: marked + dompurify（Markdown 渲染）、vue-router
 
 ## 目录结构
@@ -16,7 +16,7 @@ Vue 3 前端。完整使用手册见根目录 [`USAGE.md`](../USAGE.md)。
 src/
 ├── main.ts            # 应用入口
 ├── App.vue            # 根组件
-├── router/            # Vue Router（7 条路由，懒加载）
+├── router/            # Vue Router 路由（6 条，懒加载）
 ├── views/             # 页面视图（6 个）
 ├── components/        # 共享组件
 ├── stores/api.ts      # 数据层：fetch + TanStack Query 泛型 hooks
@@ -41,14 +41,14 @@ npm run dev            # http://localhost:5173
 | 路由 | 视图 | 说明 |
 |------|------|------|
 | `/` | — | 重定向到 `/screener` |
-| `/screener` | Screener | 智能选股（首页） |
+| `/screener` | Screener | 智能选股（首页，价值推荐清单视图） |
 | `/companies` | Companies / CompanyDetail | 公司中心（自选已并入） |
 | `/market` | Market | 市场中心 |
 | `/documents` | Documents | 文档中心 |
-| `/knowledge` | Knowledge | 知识中心 |
 | `/system` | System | 系统/调度状态 |
 
 > 2026-11-24 瘦身：Dashboard、Research×4、Portfolio、AICenter 视图已删除。
+> 2026-11-25 二次瘦身：Knowledge 视图已删除（知识库保留为 Screener 深判的证据来源与后端 API）；Screener 页收缩为价值推荐清单视图（PresetManager、ReportCharts 组件随预设只读化与报告改造删除）。
 
 ## 数据层（stores/api.ts）
 
@@ -62,7 +62,6 @@ npm run dev            # http://localhost:5173
 | `StockChart.vue` | ECharts K 线图（MA5/MA20/成交量/dataZoom） |
 | `CommandPalette.vue` | ⌘K 全局命令面板 |
 | `Sidebar.vue` | 侧边栏导航 |
-| `PresetManager.vue` | Screener 预设管理抽屉 |
 
 ## 类型生成（按需）
 

@@ -21,13 +21,18 @@
 | `index_pending_parallel.py` | **并行索引所有未完成文档**（6 并发，绕过单线程任务队列；批量导入年报时用这个） |
 | `reindex_pending_docs.py` | 把未索引文档重新排进任务队列（单线程，任务丢失时用） |
 | `check_pending_docs.py` | 列出未索引文档 + 最近 `document_index` 任务状态 |
-| `cleanup_duplicate_tasks.py` | 清理重复的 `document_index` 待办任务（避免重复索引） |
-| `doc_task_status.py` | 查某个文档 id 的索引任务历史（状态/重试次数/错误） |
 | `kb_status.py` | 知识库总览：文档数 / 已索引数 / 切片总数 |
+| `check_kb_hit.py` | 检查某只票在知识库的检索命中（排查事实检查/深判证据） |
 | `run_presets_live.py` | 按预设排队跑**实时选股**（规避 409，轮询并打印判定分布与推荐） |
 | `list_presets.py` | 列出全部预设的量化规则与定性标准（排查标准可验证性） |
-| `rewrite_presets_qualitative.py` | 把定性标准改写为可在年报中验证的表述（幂等；`--apply` 才写库，自动备份） |
 | `show_judgement.py` | 查看某次运行某只票的完整判定（verdict/置信度/逐条证据） |
+| `confidence_dist.py` | 置信度分布（验证 LLM 自评是否退化成固定档位） |
+| `run_status.py` | 最近选股运行状态（直连 PG，避免深判时 HTTP 大响应超时） |
+| `screener_task_status.py` | `screener_run` 任务队列状态（含中断原因） |
+| `reset_stuck_runs.py` | 复位崩溃残留的 running/judging 运行（`--apply`；同时把任务置 failed，避免重启自动重跑） |
+| `recent_activity.py` | 最近 5/10 分钟事件与任务写入（判断深判是否还在推进） |
+
+> 一次性/已弃用脚本（含 `cleanup_duplicate_tasks.py`、`rewrite_presets_qualitative.py`、`rule_sensitivity.py` 等）已移入 `archive/` 子目录，不在日常使用范围。
 | `confidence_dist.py` | 置信度分布（验证 LLM 自评是否退化成固定档位） |
 | `run_status.py` | 最近选股运行状态（直连 PG，避免深判时 HTTP 大响应超时） |
 | `screener_task_status.py` | `screener_run` 任务队列状态（含中断原因） |
@@ -152,12 +157,12 @@ cd backend
 # 看某只票的完整判定与逐条证据
 .venv\Scripts\python tools\show_judgement.py <run_id> 002602
 
-# 预设标准审计 / 改写（先只看，--apply 才写库，自动备份到 data/presets_qualitative_backup.json）
+# 预设标准审计（只读查看；改写脚本已移入 archive/）
 .venv\Scripts\python tools\list_presets.py
-.venv\Scripts\python tools\rewrite_presets_qualitative.py
 ```
 
 - 运行卡在 `judging`（后端崩溃/热重载导致）：`tools\reset_stuck_runs.py --apply` 复位。
   该脚本同时把 `screener_run` 任务置 `failed`，否则后端重启会「恢复」任务并自动重跑。
 - 深判耗时参考（DeepSeek，46 只候选）：约 9–10 分钟；逐条检索上线后单只 +20~30%。
 - `confidence` 是 LLM 自评、未校准；`tools\confidence_dist.py` 可看分布（当前集中在 0.95/0.92/0.85）。
+- 2026-11-25 二次瘦身：回测不再走 API（引擎保留），排队回测统一用 `tools\run_backtest_queue.py`；`run_presets_live.py` 为预设实时选股的脚本入口。

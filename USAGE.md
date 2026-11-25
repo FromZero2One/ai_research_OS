@@ -2,7 +2,9 @@
 
 > **Screener First, not AI First** — 数据与规则管筛选,AI 只做有据可查的深判。
 
-> **2026-11-24 项目瘦身**：研究中心、投资组合、AI 中心（Prompt 模板）、仪表盘四个模块的代码已删除，系统聚焦价值筛选核心链路。数据库表保留。本手册已按裁剪后架构更新。
+> **2026-11-24 项目瘦身**：研究中心、投资组合、AI 中心（Prompt 模板）、仪表盘四个模块的代码已删除，系统聚焦价值筛选核心链路。数据库表保留。
+>
+> **2026-11-25 二次瘦身（价值推荐聚焦）**：组合构建/再平衡、表现跟踪与快照、回测交互路由（引擎保留为脚本）、freeform 自由文本模式、运行取消、近似命中、前端 Knowledge 页/PresetManager/ReportCharts 均已删除；预设只读化；新增事实检查确定性化（`fact_checks.py`）与 `GET /api/v1/screener/latest-report`；报告改为四段投资理由结构。本手册已按裁剪后架构更新。
 
 ---
 
@@ -345,18 +347,17 @@ GET /api/v1/market/ratios/600519/valuation-percentile  # A股 PE/PB 历史分位
 
 ---
 
-### 4.5 知识中心 `/knowledge`
+### 4.5 知识中心（后端 RAG 能力）
 
 功能:混合RAG搜索 — 结合向量相似度 + BM25关键词搜索 + RRF 融合排序。
 
 > **注意**: 由于 Embedding 当前配置走 Ollama 本地 API，若 Ollama 版本过旧(<0.3.0)可能返回零向量，此时稠密检索会失效。系统自动降级为稀疏检索(BM25+RRF)，效果仍然可用。
+>
+> **2026-11-25 二次瘦身**：前端 Knowledge 页（`/knowledge`）已删除；知识库作为 Screener 深判的证据来源（逐条标准检索 + 事实检查）与后端 API 继续保留。
 
-**使用流程**:
-1. 确保文档中心已有已索引的文档
-2. 在知识中心输入自然语言问题
-3. 系统执行: 向量化查询 → Qdrant向量搜索 → BM25关键词搜索(中文停用词+查询扩展) → RRF融合 → BGE Reranker重排序 → 返回相关段落+来源(命中词高亮、表格渲染)
+**知识库在链路中的角色**: Screener 深判对每条定性标准独立检索年报切片，事实检查器（审计意见/诉讼）也依赖知识库检索。知识库为空时这些检查会判 `not_found` → 运行判「数据不足」。
 
-**文档问答**:
+**文档问答 API（保留）**:
 ```
 POST /api/v1/knowledge/ask
 Body: {"question": "中国银行2025年净利润是多少", "top_k": 8, "provider": "default", "model": null}
@@ -422,66 +423,50 @@ POST /api/v1/scheduler/run/market_data_update
 GET /api/v1/scheduler/status            # 调度器状态(运行中/停止)
 ```
 
-### 4.8 智能选股 `/screener`（2026-10-24）
+### 4.8 智能选股 `/screener`（2026-10-24；2026-11-25 二次瘦身）
 
-功能：预设标准库驱动的全市场选股。两种模式：
+功能：预设标准库驱动的全市场选股，产出**Markdown 价值推荐清单（股票 + 四段投资理由）**。预设是唯一运行入口（freeform 模式已删除）。
 
-**预设模式（推荐，零 LLM 翻译，结果可复现）**：
-1. 打开 `/screener`，触发区切换到「预设模式」
-2. 多选预设（8 套内置：核心资产/高成长/深度价值/质量价值GARP/周期反转 + 金融价值/银行价值/保险价值，也可自建；首次进入默认勾选全部内置预设）
-3. 选组合方式：union（命中任一）/ intersection（全部命中）/ flatten（合并规则）
-4. 触发运行 → 报告中每只推荐股标注命中预设
+**运行方式（预设模式）**：
+1. 打开 `/screener`，多选预设（8 套内置：核心资产/高成长/深度价值/质量价值GARP/周期反转 + 金融价值/银行价值/保险价值，只读；首次进入默认勾选全部内置预设）
+2. 选组合方式：union（命中任一）/ intersection（全部命中）/ flatten（合并规则）
+3. 触发运行 → 报告中每只推荐股标注命中预设
 
-**自由文本模式（v1）**：维护自然语言选股标准 → LLM 翻译为规则 → 筛选。标准不变时规则缓存复用，零 LLM 调用。
+**预设管理**：内置与自建预设均只读（2026-11-25 起预设只读化，规则改动走代码/种子脚本），前端可查看规则明细。
 
-**预设管理**：右侧「预设管理」抽屉——查看内置预设规则明细、新建/编辑/启停自建预设（内置只读）。
-
-**页面功能（2026-10-24）**：
+**页面功能**：
 - **数据质量卡片**：最新财务期、7 个关键指标覆盖、行情覆盖、知识库文档数；缺数据/知识库为空直接告警。
 - **定时任务卡片**：cron/预设/下次运行/Webhook 状态，可后台「立即运行定时选股」。
-- **预设回测卡片**：选预设与年数启动回测，展示汇总指标、前半/后半分段稳健性、逐年明细。
-- **历史运行**：按状态筛选；每行支持 报告/CSV/明细/日报/表现/组合/取消。
+- **报告视图**：最新报告指针 `GET /api/v1/screener/latest-report`；推荐股报告为四段投资理由结构——量化筛选（数值 + 行业分位）→ 事实检查 → 年报证据 → 不推荐/存疑原因。
+- **历史运行**：按状态筛选；每行支持 报告/CSV/明细/日报。
 - **运行明细**：逐只结论（推荐/未通过/数据不足/深判失败）、置信度、行业、价格、理由；推荐股可逐只「自选」。
 - **日报**：默认对比同口径上一轮，也可选择任意已完成运行作为基线；规则变更时明确提示不可比。
-- **表现**：T+1 买入的 1/3/6/12 月收益与沪深300超额；可「记录快照」并查看历史快照。
-- **组合**：按资金与单票/行业上限构建，可保存；载入已保存组合后可计算再平衡（漂移/买卖股数与金额）。
-- **近似命中**：报告附「仅差 1 条规则」的股票，供人工复核。
 
 **API**：
 ```
 GET  /api/v1/screener/metrics              # 42 个标准化指标（估值/质量/因子/银行保险）
-GET  /api/v1/screener/presets              # 预设列表（含内置）
+GET  /api/v1/screener/presets              # 预设列表（含内置，只读）
 POST /api/v1/screener/runs                 # Body: {"mode": "presets", "pool": "all", "preset_ids": [...], "combine": "union"}
 GET  /api/v1/screener/runs/{id}            # 运行详情（含逐只判断）
+GET  /api/v1/screener/latest-report        # 最近一次 completed 运行的报告指针（404 优雅降级）
 GET  /api/v1/screener/runs/{id}/report     # Markdown 报告
 GET  /api/v1/screener/runs/{id}/diff       # 变化日报（可加 ?base_run_id=... 指定任意基线）
-POST /api/v1/screener/runs/{id}/cancel      # 取消进行中的筛选（阶段边界/逐只深判前生效）
 GET  /api/v1/screener/runs/{id}/export      # 导出该轮判断为 CSV
 GET  /api/v1/screener/schedule              # 定时快照（cron/预设/下次运行/Webhook 状态）
 POST /api/v1/screener/schedule/run          # 后台立即运行一轮定时选股
-POST /api/v1/screener/runs/{id}/portfolio   # 组合构建（Body 加 {"save": true, "name": "..."} 可保存）
-GET  /api/v1/screener/runs/{id}/portfolios  # 某轮已保存组合
-GET  /api/v1/screener/portfolios/{pid}      # 组合详情（DELETE 删除）
-POST /api/v1/screener/portfolios/{pid}/rebalance # 按最新价计算漂移与买卖建议
-POST /api/v1/screener/runs/{id}/performance/snapshot  # 记录当日表现快照（同日幂等）
-GET  /api/v1/screener/runs/{id}/performance/history   # 历史表现快照
+GET  /api/v1/screener/runs/{id}/watchlist    # 推荐股 → 自选（POST，Body 可选 {"tickers": [...], "limit": 50}）
 GET  /api/v1/screener/data-quality          # 财务期/指标覆盖/行情覆盖/知识库状态与告警
-GET  /api/v1/screener/backtests             # 最近回测列表
-POST /api/v1/screener/backtests             # 触发预设回测（Body: {"preset_id": "...", "years": 5}）
-GET  /api/v1/screener/backtests/{id}        # 回测详情（含 split_sample）
-GET  /api/v1/screener/backtests/{id}/report # 回测 Markdown 报告
-POST /api/v1/screener/runs/{id}/watchlist    # 推荐股 → 自选（Body 可选 {"tickers": [...], "limit": 50}）
 ```
 
-> 全流程约 2-10 分钟（全市场快照 + 财务补采 + LLM 深判）。报告落 `backend/screener/reports/`。
+> **2026-11-25 已删除的端点**：`POST /runs/{id}/cancel`（运行取消）、`/runs/{id}/portfolio*` 与 `/portfolios/*`（组合/再平衡）、`/runs/{id}/performance*`（表现跟踪/快照）、`/backtests*`（回测交互路由——回测引擎保留为脚本 `backend/tools/run_backtest_queue.py`，需 `BACKTEST_MYSQL_URL`）。
+
+> 全流程约 2-10 分钟（全市场快照 + 财务补采 + 事实检查 + LLM 深判）。报告落 `backend/screener/reports/`。
 >
 > **数据来源**：业绩报表（`stock_yjbb_em`）提供 ROE/毛利率/净利率/EPS/营收与净利同比；资产负债表与现金流（`stock_zcfz_em`/`stock_xjll_em`）提供规模、负债率与经营现金流；流动/速动比率与三项周转率来自东财 F10 主要指标（`RPT_F10_FINANCE_MAINFINADATA`）。缺失指标会在初筛前按需补采。
 >
-> ⚠️ **数据时效**：筛选基于最近入库的财务数据，报告概览会标注「财务数据截至 YYYYQn」。财务数据由 `financial_data_update` 在工作日 3:15 自动刷新；定时选股在工作日 16:30，表现快照在工作日 17:10。也可随时用「数据质量」卡片或 `GET /api/v1/screener/data-quality` 检查覆盖与告警。
+> ⚠️ **数据时效**：筛选基于最近入库的财务数据，报告概览会标注「财务数据截至 YYYYQn」。财务数据由 `financial_data_update` 在工作日 3:15 自动刷新；定时选股在工作日 16:30。也可随时用「数据质量」卡片或 `GET /api/v1/screener/data-quality` 检查覆盖与告警。
 >
-> ⚠️ **知识库**：含定性标准的预设依赖已索引文档。知识库为空时这些预设会稳定判为“数据不足”；纯量化预设不受影响。
->
-> ⚠️ **回测前提**：需要在 `backend/.env` 配置 `BACKTEST_MYSQL_URL`（历史前复权日线），否则回测任务会以“未配置，无法拉取历史日线”失败。
+> ⚠️ **知识库**：含定性标准的预设依赖已索引文档。知识库为空时事实检查判 `not_found`，运行会稳定判为“数据不足”；纯量化预设不受影响。
 
 ---
 
@@ -609,26 +594,14 @@ OPENAI_API_KEY=<你的Key>
 ┌─────────────────────────────────────────────────────────────┐
 │  3. 看报告与深判                                            │
 │     报告落 backend/screener/reports/                        │
-│     逐只结论：推荐/未通过/数据不足（含证据引用）            │
+│     GET /api/v1/screener/latest-report 取最新报告指针       │
+│     逐只结论：推荐/未通过/数据不足（四段投资理由）          │
 └─────────────────────────┬───────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
-│  4. 回测验证预设                                            │
-│     POST /api/v1/screener/backtests                         │
-│     Body: {"preset_id": "...", "years": 5}                  │
-│     （Sharpe/Sortino/Calmar + 分段稳健性）                  │
-└─────────────────────────┬───────────────────────────────────┘
-                          ↓
-┌─────────────────────────────────────────────────────────────┐
-│  5. 组合构建与自选                                          │
-│     POST /api/v1/screener/runs/{id}/portfolio  （资金分配） │
-│     POST /api/v1/screener/runs/{id}/watchlist  （加入自选） │
-└─────────────────────────┬───────────────────────────────────┘
-                          ↓
-┌─────────────────────────────────────────────────────────────┐
-│  6. 持续跟踪                                                │
+│  4. 自选与跟踪                                              │
+│     POST /api/v1/screener/runs/{id}/watchlist （加入自选）  │
 │     变化日报 Webhook（新推荐/掉出推荐）                     │
-│     表现快照（1/3/6/12 月收益 vs 沪深300超额）              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -667,7 +640,7 @@ ai_research_os/
 │   ├── market/                # 市场中心(service/+routes/子目录+domain/repositories/akshare_executor)
 │   ├── document/              # 文档中心(含 content_classifier.py 内容打标 + table_extractor.py 表格结构化)
 │   ├── knowledge/             # 知识中心(混合RAG,读写document表+Qdrant)
-│   ├── screener/              # 智能选股(筛选/深判/回测/组合/日报,编排型模块)
+│   ├── screener/              # 智能选股(筛选/事实检查/深判/报告,编排型模块)
 │   ├── alembic/versions/      # 数据库迁移脚本
 │   ├── tests/                 # pytest(专用 airesearch_test 库)
 │   └── scripts/               # 工具脚本(seed_data/ingest_financials/reembed等)
@@ -715,12 +688,12 @@ ai_research_os/
 2. 系统自动解析 → 切片 → 向量化索引到 Qdrant
 3. 文档列表显示切片数量，确认索引完成
 
-### Step 3 — 知识库搜索验证
+### Step 3 — 验证知识库（API）
 
-**页面：** 底部导航 → 知识库
+**方式：** API 或 Swagger（http://localhost:8000/docs）——前端 Knowledge 页已随二次瘦身删除
 
-- 输入关键词搜索（如 `工商银行 净息差`）
-- 系统返回关联切片 + 命中高亮（AI 问答用"文档问答"功能）
+- `GET /api/v1/knowledge/search?query=工商银行 净息差`
+- 知识库是 Screener 事实检查与深判的证据来源；文档中心上传/索引后即生效
 
 ### Step 4 — 查看行情
 
@@ -736,15 +709,15 @@ ai_research_os/
 
 1. 「数据质量」卡片确认行情/财务/知识库覆盖无告警
 2. 预设模式：勾选预设（如 金融价值/深度价值）→ union → 触发运行
-3. 等待 2-10 分钟（快照 + 财务补采 + LLM 深判），查看报告与逐只结论
-4. 「预设回测」卡片验证预设历史表现（需 `BACKTEST_MYSQL_URL`）
+3. 等待 2-10 分钟（快照 + 财务补采 + 事实检查 + LLM 深判），查看报告与逐只结论
+4. 回测验证用脚本 `backend/tools/run_backtest_queue.py`（需 `BACKTEST_MYSQL_URL`）
 
 ### Step 6 — 跟踪与行动
 
-- 历史运行表：报告/CSV/明细/日报/表现/组合
+- 历史运行表：报告/CSV/明细/日报
 - 推荐股「自选」一键加入关注（`is_active`）
 - 配置 `SCREENER_WEBHOOK_URL` 后，工作日 16:30 定时筛选的变化自动推送企微/飞书/钉钉
 
 ---
 
-*本文档随项目迭代更新. 最后更新: 2026-11-24*
+*本文档随项目迭代更新. 最后更新: 2026-11-25*
