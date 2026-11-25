@@ -25,7 +25,7 @@
 | 组合构建+再平衡 | `portfolio.py`, `portfolio_store.py`, `rebalance.py`, `routes/portfolio.py`, `portfolios`/`performance_snapshots` 模型注册处删除 |
 | 表现跟踪+快照 | `performance.py`, `performance_service.py`, `performance_store.py`, `routes/performance.py`, `core/performance_schedule.py` + 对应调度任务注册 |
 | 回测交互层 | `routes/backtest.py`（保留 `backtest*.py` 引擎与 `backtest_service.py` 中的 `run_backtest_by_id` 供脚本调用；`backtest_runs` 表保留） |
-| freeform 模式 | `translate.py`, `criteria.py`, `routes/criteria.py`, `screener/criteria.md`；`service.py` 中 `params is None` 分支 + **`service.py:429` 的 translate 回路改直连**（`compose_rules` 输出直接喂给 screening/judge，不经 LLM 翻译）；注：`screener_rules` 表在当前 models.py 中已不存在，无需删模型（评审核实） |
+| freeform 模式 | `translate.py`, `criteria.py`, `routes/criteria.py`, `screener/criteria.md`；`service.py` 中 `params is None` 分支 + **`service.py:429` 的 translate 回路改直连**（`compose_rules` 输出直接喂给 screening/judge，不经 LLM 翻译）；注：`ScreenerRule` 模型与 `screener_rules` 表均已随 translate 删除（表保留在 DB 中，代码已清零） |
 | 用户自建预设 | `presets.py` 中 create/update/delete（保留 list/read）；`routes/presets.py` 相应路由收缩为只读；`PresetManager.vue` 删除 |
 | CSV 导出 | `routes/runs.py` 的 `/export` |
 | 运行取消 | `cancel.py` + 完整清扫：`errors.py` 的 `ScreenerCancelled`、`service.py` cancel 导入/检查（21, 79-91, 390-399）、`judge.py:471-497`（`should_stop`）、`routes/runs.py` `/cancel`、`reset_stuck_runs.py` SQL 中的 `cancelled`、前端 `useCancelScreenerRun` + `Screener.vue` 的 cancelling 状态；`models.py:27` CHECK 中移除 `'cancelling'`（ORM 层即可，库内旧数据不受影响，无需迁移）；`ACTIVE_STATUSES`（service.py:79）与 `core/screener_schedule.py:18` `_ACTIVE` 同步收窄 |

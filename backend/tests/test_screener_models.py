@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from screener.models import ScreenerJudgement, ScreenerRule, ScreenerRun
+from screener.models import ScreenerJudgement, ScreenerRun
 
 
 async def test_run_defaults(test_session: AsyncSession):
@@ -73,16 +73,3 @@ async def test_judgement_failed_status(test_session: AsyncSession):
     ).scalar_one()
     assert loaded.status == "failed"
     assert loaded.recommend is None
-
-
-async def test_rule_unique_hash(test_session: AsyncSession):
-    """ScreenerRule.doc_hash 唯一。"""
-    test_session.add(ScreenerRule(doc_hash="hash-1", rules={"a": 1}, criteria_text="t"))
-    await test_session.flush()
-    import pytest
-    from sqlalchemy.exc import IntegrityError
-
-    test_session.add(ScreenerRule(doc_hash="hash-1", rules={"b": 2}, criteria_text="t2"))
-    with pytest.raises(IntegrityError):
-        await test_session.flush()
-    await test_session.rollback()  # 失败事务必须回滚，否则 fixture teardown 的 commit 会报 PendingRollbackError

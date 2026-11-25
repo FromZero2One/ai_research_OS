@@ -6,11 +6,11 @@ import json
 from typing import Any
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.interfaces import LLMResponse
-from screener.models import CriteriaPreset, ScreenerJudgement, ScreenerRule
+from screener.models import CriteriaPreset, ScreenerJudgement
 from screener.service import run_screener, trigger_run
 
 SPOT = [
@@ -104,9 +104,6 @@ async def test_presets_mode_end_to_end(test_session: AsyncSession, screener_env,
     await test_session.flush()
 
     ids, by_tag = await _builtin_ids(test_session, ["core", "garp"])
-    rules_before = (
-        await test_session.execute(select(func.count()).select_from(ScreenerRule))
-    ).scalar_one()
 
     run = await trigger_run(
         test_session,
@@ -121,12 +118,6 @@ async def test_presets_mode_end_to_end(test_session: AsyncSession, screener_env,
     done = await run_screener(test_session, run.id)
     await test_session.flush()
     assert done.status == "completed"
-
-    # 零 LLM 翻译：ScreenerRule 无新行
-    rules_after = (
-        await test_session.execute(select(func.count()).select_from(ScreenerRule))
-    ).scalar_one()
-    assert rules_after == rules_before
 
     judgements = (
         await test_session.execute(select(ScreenerJudgement).where(ScreenerJudgement.run_id == run.id))

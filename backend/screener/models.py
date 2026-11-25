@@ -100,17 +100,6 @@ class ScreenerJudgement(Base, UUIDMixin, TimestampMixin):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
-class ScreenerRule(Base, UUIDMixin, TimestampMixin):
-    """标准文档翻译缓存 — doc_hash 未变则跳过 LLM 翻译。"""
-
-    __tablename__ = "screener_rules"
-    __table_args__ = {"schema": "screener"}
-
-    doc_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
-    rules: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    criteria_text: Mapped[str] = mapped_column(Text, nullable=False)
-
-
 class ScreenerBacktestRun(Base, UUIDMixin, TimestampMixin):
     """一次预设历史回测（状态机 pending → running → completed/failed）。
 

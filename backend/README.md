@@ -27,7 +27,7 @@ Company → Market + Document → Knowledge(RAG) → Screener(筛选/深判/回�
 | 完整四层 `models → schemas → service → routes` | company, document |
 | `service/` + `routes/` 子目录拆分 | market（另含 domain/repositories/akshare_executor） |
 | 薄模块（仅 routes + service，无自有 models/schemas） | knowledge（读写 document 表 + Qdrant） |
-| 编排型（pipeline + LLM 两层） | screener（criteria/translate/screening/judge/report/service） |
+| 编排型（pipeline + LLM 两层） | screener（screening/judge/report/service） |
 服务通过 `core/container.py` DI 容器懒加载，路由经 `Depends(get_container)` 获取。
 
 ### Screener（智能选股，2026-10-21 v1；2026-10-22 v1.5 预设库；2026-11-25 二次瘦身）
@@ -75,7 +75,7 @@ API：`GET /api/v1/screener/runs/{run_id}/diff` 返回变化日报 Markdown 与 
 
 **调度状态与手动运行（2026-10-24）**：`GET /api/v1/screener/schedule` 返回 cron、定时预设、下次运行时间、Webhook 配置；`POST /api/v1/screener/schedule/run` 以持久任务 `screener_schedule` 后台执行一轮定时选股（不阻塞 HTTP，重复提交返回 409）。前端选股页「定时任务」卡片展示这些信息并提供「立即运行定时选股」。调度配置本身仍来自环境变量（`SCREENER_SCHEDULE` / `SCREENER_SCHEDULE_PRESETS`），UI 只读。
 
-**结果导出（2026-10-24）**：`GET /api/v1/screener/runs/{run_id}/export` 导出该轮全部判断为 CSV（UTF-8 BOM，Excel 直接打开），含结论/推荐/置信度/行业/价格/市值/初筛得分/命中预设/理由/标准命中/错误；前端历史运行表「CSV」按钮。
+**结果导出（2026-10-24）**：`GET /api/v1/screener/runs/{run_id}/export` 导出该轮全部判断为 CSV（UTF-8 BOM，Excel 直接打开），含结论/推荐/置信度/行业/价格/市值/初筛得分/命中预设/理由/标准命中/错误；仅 API 导出（前端无入口）。
 
 ### 三态结论与置信度（2026-10-24）
 
@@ -180,7 +180,7 @@ PostgreSQL 用 schema 做模块隔离，初始化 SQL 见 `docker/init.sql`：
 | `document` | documents, document_chunks（含 content_type：mda/risk/notes/announcement/other） |
 | `research` / `portfolio` / `ai` | **代码已删除（2026-11-24），表保留未清理** |
 | `core` | event_log, task_records（observations 表为已删观测引擎残留） |
-| `screener` | screener_rules, screener_runs, screener_judgements, screener_metric_defs, screener_presets, screener_portfolios*（代码已删，表保留）, performance_snapshots*（同上） |
+| `screener` | screener_rules*（代码已删，表保留）, screener_runs, screener_judgements, screener_metric_defs, screener_presets, screener_portfolios*（代码已删，表保留）, performance_snapshots*（同上） |
 
 - `knowledge` 无独立 schema：复用 document 表 + Qdrant 向量
 - 行情/财务数据统一入库 PG（`market` schema），采集走 akshare 子进程直连（无外部 MySQL 依赖）
