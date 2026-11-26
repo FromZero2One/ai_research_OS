@@ -156,47 +156,6 @@ export function useFinancialMetrics(ticker: MaybeRefOrGetter<string>) {
   )
 }
 
-export interface RatioPeriod {
-  fiscal_year: number
-  fiscal_period: string
-  gross_margin: number | null
-  net_margin: number | null
-  roe: number | null
-  debt_to_equity: number | null
-  asset_turnover: number | null
-  inventory_turnover: number | null
-  receivables_turnover: number | null
-  current_ratio: number | null
-  quick_ratio: number | null
-  eps: number | null
-  market_cap: number | null
-}
-
-export interface PercentileField { current: number | null; percentile: number | null; samples: number }
-export interface ValuationPercentile {
-  available: boolean
-  reason?: string
-  trade_date?: string
-  start_date?: string
-  pe?: PercentileField
-  pe_ttm?: PercentileField
-  pb?: PercentileField
-}
-
-export function useRatios(ticker: MaybeRefOrGetter<string>) {
-  return useGet<{ ticker: string; ratios: RatioPeriod[] }>(
-    computed(() => ['ratios', toValue(ticker)]),
-    computed(() => (toValue(ticker) ? `/market/ratios/${toValue(ticker)}` : '')),
-  )
-}
-
-export function useValuationPercentile(ticker: MaybeRefOrGetter<string>) {
-  return useGet<ValuationPercentile>(
-    computed(() => ['valuation-percentile', toValue(ticker)]),
-    computed(() => (toValue(ticker) ? `/market/ratios/${toValue(ticker)}/valuation-percentile` : '')),
-  )
-}
-
 export function useStockSearch(query: MaybeRefOrGetter<string>) {
   return useQuery<{ query: string; count: number; results: StockSearchResult[] }>({
     queryKey: ['stock-search', query],

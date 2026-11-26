@@ -50,7 +50,6 @@ from market.routes.financial_routes import router as market_financial_router
 from market.routes.freshness_routes import router as market_freshness_router
 from market.routes.price_routes import router as market_price_router
 from market.routes.profile_routes import router as market_profile_router
-from market.routes.ratio_routes import router as market_ratio_router
 from market.routes.search_routes import router as market_search_router
 from screener.routes import router as screener_router
 
@@ -224,7 +223,6 @@ def create_app() -> FastAPI:
     app.include_router(market_price_router, prefix="/api/v1")
     app.include_router(market_financial_router, prefix="/api/v1")
     app.include_router(market_profile_router, prefix="/api/v1")
-    app.include_router(market_ratio_router, prefix="/api/v1")
     app.include_router(market_search_router, prefix="/api/v1")
     app.include_router(market_freshness_router, prefix="/api/v1")
     app.include_router(document_router, prefix="/api/v1")

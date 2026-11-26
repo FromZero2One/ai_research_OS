@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING
 from sqlalchemy.ext.asyncio import AsyncSession
 
 if TYPE_CHECKING:
-    from market.ratio_service import RatioService
     from market.service.freshness_service import FreshnessService
 
 from core.interfaces import (
@@ -62,7 +61,6 @@ class Container:
         self._knowledge: KnowledgeServiceProtocol | None = None
         self._company: CompanyServiceProtocol | None = None
         self._document: DocumentServiceProtocol | None = None
-        self._ratio: RatioService | None = None
         self._screener: ScreenerServiceProtocol | None = None
 
     @property
@@ -146,14 +144,6 @@ class Container:
 
             self._screener = ScreenerService(self.session)
         return self._screener
-
-    @property
-    def ratio_service(self) -> RatioService:
-        if self._ratio is None:
-            from market.ratio_service import RatioService
-
-            self._ratio = RatioService(self.session)
-        return self._ratio
 
 
 def create_container(session: AsyncSession) -> Container:
