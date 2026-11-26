@@ -144,6 +144,7 @@ _EX = "exclude"  # 缺数据 → 排除（保守默认）
 BUILTIN_PRESETS: list[dict] = [
     {
         "name": "核心资产",
+        "evidence": {"grade": "failed", "note": "5年超额 -10.36%，回测失效"},
         "description": "巴菲特式：高 ROE、高净利率、真金白银盈利、低杠杆、大市值",
         "style_tag": "core",
         "quant_rules": [
@@ -159,6 +160,7 @@ BUILTIN_PRESETS: list[dict] = [
     },
     {
         "name": "高成长",
+        "evidence": {"grade": "failed", "note": "5年超额 -2.34%，回测失效"},
         "description": "费雪式：营收与净利润双高增长的中大市值成长股，配合定性赛道判断",
         "style_tag": "growth",
         "quant_rules": [
@@ -175,6 +177,7 @@ BUILTIN_PRESETS: list[dict] = [
     },
     {
         "name": "深度价值",
+        "evidence": {"grade": "verified", "note": "5年超额 +10.16%，稳定跑赢基准"},
         "description": "格雷厄姆式：低负债、流动比率充裕、现金流为正、估值便宜的大市值股",
         "style_tag": "value",
         "quant_rules": [
@@ -201,6 +204,7 @@ BUILTIN_PRESETS: list[dict] = [
     },
     {
         "name": "质量价值 GARP",
+        "evidence": {"grade": "failed", "note": "5年超额 -19.05%，回测失效"},
         "description": "芒格式：质量与估值兼顾，要求盈利持续性、护城河、股东回报与合理估值",
         "style_tag": "garp",
         "quant_rules": [
@@ -217,6 +221,7 @@ BUILTIN_PRESETS: list[dict] = [
     },
     {
         "name": "周期反转",
+        "evidence": {"grade": "neutral", "note": "5年超额 +3.69%，前后表现中性"},
         "description": "逆向：周期底部的大市值低负债龙头，市净率处于低位，赌困境反转",
         "style_tag": "cycle",
         "quant_rules": [
@@ -229,6 +234,7 @@ BUILTIN_PRESETS: list[dict] = [
     },
     {
         "name": "金融价值",
+        "evidence": {"grade": "verified", "note": "5年超额 +11.45%，稳定跑赢基准"},
         "description": (
             "银行/保险/券商专属：低 PB、低 PE、盈利稳定的金融龙头"
             "（不使用流动比率/毛利率等工业口径）"
@@ -255,6 +261,7 @@ BUILTIN_PRESETS: list[dict] = [
     },
     {
         "name": "银行价值",
+        "evidence": {"grade": "verified", "note": "5年超额 +11.45%，稳定跑赢基准"},
         "description": "银行专属：低 PB/PE、不良率可控、资本充足的大型银行",
         "style_tag": "bank",
         "quant_rules": [
@@ -270,6 +277,7 @@ BUILTIN_PRESETS: list[dict] = [
     },
     {
         "name": "保险价值",
+        "evidence": {"grade": "verified", "note": "5年超额 +11.45%，稳定跑赢基准"},
         "description": "保险专属：低估值、盈利稳定、偿付能力充足的大型险企",
         "style_tag": "insurance",
         "quant_rules": [
@@ -323,6 +331,19 @@ def insert_builtin_seeds(conn: sa.Connection) -> None:
     conn.execute(sa.delete(_PRESET_TABLE).where(_PRESET_TABLE.c.is_builtin.is_(True)))
     conn.execute(
         _PRESET_TABLE.insert().values(
-            [{**p, "id": uuid.uuid4(), "is_builtin": True, "is_active": True} for p in BUILTIN_PRESETS]
+            [
+                {
+                    **{k: v for k, v in p.items() if k != "evidence"},
+                    "id": uuid.uuid4(),
+                    "is_builtin": True,
+                    "is_active": True,
+                }
+                for p in BUILTIN_PRESETS
+            ]
         )
     )
+
+# 预设名 → 回测证据（报告标注用；静态元数据，2026-10-25 回测补验结论）
+PRESET_EVIDENCE: dict[str, dict] = {
+    p["name"]: p["evidence"] for p in BUILTIN_PRESETS
+}

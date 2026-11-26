@@ -86,7 +86,16 @@ def _preset_mode(run: dict, judgements: list[dict]) -> bool:
 
 def _preset_label(snapshot: dict) -> str:
     presets = snapshot.get("presets") or []
-    label = " + ".join(presets)
+    from screener.seeds import PRESET_EVIDENCE
+
+    parts = []
+    for p in presets:
+        ev = PRESET_EVIDENCE.get(p)
+        if ev:
+            parts.append(f"{p}【{ev['grade']}】")
+        else:
+            parts.append(p)
+    label = " + ".join(parts)
     hits = snapshot.get("hits")
     if hits is not None and hits > 1:
         return f"{label}（{hits} 个）"
@@ -224,6 +233,12 @@ def build_report(
                 lines.append("- 行业分位：" + "、".join(parts))
         if preset_mode and snap.get("presets"):
             lines.append(f"- 命中：{_preset_label(snap)}")
+            from screener.seeds import PRESET_EVIDENCE
+
+            for p in snap["presets"]:
+                ev = PRESET_EVIDENCE.get(p)
+                if ev:
+                    lines.append(f"  - {p} 回测证据（{ev['grade']}）：{ev['note']}")
 
         hits = j.get("criteria_hits") or []
         fact_entries = [h for h in hits if isinstance(h, dict) and "check" in h and "result" in h]

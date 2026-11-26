@@ -93,7 +93,8 @@ class Settings(BaseSettings):
     MARKET_DATA_SCHEDULE: str = "0 18 * * 1-5"  # Weekdays 18:00 (after close, same-day bars)
     FINANCIAL_DATA_SCHEDULE: str = "15 3 * * 1-5"  # Weekdays 3:15am (market-wide financials)
     SCREENER_SCHEDULE: str = "30 16 * * 1-5"  # Weekdays 4:30pm after close
-    SCREENER_SCHEDULE_PRESETS: str = "core"  # comma-separated style tags
+    # 默认跑回测验证过的金融价值+深度价值（style_tag 逗号分隔）
+    SCREENER_SCHEDULE_PRESETS: str = "financial,value"
     EVENT_LOG_CLEANUP_SCHEDULE: str = "0 3 * * 1"  # Weekly Monday 3am
     EVENT_LOG_RETENTION_DAYS: int = 90
 

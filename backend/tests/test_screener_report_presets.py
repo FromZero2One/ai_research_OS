@@ -50,7 +50,7 @@ def test_union_report_annotates_presets():
     """union 模式：推荐表加"命中预设"列，候选注明命中组合。"""
     report = build_report(RUN_PRESETS, [J_UNION], RUN_PRESETS["criteria_text"], [])
     assert "| 代码 | 名称 | 行业 | 现价 | 总市值 | 命中预设 |" in report
-    assert "核心资产 + 质量价值 GARP" in report
+    assert "核心资产【failed】 + 质量价值 GARP【failed】" in report
     assert "酿酒行业" in report
     assert "行业分位" in report and "ROE 90%" in report
 
@@ -62,12 +62,34 @@ def test_union_report_single_preset():
     assert "核心资产" in report
 
 
+def test_preset_evidence_annotated():
+    """预设证据分层：报告按 grade 标注回测结论。"""
+    from screener.seeds import PRESET_EVIDENCE
+
+    j = {**J, "snapshot": {**J["snapshot"], "hits": 1, "presets": ["核心资产"]}}
+    report = build_report(RUN_PRESETS, [j], RUN_PRESETS["criteria_text"], [])
+    grade_note = PRESET_EVIDENCE["核心资产"]
+    assert grade_note["note"] in report
+    assert grade_note["grade"] in report  # verified/neutral/failed 徽标出现在报告中
+
+
+def test_preset_evidence_seeds_complete():
+    """每个内置预设都带 evidence 元数据，grade 合法。"""
+    from screener.seeds import BUILTIN_PRESETS
+
+    valid = {"verified", "neutral", "failed"}
+    for p in BUILTIN_PRESETS:
+        ev = p["evidence"]
+        assert ev["grade"] in valid, p["name"]
+        assert ev["note"], p["name"]
+
+
 def test_preset_report_includes_per_stock_reasons():
     """预设模式也应输出个股理由，而不是只有表格。"""
     report = build_report(RUN_PRESETS, [J_UNION], RUN_PRESETS["criteria_text"], [])
     assert "### 贵州茅台（600519）" in report
     assert "- ROE 高" in report
-    assert "- 命中：核心资产 + 质量价值 GARP（2 个）" in report
+    assert "- 命中：核心资产【failed】 + 质量价值 GARP【failed】（2 个）" in report
 
 
 def test_criterion_prefixes_normalized_and_merged():
