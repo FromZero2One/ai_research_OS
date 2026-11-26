@@ -95,8 +95,7 @@ class Settings(BaseSettings):
     SCREENER_SCHEDULE: str = "30 16 * * 1-5"  # Weekdays 4:30pm after close
     # 默认跑回测验证过的金融价值+深度价值（style_tag 逗号分隔）
     SCREENER_SCHEDULE_PRESETS: str = "financial,value"
-    EVENT_LOG_CLEANUP_SCHEDULE: str = "0 3 * * 1"  # Weekly Monday 3am
-    EVENT_LOG_RETENTION_DAYS: int = 90
+    EVENT_LOG_RETENTION_DAYS: int = 90  # event_log 无自动清理；手动/运维处理
 
     # --- CORS ---
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]

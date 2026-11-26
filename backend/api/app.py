@@ -28,13 +28,10 @@ from fastapi.responses import JSONResponse
 # transitively. Import every model explicitly (same list as alembic/env.py)
 # so SQLAlchemy metadata and mapper configuration are always complete.
 import company.models  # noqa: F401  # 注册模型到 Base.metadata
-import core.event_log  # noqa: F401
-import document.models  # noqa: F401
 import market.models  # noqa: F401
 import screener.models  # noqa: F401
 from company.routes import router as company_router
 from core.config import settings
-from core.event_routes import router as event_router
 from core.exceptions import (
     AIResearchOSError,
     AuthenticationError,
@@ -94,7 +91,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # Start scheduler
     if settings.SCHEDULER_ENABLED:
-        from core.event_cleanup import event_log_cleanup
         from core.financial_sync import financial_data_update
         from core.market_sync import market_data_update
         from core.scheduler import register_job, start_scheduler
@@ -103,7 +99,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         register_job("market_data_update", market_data_update)
         register_job("financial_data_update", financial_data_update)
         register_job("screener_schedule", scheduled_screener_update)
-        register_job("event_log_cleanup", event_log_cleanup)
         start_scheduler()
         logger.info("Scheduler started (enabled=%s)", settings.SCHEDULER_ENABLED)
     else:
@@ -235,7 +230,6 @@ def create_app() -> FastAPI:
     app.include_router(document_router, prefix="/api/v1")
     app.include_router(knowledge_router, prefix="/api/v1")
     app.include_router(scheduler_router, prefix="/api/v1")
-    app.include_router(event_router, prefix="/api/v1")
     app.include_router(screener_router, prefix="/api/v1")
 
     return app

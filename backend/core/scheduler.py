@@ -79,13 +79,6 @@ def start_scheduler() -> AsyncIOScheduler:
             settings.SCREENER_SCHEDULE,
         )
 
-    # Register event log retention cleanup job (weekly)
-    if hasattr(settings, "EVENT_LOG_CLEANUP_SCHEDULE") and settings.EVENT_LOG_CLEANUP_SCHEDULE:
-        _add_cron_job(
-            "event_log_cleanup",
-            settings.EVENT_LOG_CLEANUP_SCHEDULE,
-        )
-
     if _scheduler.get_jobs():
         _scheduler.start()
         logger.info("Scheduler started with %d job(s)", len(_scheduler.get_jobs()))
