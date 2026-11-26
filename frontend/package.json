@@ -6,10 +6,7 @@
   "scripts": {
     "dev": "vite --port 5173 --strictPort",
     "build": "vue-tsc -b && vite build",
-    "preview": "vite preview",
-    "gen:openapi": "cd ../backend && ALL_PROXY= all_proxy= PYTHONPATH=. python scripts/generate_openapi.py",
-    "gen:types": "openapi-typescript openapi.json -o src/types/api.ts",
-    "gen": "npm run gen:openapi && npm run gen:types"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3",
@@ -26,7 +23,6 @@
   "devDependencies": {
     "@types/node": "^22.0",
     "@vitejs/plugin-vue": "^5.2",
-    "openapi-typescript": "^7.13.0",
     "typescript": "~5.7",
     "vite": "^6.0",
     "vue-tsc": "^2.2"

@@ -18,10 +18,9 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
+import screener.models  # noqa: F401  # 尚未挂载路由，需显式导入以注册到 Base.metadata
 from api.app import create_app
 from core.config import settings
-
-import screener.models  # noqa: F401  # 尚未挂载路由，需显式导入以注册到 Base.metadata
 from core.container import Container
 from core.database import get_container, get_db
 
@@ -179,7 +178,6 @@ cleanup_engine = create_engine(sync_url, pool_pre_ping=True)
 
 ALL_TABLES = [
     "company.companies",
-    "company.company_tags",
     "market.stock_prices",
     "market.financial_metrics",
     "market.data_freshness",

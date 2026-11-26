@@ -8,13 +8,6 @@ from uuid import UUID
 from pydantic import BaseModel
 
 
-class CompanyTagResponse(BaseModel):
-    id: UUID
-    tag: str
-
-    model_config = {"from_attributes": True}
-
-
 class CompanyResponse(BaseModel):
     id: UUID
     ticker: str
@@ -28,7 +21,6 @@ class CompanyResponse(BaseModel):
     priority: int
     target_price: float | None = None
     reason: str | None = None
-    tags: list[CompanyTagResponse] = []
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -67,7 +67,7 @@ export interface Company {
   description: string | null; sector: string | null; industry: string | null
   headquarters: string | null; website: string | null; is_active: boolean
   priority: number; target_price: number | null; reason: string | null
-  tags: { id: string; tag: string }[]; created_at: string
+  created_at: string
 }
 
 export function useCompanies() {
