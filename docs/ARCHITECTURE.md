@@ -1,6 +1,6 @@
 # AI Research OS 架构文档
 
-> 更新日期：2026-11-25（深判退役·三次简化完成后）。历史决策：二次瘦身 `2026-11-24-slim-to-value-recommendation-design.md`、三次简化 `2026-11-25-llm-retire-simplify-design.md`、四次简化立项 `2026-11-26-infra-retire-simplify-design.md`。
+> 更新日期：2026-11-26（六次简化完成后）。历史决策：二次瘦身 `2026-11-24-slim-to-value-recommendation-design.md`、三次简化 `2026-11-25-llm-retire-simplify-design.md`、六次简化 `2026-11-26-deadweight-clear-analysis-quality-design.md`。
 
 ## 1. 系统定位
 
@@ -10,37 +10,37 @@
 数据采集 → 8 套策略量化筛选 → 事实检查确定性判定 → Markdown 价值推荐清单（每日自动）
 ```
 
-设计信条：**数据与规则管筛选与判定，AI 仅存在于知识库问答**。筛选与判定全程确定性（相同输入必然相同输出）；运行链路零 LLM 依赖，单轮 ≤2 分钟（冒烟实测 88 秒）。
+设计信条：**数据与规则管筛选与判定，全系统零 LLM**（仅知识检索的 embedding 用 Ollama）。筛选与判定全程确定性（相同输入必然相同输出）；运行链路零 LLM 依赖，单轮 ≤2 分钟（冒烟实测 88 秒）。
 
 ## 2. 总体架构
 
 ```text
-                User
-                 │
+                 User
+                  │
           Screener Workspace
           (Vue 3 SPA, :5173)
-                 │
-                 ▼
-          API Gateway (FastAPI, :8000)
-                 │
+                  │
+                  ▼
+           API Gateway (FastAPI, :8000)
+                  │
   ┌───────────────────────────────────────────┐
   │             Application Layer             │
   ├───────────────────────────────────────────┤
   │  Company  │  Market   │  Document         │
-  │  (股票池) │ (数字源)  │ (年报PDF→切片)      │
+  │  (只读列表)│ (数字源)  │ (年报PDF→切片)      │
   │           │           ├───────────────────┤
   │           │           │  Knowledge (RAG)  │
-  │           │           │  知识库问答         │
+  │           │           │  混合检索（零问答）  │
   │           │           ├───────────────────┤
   │           │           │  Screener         │
   │           │           │  筛选/事实检查/报告 │
   └───────────────────────────────────────────┘
-                 │
+                  │
   ┌───────────────────────────────────────────┐
   │               Core Layer                  │
   ├───────────────────────────────────────────┤
-  │ DB │ Vector │ LLM(仅问答) │ Scheduler     │
-  │    (Qdrant)│             │ (APScheduler) │
+  │ DB │ Vector │ Embedding │ Scheduler       │
+  │    (Qdrant)│ (Ollama)   │ (APScheduler)   │
   └───────────────────────────────────────────┘
 ```
 
@@ -52,7 +52,7 @@
 | 前端 | Vue 3.5 + Vite + TypeScript + Element Plus + TanStack Vue Query + ECharts |
 | 存储 | PostgreSQL 16（多 schema）+ Qdrant（向量）+ Redis :6380（缓存） |
 | 数据源 | akshare 子进程直连（A股：Tencent/Sina/Eastmoney）；回测可选外部 MySQL 前复权日线 |
-| AI | DeepSeek / Ollama / OpenAI 兼容 API（**仅知识库问答使用**）；嵌入 BGE-M3（Ollama） |
+| AI | **无 LLM（已全部退役）**；嵌入 BGE-M3（Ollama） |
 
 ### 2.2 依赖规则
 
@@ -72,28 +72,27 @@ company → market / document → knowledge → screener
 
 | 模块 | 职责 | 关键文件 |
 |---|---|---|
-| `company` | 公司档案、标签、自选 `is_active` | models / service / routes |
+| `company` | **只读列表**（`GET /companies`，供文档关联下拉）；Company 表保留供 screener 数据质量统计、market search/profile、document 外键读 | models / service / routes |
 | `market` | 行情、财务三表、比率层、估值分位、行业分类——**数字唯一事实源** | `service/` + `routes/` 子目录 + akshare_executor |
 | `document` | 年报 PDF 上传→解析（表格按词坐标重建 Markdown）→切片打标（mda/risk/notes/announcement）→嵌入→索引 | content_classifier / table_extractor |
-| `knowledge` | 混合 RAG（Qdrant 稠密 + BM25 稀疏 + RRF + Reranker）、**文档问答——全系统唯一 LLM 使用点** | service / routes |
+| `knowledge` | 混合 RAG（Qdrant 稠密 + BM25 稀疏 + RRF + Reranker）、检索服务（问答已退役） | service / routes |
 | `screener` | 价值筛选全链：量化初筛、事实检查、三段报告（见 §4，18 个文件） | compose / screening / fact_checks / report |
-| `core` | 配置、DB、调度、事件审计、LLM 适配（问答用）、用量统计 | 见下 |
+| `core` | 配置、DB、调度、事件审计、embedding 适配 | 见下 |
 
 ### 3.1 core/ 基础设施
 
 | 文件 | 职责 |
 |---|---|
-| `config.py` | pydantic-settings，读 `backend/.env` |
+| `config.py` | pydantic-settings，读 `backend/.env`（已无任何 LLM 变量） |
 | `database.py` | 异步引擎 + `get_db` / `managed_session` |
 | `container.py` | DI 容器（懒加载单例） |
 | `scheduler.py` | APScheduler：market_data_update（工作日 18:00）、financial_data_update（3:15）、screener_schedule（16:30）——仅此三个 job |
 | `event_log.py` | `core.event_log` 只写审计（never update/delete），记录 screener.triggered/completed/failed |
-| `event_service.py` / `event_routes.py` / `event_cleanup.py` | 事件查询/清理 API（**四次简化候选删除项**，见 §9） |
-| `task_manager.py` | PG 持久任务队列（**四次简化候选退役项**——定时选股将改直跑后台协程） |
+| `event_service.py` / `event_routes.py` / `event_cleanup.py` | 事件查询/清理 API（**四次简化候选删除项**） |
+| `task_manager.py` | PG 持久任务队列（**四次简化候选退役项**，已立项未执行） |
 | `financial_sync.py` / `market_sync.py` | 定时数据采集（SAVEPOINT 隔离） |
-| `screener_schedule.py` | 定时选股（失败仅 logger.error，无推送） |
-| `adapters/` | llm（问答用）、embedding（BGE-M3）、reranker、vector_store、cache、pdf_parser |
-| `llm_usage.py` | LLM token 用量统计（知识库问答消费） |
+| `screener_schedule.py` | 定时选股（默认跑 financial,value；失败仅 logger.error，无推送） |
+| `adapters/` | embedding（BGE-M3）、reranker、vector_store、cache、pdf_parser |
 | `proxy_cleanup.py` | 启动前剥离代理环境变量（否则 httpx 打不通本地服务） |
 
 ## 4. Screener 模块（核心）
@@ -108,11 +107,15 @@ POST /api/v1/screener/runs（mode 必须为 presets）
   ├─③ 量化初筛     52 指标（估值 TTM/现金流质量/因子深度/银行保险专属）× 命中预设评估
   │               行业隔离（工业预设排金融股；金融预设只看对应子行业）
   │               行业相对排名 + 单行业上限（SCREENER_MAX_PER_INDUSTRY）
-  ├─④ 事实检查     fact_checks.py 三检查器（确定性，LLM 调用前执行）：
+  ├─④ 事实检查     fact_checks.py 三检查器（确定性）：
   │               audit_opinion（KB 检索+关键词）/ litigation（命中即 fail）/ cash_coverage（财务计算）
-  │               verdict：任一 fail→reject（不调 LLM）；任一 not_found→insufficient；pass→recommend
-  ├─⑤ 判定落库     _auto_pass_judgement 确定性生成 ScreenerJudgement（confidence=1.0，逐只幂等落库）
-  └─⑥ 三段报告     Markdown 落 screener/reports/：量化筛选（数值+行业分位）→ 事实检查 → 不推荐/存疑原因
+  │               cash_coverage 支持 exempt_financial_type 豁免——券商/金融股口径不适用返回
+  │               exempt（视同通过），不再集体 insufficient
+  │               verdict：任一 fail→reject；任一 not_found→insufficient；exempt/pass→recommend
+  ├─⑤ 判定落库     _auto_pass_judgement 确定性生成 ScreenerJudgement（confidence 已退役不写，逐只幂等落库）
+  └─⑥ 三段报告     Markdown 落 screener/reports/：量化筛选（数值+行业分位）→ 事实检查（exempt 显示
+                  「不适用（已豁免）」）→ 不推荐/存疑原因；尾部「较上一轮」对比（同口径上一轮 completed
+                  run 的推荐集：新增/移出/连续推荐）；预设标注回测证据 grade 徽标
                   GET /screener/latest-report 单指针直载
 ```
 
@@ -122,17 +125,19 @@ POST /api/v1/screener/runs（mode 必须为 presets）
 - 调仓日 = 法定披露截止日后首个交易日（无未来函数）；已计佣金/印花税/滑点
 - PIT 财务加载 `_load_financials_by_period` 在 `backtest_data.py`（含公告日钳制）
 - 需 `BACKTEST_MYSQL_URL`（外部前复权日线）
+- ScreenerBacktestRun ORM 类已删（`screener.backtest_runs` 表保留）
 
 ### 4.3 定时任务
 
-- 工作日 16:30 自动按预设筛选 → 报告落盘 → `latest-report` 指针更新
+- 工作日 16:30 自动按 `SCREENER_SCHEDULE_PRESETS`（默认 `financial,value`——回测验证过的两套）筛选 → 报告落盘 → `latest-report` 指针更新
 - 失败仅 `logger.error`（Webhook 推送已删）；`GET /screener/schedule` 可查状态、`POST /schedule/run` 手动触发
 
 ### 4.4 关键设计约束
 
-1. **确定性筛选与判定**：相同输入必然相同输出；事实检查优先于一切 LLM 判断（LLM 判断已整个退役）
-2. **预设只读**：内置 8 套预设经 seeds.py 定义 + `scripts/reseed_builtin_presets.py` 幂等重灌，无 CRUD（防回测口径漂移）
+1. **确定性筛选与判定**：相同输入必然相同输出；全系统零 LLM
+2. **预设只读**：内置 8 套预设经 seeds.py 定义（各带 `evidence {grade, note}` 静态元数据，不入库）+ `scripts/reseed_builtin_presets.py` 幂等重灌，无 CRUD（防回测口径漂移）
 3. **表保留模式**：删除功能只删 ORM 类/代码，DB 表永不 drop（portfolios/performance_snapshots/backtest_runs/screener_rules 等均为此状态）
+4. **证据分层**：预设按 5 年回测标注 verified/neutral/failed（`PRESET_EVIDENCE`），报告显式标注，失效预设默认不进定时任务
 
 ## 5. 数据架构
 
@@ -140,11 +145,11 @@ POST /api/v1/screener/runs（mode 必须为 presets）
 
 | Schema | 表 | 状态 |
 |---|---|---|
-| `company` | companies, company_tags | 活跃 |
+| `company` | companies, company_tags | 活跃（写入口已删，仅读 + profile ingest 写） |
 | `market` | stock_prices, financial_metrics（PIT 公告日）, valuation_history, stock_industry, data_freshness | 活跃 |
 | `document` | documents, document_chunks（content_type 打标） | 活跃 |
 | `core` | event_log（只写）, task_records | 活跃 |
-| `screener` | screener_runs, screener_judgements, screener_metric_defs, screener_presets 活跃；screener_rules, screener_portfolios, performance_snapshots, backtest_runs **表保留代码已删** | 部分活跃 |
+| `screener` | screener_runs, screener_judgements（confidence 列保留恒空）, screener_metric_defs, screener_presets 活跃；screener_rules, screener_portfolios, performance_snapshots, backtest_runs **表保留代码已删** | 部分活跃 |
 | `research` / `portfolio` / `ai` | 旧表 | **代码已删，表保留** |
 
 迁移：Alembic 线性链 ~30 版本；向量不进 PG（Qdrant 独立 collection）。
@@ -166,8 +171,8 @@ POST /api/v1/screener/runs（mode 必须为 presets）
 
 ```
 src/
-├── router/            # 6 条路由；/ 重定向 /screener
-├── views/             # 6 页面：Screener(首页)/Companies/CompanyDetail/Market/Documents/System
+├── router/            # 4 条路由；/ 重定向 /screener
+├── views/             # 4 页面：Screener(首页)/Market/Documents/System
 ├── components/        # StockSearch / StockChart / FinancialBars / CommandPalette / Sidebar
 ├── stores/api.ts      # 唯一数据层：fetch + TanStack Query 泛型 hooks（视图不直接 fetch）
 └── styles/
@@ -175,7 +180,7 @@ src/
 
 - 数据访问铁律：所有 API 调用集中 `stores/api.ts`
 - `npm run build`（vue-tsc -b）为类型检查门槛
-- Screener.vue 为价值推荐清单视图：触发条（预设多选+池+组合方式）→ 数据质量卡 → 运行状态 → 报告主体（latest-report 直载 + 历史列表）
+- Screener.vue 为价值推荐清单视图：触发条（预设多选+池+组合方式）→ 数据质量卡 → 运行状态 → 报告主体（latest-report 直载 + 历史列表；判定明细无置信度列）
 
 ## 7. 横切关注点
 
@@ -185,26 +190,26 @@ src/
 | 异常 | `core/exceptions.py` 统一 handler → 结构化 JSON |
 | 时间 | 全链 UTC ISO-8601 |
 | 审计 | `core.event_log` 只写（screener 触发/完成/失败等） |
-| 任务 | HTTP 触发的筛选经 task_manager 持久队列（**四次简化将退役为直跑协程**） |
+| 任务 | HTTP 触发的筛选经 task_manager 持久队列 |
 | 可观测 | structlog；`/scheduler/status`；数据覆盖 `GET /market/freshness/coverage` |
-| 测试 | pytest ~330 用例（conftest 自动建 `airesearch_test` 库，拒绝连开发库）；ruff 仅改动文件；**测试与实盘运行严禁并发**（pytest 会清 dev 库 screener 表） |
+| 测试 | pytest ~315 用例（conftest 自动建 `airesearch_test` 库，拒绝连开发库）；ruff 仅改动文件；**测试与实盘运行严禁并发**（pytest 会清 dev 库 screener 表） |
 
-## 8. 已裁剪模块（三轮瘦身全记录）
+## 8. 已裁剪模块（瘦身全记录）
 
 | 轮次 | 删除内容 | 提交 |
 |---|---|---|
 | 2026-11-24 一次瘦身 | research / portfolio / ai / dashboard 模块 | 多提交 |
 | 2026-11-25 二次瘦身 | 组合/再平衡、表现跟踪与快照、回测交互路由（引擎保留）、freeform 模式、运行取消、近似命中；预设只读化；fact_checks 建立；报告四段化；前端收缩 | b0a2bed..210946a |
-| 2026-11-25 三次简化 | **LLM 深判整体退役**（judge/judge_eval/eval/证据守卫/置信度）、变化日报+Webhook、回测 service 层（状态机+任务 handler）、CSV 导出/自选推送端点、15 个排查脚本归档 | 5fc43f3..7f6494d |
+| 2026-11-25 三次简化 | **LLM 深判整体退役**（judge/judge_eval/eval/证据守卫）、变化日报+Webhook、回测 service 层（状态机+任务 handler）、CSV 导出/自选推送端点、15 个排查脚本归档 | 5fc43f3..7f6494d |
+| 2026-11-26 六次简化 | **知识库问答退役（全系统零 LLM：adapters/llm.py、llm_usage.py、LLM 协议与配置）**、公司中心退役（删 CRUD/thesis/自选，只留 GET /companies）、news_service 删除、ScreenerBacktestRun ORM 删除（表保留）；**券商 cash_coverage 豁免修复**（exempt 态）、报告轮次对比、confidence 退役、预设证据分层（grade 徽标 + 定时默认改 financial,value） | 4105dd4..abc90c4 |
+
+> 立项未执行：四次简化（task_manager 退役、事件查询/清理 API 删除、DI 闲置 getter 清理）——`2026-11-26-infra-retire-simplify-design.md`。
 
 回捡方式：`git revert` 对应提交；DB 表全部保留。
 
 ## 9. 已知架构级缺口 / 下一步
 
-1. **四次简化（已立项待执行）**：task_manager 退役（定时选股直跑协程）、事件查询/清理 API 删除、DI 闲置 getter 清理——详见 `2026-11-26-infra-retire-simplify-design.md`
-2. **预设按回测证据分层标注**：5 年回测显示金融价值 +11.45% / 深度价值 +10.16% 稳健，GARP -19% / 核心资产 -10% 失效——清单应标注证据等级，失效预设降级（用户已表态兴趣）
-3. **估值规则分位数化**：硬编码绝对阈值（pe<25）改为行业分位数（industry_ranking 数据已有）
-4. **券商口径 bug**：金融价值预设的 cash_coverage 用一级资本充足率，券商无此指标 → 集体 insufficient（真 bug，2 小时修复量）
-5. 置信度字段现为固定 1.0（深判退役后）；历史数据中的 LLM 置信度不可当概率
-6. 回测市值用「当前总股本 × 历史价」近似，频繁再融资公司有偏差
-7. 数据源单点：财务依赖东财
+1. **估值规则分位数化**：硬编码绝对阈值（pe<25）改为行业分位数（industry_ranking 数据已有）
+2. 回测市值用「当前总股本 × 历史价」近似，频繁再融资公司有偏差
+3. 数据源单点：财务依赖东财
+4. `frontend/openapi.json` 已过时（可选重生成：`npm run gen`）
