@@ -1,12 +1,14 @@
 # AI Research OS 使用手册
 
-> **Screener First, not AI First** — 数据与规则管筛选,AI 只在知识库问答里出现（运行链路零 LLM）。
+> **Screener First, not AI First** — 数据与规则管筛选，运行链路全系统零 LLM（仅 Ollama embedding 保留）。
 
 > **2026-11-24 项目瘦身**：研究中心、投资组合、AI 中心（Prompt 模板）、仪表盘四个模块的代码已删除，系统聚焦价值筛选核心链路。数据库表保留。
 >
 > **2026-11-25 二次瘦身（价值推荐聚焦）**：组合构建/再平衡、表现跟踪与快照、回测交互路由（引擎保留为脚本）、freeform 自由文本模式、运行取消、近似命中、前端 Knowledge 页/PresetManager/ReportCharts 均已删除；预设只读化；新增事实检查确定性化（`fact_checks.py`）与 `GET /api/v1/screener/latest-report`；报告改为四段投资理由结构。本手册已按裁剪后架构更新。
 >
 > **2026-11-25 三次简化（深判退役）**：LLM 深判整体退役、变化日报/失败告警 Webhook 全删、回测去框架化（脚本直调纯函数落 JSON）、CSV 导出与自选推送端点删除、历史排查脚本归档 `backend/tools/archive/`。运行链路 = 预设量化初筛 → 事实检查确定性判定 → 三段报告 → `latest-report`，零 LLM、单轮 ≤2 分钟（知识库问答仍用 LLM）。本手册已按三次简化口径更新。
+>
+> **2026-11-26 六次简化**：知识库问答退役（删 `/knowledge/ask`、`/knowledge/llm/models` 及 LLM 适配器与相关配置，全系统零 LLM，仅 Ollama embedding 保留）；公司中心退役（删 CRUD/thesis/watch API 与前端公司页，仅保留 `GET /companies` 供文档「关联公司」下拉）；删 `news_service.py` 与 `ScreenerBacktestRun` ORM 类（表保留）；cash_coverage 券商口径豁免（exempt 视同通过）；报告新增「较上一轮」轮次对比；confidence 字段退役（报告与前端删「置信度」列，ORM 列保留恒空）；预设证据分层（`PRESET_EVIDENCE` grade 徽标），`SCREENER_SCHEDULE_PRESETS` 默认改 `financial,value`。本手册已按六次简化口径更新。
 
 ---
 
@@ -31,7 +33,7 @@
 └──────────────────────────────────────────────┘
               ↓ AI能力
 ┌──────────────────────────────────────────────┐
-│  DeepSeek (云端 OpenAI 兼容)  或 Ollama (本地)│
+│  Ollama (本地 Embedding，仅文档索引用)        │
 └──────────────────────────────────────────────┘
 ```
 
@@ -44,9 +46,9 @@
 | 前端 | Vue 3, Vite, TypeScript, Element Plus, TanStack Vue Query, ECharts |
 | 后端 | FastAPI, SQLAlchemy 2.0 (async), Pydantic v2, Alembic |
 | 数据库 | PostgreSQL 16 (pgvector), Qdrant, Redis |
-| AI | DeepSeek V4 Flash (默认) / Ollama 本地 (备选) / 任意 OpenAI 兼容 API |
+| AI | 无 LLM（全系统零 LLM）；仅 Ollama 本地 Embedding（BGE-M3） |
 | 文档处理 | PyMuPDF + pdfplumber（财报表格结构化）, BGE-M3 向量化, 后台异步索引 |
-| 知识检索 | Qdrant 稠密 + BM25 稀疏 + RRF 融合 + BGE Reranker；文档问答（DeepSeek/Ollama 可切换） |
+| 知识检索 | Qdrant 稠密 + BM25 稀疏 + RRF 融合 + BGE Reranker（知识库问答已退役） |
 | 基础设施 | Docker Compose |
 
 ---
@@ -164,57 +166,25 @@ npm run dev
 
 ---
 
-#### Step 5 — (可选) 配置 AI 服务
+#### Step 5 — (可选) 配置 Embedding 服务
 
-项目默认使用 **DeepSeek**（云端 API，OpenAI 兼容端点），无需本地模型。只需配置 `.env` 中的 API Key：
+> **LLM 配置已退役**（2026-11-26）：`LLM_PROVIDER`、`OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`、`OLLAMA_MODEL`、`OLLAMA_NUM_CTX`、`EVIDENCE_CLASSIFIER` 等变量已不再使用，无需配置。
 
-```env
-LLM_PROVIDER=openai
-OPENAI_API_KEY=sk-your-deepseek-api-key
-OPENAI_BASE_URL=https://api.deepseek.com/v1
-OPENAI_MODEL=deepseek-chat
-```
-
-> **注意**: 2026-10 实测 `deepseek-chat` 可用且分类评测 15/15 全对；模型以 DeepSeek 官方文档为准。
-
-**备选方案: 使用 Ollama 本地模型**
-
-如需完全本地运行：
+系统全链路零 LLM，唯一 AI 依赖是文档索引的 Embedding（默认走 Ollama 本地 BGE-M3）：
 
 ```bash
-# 启动 Ollama 服务
+# 启动 Ollama 服务（若未运行）
 ollama serve
 
-# 下载模型 (以 qwen3.5 为例)
-ollama pull qwen3.5:latest
-
-# 验证连接
-curl http://127.0.0.1:11434/api/generate -d '{"model":"qwen3.5","prompt":"hi","stream":false}'
+# 下载 embedding 模型
+ollama pull bge-m3
 ```
 
-对应 `.env` 配置：
+对应 `.env` 配置（可选，默认即是）：
 
 ```env
-LLM_PROVIDER=ollama
 OLLAMA_BASE_URL=http://127.0.0.1:11434
-OLLAMA_MODEL=qwen3.5
 OLLAMA_EMBEDDING_MODEL=bge-m3
-```
-
-**其他国产模型配置示例**:
-
-```env
-# 通义千问
-LLM_PROVIDER=openai
-OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-OPENAI_MODEL=qwen-plus
-OPENAI_API_KEY=sk-xxx
-
-# Moonshot (Kimi)
-LLM_PROVIDER=openai
-OPENAI_BASE_URL=https://api.moonshot.cn/v1
-OPENAI_MODEL=moonshot-v1-8k
-OPENAI_API_KEY=sk-xxx
 ```
 
 ---
@@ -279,26 +249,11 @@ make ingest-sample # 加载示例数据
 
 ---
 
-### 4.2 公司中心 `/companies`
+### 4.2 公司中心（已退役，2026-11-26）
 
-功能:管理和浏览筛选标的。
+公司中心 API 与前端页面已删除：CRUD、标签、Thesis、自选（watch/`is_active`）均不再可用，前端 Companies/CompanyDetail 页面与 Sidebar/路由/命令面板入口已移除。
 
-**已入库公司** (Seed数据):
-AAPL (Apple), AMZN (Amazon), GOOGL (Alphabet), MSFT (Microsoft), NVDA (NVIDIA), TSLA (Tesla), JPM (JPMorgan), BRK.B (Berkshire)
-
-> 也可通过 API 添加更多公司，包括 A 股（如 601988 中国银行）。
-
-**功能列表**:
-- 浏览公司列表,支持按名称/ticker搜索、按行业/标签筛选
-- 查看公司详细信息(描述、行业、员工数、官网、创建时间等)
-- 给公司打标签 (tech/ai/ev/megacap/value等)
-- 查看/更新公司的投资观点(Thesis): Bull/Bear/Neutral + 决策(buy/sell/hold/watch/pass)
-- **比率与估值分位卡片**: 公司详情页展示财务比率(毛利率/净利率/ROE等)与 A 股 PE/PB 历史分位 (`GET /api/v1/market/ratios/{ticker}`、`GET /api/v1/market/ratios/{ticker}/valuation-percentile`)
-- **关注/自选**: 自选已并入公司中心 — `is_active=true` 即自选。添加: `POST /api/v1/companies/watch`;移除: `PATCH /api/v1/companies/{id}` 设 `is_active=false`;优先级/目标价/理由挂在公司上 (`priority`/`target_price`/`reason`)
-
-**相关页面**:
-- `/companies` — 公司列表
-- `/companies/[id]` — 公司详情页
+**保留**：`GET /api/v1/companies` 仅供文档中心「关联公司」下拉使用。Company 表与 ORM 模型保留（screener 数据质量统计、market search/profile/freshness、document.company_id 外键仍读）。
 
 ---
 
@@ -356,17 +311,10 @@ GET /api/v1/market/ratios/600519/valuation-percentile  # A股 PE/PB 历史分位
 > **注意**: 由于 Embedding 当前配置走 Ollama 本地 API，若 Ollama 版本过旧(<0.3.0)可能返回零向量，此时稠密检索会失效。系统自动降级为稀疏检索(BM25+RRF)，效果仍然可用。
 >
 > **2026-11-25 二次瘦身**：前端 Knowledge 页（`/knowledge`）已删除；知识库作为事实检查的证据来源与后端 API 继续保留。
+>
+> **2026-11-26 六次简化**：知识库问答已退役——`POST /knowledge/ask` 与 `GET /knowledge/llm/models` 端点及 LLM 适配器（`core/adapters/llm.py`、`core/llm_usage.py`）已删除。知识库仅作为 Screener 事实检查的证据来源。
 
-**知识库在链路中的角色**: Screener 事实检查器（审计意见/诉讼）依赖知识库检索年报切片。知识库为空时这些检查会判 `not_found` → 运行判「数据不足」。知识库问答（`POST /knowledge/ask`）仍使用 LLM。
-
-**文档问答 API（保留）**:
-```
-POST /api/v1/knowledge/ask
-Body: {"question": "中国银行2025年净利润是多少", "top_k": 8, "provider": "default", "model": null}
-```
-- 默认使用 DeepSeek(`provider=default`),可切换本地 Ollama 模型
-- `GET /api/v1/knowledge/llm/models` 列出默认模型与可用 Ollama 模型
-- 回答带来源引用 [1][2],关键数字加粗并注明单位/口径
+**知识库在链路中的角色**: Screener 事实检查器（审计意见/诉讼）依赖知识库检索年报切片。知识库为空时这些检查会判 `not_found` → 运行判「数据不足」。
 
 **API**:
 ```
@@ -381,9 +329,7 @@ GET /api/v1/knowledge/search/document/{document_id}?query=...  # 只搜索指定
 
 ### 4.6 AI 能力（内嵌于各模块）
 
-> **AI 中心已删除**（2026-11-24 瘦身）：Prompt 模板管理/执行界面与 `/api/v1/ai/templates` 等端点随模块移除。AI 能力内嵌于各模块——知识库问答直接使用 `.env` 配置的 LLM（DeepSeek/Ollama 可切换）；Screener 运行链路已零 LLM（2026-11-25 深判退役）。
-
-**保留的用量统计**：~~`GET /api/v1/ai/usage`~~ 已随 2026-11-25 深判退役删除（`core/system_routes.py` 整个端点移除）；进程级 token 统计无消费方。
+> **LLM 已全面退役**（2026-11-25 深判退役 + 2026-11-26 知识库问答退役）：AI 中心（2026-11-24）、知识库问答（2026-11-26）、`/api/v1/ai/usage`（2026-11-25）均已删除。系统全链路零 LLM，唯一 AI 依赖是文档索引的 Ollama Embedding。
 
 ### 共享组件
 
@@ -439,9 +385,9 @@ GET /api/v1/scheduler/status            # 调度器状态(运行中/停止)
 **页面功能**：
 - **数据质量卡片**：最新财务期、7 个关键指标覆盖、行情覆盖、知识库文档数；缺数据/知识库为空直接告警。
 - **定时任务卡片**：cron/预设/下次运行，可后台「立即运行定时选股」。
-- **报告视图**：最新报告指针 `GET /api/v1/screener/latest-report`；报告为三段结构——量化筛选（数值 + 行业分位）→ 事实检查 → 不推荐/存疑原因（fact_checks not_found 项 + 缺数据项）。
+- **报告视图**：最新报告指针 `GET /api/v1/screener/latest-report`；报告为三段结构——量化筛选（数值 + 行业分位）→ 事实检查 → 不推荐/存疑原因（fact_checks not_found 项 + 缺数据项）；尾部附「较上一轮」轮次对比（新增/移出/连续推荐），预设标注证据分层 grade 徽标（verified/neutral/failed）与回测证据行。
 - **历史运行**：按状态筛选；每行支持 报告/明细。
-- **运行明细**：逐只确定性判定结论（推荐/未通过/数据不足）、理由（量化命中 + fact_checks 结果）、行业、价格。
+**运行明细**：逐只确定性判定结论（推荐/未通过/数据不足）、理由（量化命中 + fact_checks 结果）、行业、价格（「置信度」列已随 confidence 退役删除）。fact_checks 支持券商口径豁免：券商不适用现金覆盖等口径时返回 exempt（视同通过）而非 not_found。
 
 **API**：
 ```
@@ -492,24 +438,6 @@ A 股采集走 akshare 子进程直连（无外部数据库依赖）。排查两
 POST /api/v1/market/prices/AAPL/ingest?provider=yfinance
 ```
 
-### Q: DeepSeek 返回空内容
-- 确认 `.env` 中 `OPENAI_API_KEY` 已正确填写
-- 确认 `OPENAI_BASE_URL` 和 `OPENAI_MODEL` 正确
-- 本机默认配置为 `deepseek-chat`（OpenAI 兼容端点 `https://api.deepseek.com/v1`）
-- 测试连接: `curl https://api.deepseek.com/chat/completions -H "Content-Type: application/json" -H "Authorization: Bearer sk-xxx" -d '{"model":"deepseek-chat","messages":[{"role":"user","content":"hi"}]}'`
-
-### Q: AI功能报Ollama连接错误
-```bash
-# 确认Ollama已启动
-ollama serve
-
-# 测试连接
-curl http://127.0.0.1:11434/api/generate -d '{"model":"qwen3.5","prompt":"hi","stream":false}'
-
-# 如模型未下载
-ollama pull qwen3.5
-```
-
 ### Q: 前端页面空白
 1. 检查后端: `curl http://localhost:8000/health`
 2. 清除浏览器缓存(Ctrl+Shift+R)
@@ -521,8 +449,7 @@ ollama pull qwen3.5
 - 确认Qdrant服务运行中
 
 ### Q: SOCKS 代理环境变量干扰
-如果你的系统设置了 `all_proxy=socks://127.0.0.1:7890/`,本地 localhost 连接可能受影响:
-- **LLM**: 已通过 curl subprocess 绕过代理
+如果你本地启用了 SOCKS 代理（如 Clash），本地 localhost 连接可能受影响:
 - **后端正向**: 启动时加前缀: `ALL_PROXY= all_proxy= uvicorn ...`
 - `.bashrc` 已添加 `export no_proxy="localhost,127.0.0.0/8,::1"`
 
@@ -558,16 +485,13 @@ docker pull pgvector/pgvector:pg16
 2. Reranker 模型默认禁用（搜索走 RRF 融合排序,效果足够）
 3. Embedding 模型使用 Ollama 本地 BGE-M3
 
-### Q: DeepSeek 用哪个模型
-本机当前配置 `deepseek-chat`（2026-10-13 实测可用，证据分类评测 15/15 全对）。模型上下架以 DeepSeek 官方为准；若需更强推理可换 `deepseek-reasoner`。
+### Q: Embedding 报 Ollama 连接错误
+```bash
+# 确认Ollama已启动
+ollama serve
 
-### Q: 如何切换到其他国产大模型
-项目支持所有 OpenAI 兼容 API，修改 `.env` 中的以下三项即可:
-```env
-LLM_PROVIDER=openai
-OPENAI_BASE_URL=<你的API地址>
-OPENAI_MODEL=<模型名>
-OPENAI_API_KEY=<你的Key>
+# 如 embedding 模型未下载
+ollama pull bge-m3
 ```
 
 ---
@@ -597,8 +521,9 @@ OPENAI_API_KEY=<你的Key>
 └─────────────────────────┬───────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
-│  4. 自选与跟踪                                              │
-│     自选状态在公司中心维护（Company.is_active）             │
+│  4. 跟踪                                                    │
+│     历史运行表查看历轮报告；报告尾部含「较上一轮」对比      │
+│     （公司中心已退役，自选维护功能随之删除）                │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -625,13 +550,12 @@ ai_research_os/
 │   │   ├── task_manager.py    # 持久任务队列(Postgres+worker)
 │   │   ├── security.py        # JWT工具(V1未启用,有意保留)
 │   │   └── adapters/          # 外部服务适配器
-│   │       ├── llm.py         # DeepSeek(OpenAI兼容)/Ollama适配器
 │   │       ├── embedding.py   # BGE-M3嵌入(Ollama API)
 │   │       ├── reranker.py    # BGE Reranker
 │   │       ├── vector_store.py# Qdrant向量存储
 │   │       ├── cache.py       # Redis缓存
 │   │       ├── pdf_parser.py  # PyMuPDF解析
-│   │   ├── company/               # 公司中心(CRUD/标签/Thesis/自选is_active)
+│   │   ├── company/               # 公司中心(已退役,仅剩 GET /companies 供文档关联下拉;表与ORM保留)
 │   ├── market/                # 市场中心(service/+routes/子目录+domain/repositories/akshare_executor)
 │   ├── document/              # 文档中心(含 content_classifier.py 内容打标 + table_extractor.py 表格结构化)
 │   ├── knowledge/             # 知识中心(混合RAG,读写document表+Qdrant)
@@ -646,7 +570,7 @@ ai_research_os/
 │       ├── router/            # Vue Router 路由
 │       ├── stores/api.ts      # TanStack VueQuery hooks(全部API调用集中于此)
 │       ├── components/        # 共享组件(StockSearch/StockChart/CommandPalette等)
-│       └── views/             # 6个页面视图
+│       └── views/             # 4个页面视图
 ├── docker/
 │   ├── docker-compose.yml     # 数据库基础设施(postgres/qdrant/redis)
 │   ├── Dockerfile.backend
@@ -664,16 +588,9 @@ ai_research_os/
 
 以下从零开始的端到端操作流程，适用于新用户快速上手：
 
-### Step 1 — 创建公司
+### Step 1 — 准备股票数据
 
-**页面：** 底部导航 → 公司 → 新建公司
-
-| 字段 | 说明 |
-|------|------|
-| 名称 | 工商银行 |
-| Ticker | 601398 |
-| 交易所 | SSE |
-| 标签 | banking, state-owned, megacap, value |
+> 公司中心已退役（2026-11-26），无需手动创建公司——股票池与数据来自市场中心采集（akshare 全市场快照）。
 
 ### Step 2 — 上传文档
 
@@ -709,9 +626,8 @@ ai_research_os/
 
 ### Step 6 — 跟踪与行动
 
-- 历史运行表：报告/明细（逐只确定性判定）
-- 自选状态在公司中心维护（`is_active`）
+- 历史运行表：报告/明细（逐只确定性判定）；报告尾部含「较上一轮」轮次对比
 
 ---
 
-*本文档随项目迭代更新. 最后更新: 2026-11-25*
+*本文档随项目迭代更新. 最后更新: 2026-11-26*

@@ -6,7 +6,7 @@ Python/FastAPI 后端。完整使用手册见根目录 [`USAGE.md`](../USAGE.md)
 
 - **框架**: FastAPI + async SQLAlchemy + Pydantic v2
 - **存储**: PostgreSQL（多 schema + pgvector）+ Qdrant（向量）+ Redis（缓存）
-- **AI**: DeepSeek（OpenAI 兼容，本机默认）/ Ollama（本地 LLM + Embedding）
+- **AI**: 无 LLM（全系统零 LLM，2026-11-26 起）；仅 Ollama（本地 Embedding）
 - **数据源**: akshare 子进程直连（A股/港股，Tencent/Sina/Eastmoney），yfinance（美股备选）
 - **质量**: pytest ~330 用例 + ruff + mypy + pre-commit
 
@@ -18,15 +18,14 @@ Python/FastAPI 后端。完整使用手册见根目录 [`USAGE.md`](../USAGE.md)
 Company → Market + Document → Knowledge(RAG) → Screener(确定性筛选)
 ```
 
-> 2026-11-24 瘦身：research/portfolio/ai/dashboard 四模块代码已删除（数据库表保留）。2026-11-25 三次简化：LLM 深判整体退役（judge/judge_eval/eval 已删除；`core/llm_usage.py` 保留（知识库问答共用），仅删 screener 引用与 system_routes），运行链路零 LLM（知识库问答除外）。
+> 2026-11-24 瘦身：research/portfolio/ai/dashboard 四模块代码已删除（数据库表保留）。2026-11-25 三次简化：LLM 深判整体退役（judge/judge_eval/eval 已删除，运行链路零 LLM）。2026-11-26 六次简化：知识库问答退役（`core/adapters/llm.py`、`core/llm_usage.py` 已删除，全系统零 LLM，仅 embedding 保留）；公司中心退役（仅留 `GET /companies`，Company 表与 ORM 保留）。
 
 各模块文件结构并不完全统一：
 
 | 形态 | 模块 |
 |------|------|
-| 完整四层 `models → schemas → service → routes` | company, document |
 | `service/` + `routes/` 子目录拆分 | market（另含 domain/repositories/akshare_executor） |
-| 薄模块（仅 routes + service，无自有 models/schemas） | knowledge（读写 document 表 + Qdrant） |
+| 薄模块（仅 routes + service，无自有 models/schemas） | knowledge（读写 document 表 + Qdrant）；company（仅 `GET /companies` 供文档「关联公司」下拉，Company 表与 ORM 保留） |
 | 编排型（pipeline 两层，零 LLM） | screener（screening/fact_checks/report/service） |
 服务通过 `core/container.py` DI 容器懒加载，路由经 `Depends(get_container)` 获取。
 
@@ -34,11 +33,11 @@ Company → Market + Document → Knowledge(RAG) → Screener(确定性筛选)
 
 预设是唯一运行入口（freeform 自由文本模式已删除，2026-11-25）。运行链路（`POST /screener/runs`，`mode` 固定 `presets`，零 LLM、单轮 ≤2 分钟）：
 ① 确定性初筛（全市场快照 + 股票池过滤 + 量化规则求值 + 行业隔离/相对排名 + 排名截断）
-→ ② **事实检查确定性判定**（`screener/fact_checks.py`）：审计意见（KB 检索 + 关键词）、诉讼/处罚（KB 检索命中即 fail）、现金覆盖（财务指标计算）三检查器，任一 fail→reject、任一 not_found→insufficient
-→ ③ 确定性判定落 `ScreenerJudgement`（量化命中 + fact_checks 结果；历史运行明细仍可查）
-→ ④ Markdown 三段报告落 `screener/reports/`：量化筛选（数值+行业分位）→ 事实检查 → 不推荐/存疑原因（fact_checks not_found 项 + 缺数据项）。
+→ ② **事实检查确定性判定**（`screener/fact_checks.py`）：审计意见（KB 检索 + 关键词）、诉讼/处罚（KB 检索命中即 fail）、现金覆盖（财务指标计算）三检查器，任一 fail→reject、任一 not_found→insufficient；券商（证券 `financial_type`）对现金覆盖等不适用口径支持 `exempt_financial_type` 豁免，返回 exempt 而非 not_found，判定合成时 exempt 视同通过（2026-11-26 起）
+→ ③ 确定性判定落 `ScreenerJudgement`（量化命中 + fact_checks 结果；历史运行明细仍可查；confidence 列保留恒空，判定不再写入）
+→ ④ Markdown 三段报告落 `screener/reports/`：量化筛选（数值+行业分位）→ 事实检查 → 不推荐/存疑原因（fact_checks not_found 项 + 缺数据项）；报告尾部附「较上一轮」轮次对比（新增/移出/连续推荐），预设标注证据分层 grade 徽标（verified/neutral/failed）与回测证据行。
 
-**presets**：预设标准库驱动，零 LLM 翻译。指标定义在 `screener/seeds.py`（42 个标准化指标 + 8 套内置预设，只读）。**2026-11-25 起预设全部只读化**（含自建预设；规则改动走种子脚本重灌），触发时传 `preset_ids` + `combine`（union/intersection/flatten），规则纯确定性组装（`compose.py`），报告标注每只候选命中的预设（`[预设名]` 前缀 + snapshot `hits`/`presets`）。
+**presets**：预设标准库驱动，零 LLM 翻译。指标定义在 `screener/seeds.py`（42 个标准化指标 + 8 套内置预设，只读）。**2026-11-25 起预设全部只读化**（含自建预设；规则改动走种子脚本重灌），触发时传 `preset_ids` + `combine`（union/intersection/flatten），规则纯确定性组装（`compose.py`），报告标注每只候选命中的预设（`[预设名]` 前缀 + snapshot `hits`/`presets`）。**2026-11-26 起预设带证据分层**：8 个内置预设各带 `evidence {grade: verified/neutral/failed, note}`（静态元数据在 `screener/seeds.py` 的 `PRESET_EVIDENCE`，不入库），报告预设标注 grade 徽标与回测证据行。
 
 估值与质量指标由 `screener/valuation.py` 即时派生：PE/PS 优先 TTM（上年年报 + 本期累计 − 上年同期；历史期缺失回退单期年化），PB = 市值 / (总资产−总负债)；盈利质量 = TTM 经营现金流/净利润、TTM 经营现金流/营收、应计比率；PEG = PE / 净利同比，FCF 收益率 = FCFF / 总市值。F10 主要指标另提供 ROIC、利息保障倍数、现金比率、FCFF、现金流/营业利润、实际税率、有息负债率。历史期可用 `scripts/backfill_financial_periods.py` 回补（如 2025Q1–Q4）。财务数据由 `core/financial_sync.py` 在工作日 3:15 定时刷新（`FINANCIAL_DATA_SCHEDULE`）。
 
@@ -62,7 +61,7 @@ Company → Market + Document → Knowledge(RAG) → Screener(确定性筛选)
 
 ### 定时筛选（2026-10-24；日报/Webhook 已删除）
 
-`core/screener_schedule.py` 在工作日 16:30（收盘后）按 `SCREENER_SCHEDULE_PRESETS`（默认 `core`）依次运行预设；已有进行中的 run 时跳过。变化日报与失败告警 Webhook 已随三次简化删除（`screener/diff*.py`、`screener/notify.py`、`SCREENER_WEBHOOK_*` 配置项均移除）。
+`core/screener_schedule.py` 在工作日 16:30（收盘后）按 `SCREENER_SCHEDULE_PRESETS`（默认 `financial,value`，2026-11-26 起）依次运行预设；已有进行中的 run 时跳过。变化日报与失败告警 Webhook 已随三次简化删除（`screener/diff*.py`、`screener/notify.py`、`SCREENER_WEBHOOK_*` 配置项均移除）；报告尾部改为「较上一轮」轮次对比（新增/移出/连续推荐，2026-11-26 起）。
 
 **调度状态与手动运行（2026-10-24）**：`GET /api/v1/screener/schedule` 返回 cron、定时预设、下次运行时间；`POST /api/v1/screener/schedule/run` 以持久任务 `screener_schedule` 后台执行一轮定时选股（不阻塞 HTTP，重复提交返回 409）。前端选股页「定时任务」卡片展示这些信息并提供「立即运行定时选股」。调度配置本身仍来自环境变量（`SCREENER_SCHEDULE` / `SCREENER_SCHEDULE_PRESETS`），UI 只读。
 
@@ -117,7 +116,7 @@ Company → Market + Document → Knowledge(RAG) → Screener(确定性筛选)
 
 **预设定性标准可验证性改造**：原标准（「细分行业排名前二」「行业渗透率持续提升」）年报几乎不会如此表述。已把 5 套预设的定性标准改写为「年报真实存在的章节/字段」，负向标准先锚定可引用正向证据（审计意见/监管指标）再谈未披露。备份 `data/presets_qualitative_backup.json`，脚本 `tools/rewrite_presets_qualitative.py`（已归档 `tools/archive/`）。
 
-**置信度语义（历史）**：`confidence` 原为 LLM 自评（0–1），**未校准、非概率**。深判退役后仅历史运行数据中保留该字段，用于历史明细排序展示；新运行由确定性判定生成，无 LLM 置信度。
+**置信度语义（已退役，2026-11-26）**：`confidence` 原为 LLM 自评（0–1），**未校准、非概率**。深判退役后由确定性判定生成（历史恒 1.0）；2026-11-26 起判定不再写 confidence，报告与前端删「置信度」列，ORM 列保留恒空（无迁移）。
 
 ### 数据分工原则（2026-10-14 定稿）
 
@@ -197,13 +196,9 @@ PYTHONPATH=. python scripts/seed_data.py
 | 数据库 | `DATABASE_URL` | postgresql+asyncpg://airesearch:airesearch_dev@127.0.0.1:5432/airesearch | 同默认（localhost:5432） |
 | 向量库 | `QDRANT_HOST` / `QDRANT_PORT` | 127.0.0.1 / 6333 | — |
 | Embedding | `EMBEDDING_PROVIDER` | ollama | — |
+| | `OLLAMA_BASE_URL` | http://127.0.0.1:11434 | — |
 | | `OLLAMA_EMBEDDING_MODEL` | nomic-embed-text | **bge-m3** |
 | | `EMBEDDING_DIMENSION` | 1024 | — |
-| LLM | `LLM_PROVIDER` | **ollama** | **openai** |
-| | `OPENAI_BASE_URL` | https://api.openai.com/v1 | https://api.deepseek.com/v1 |
-| | `OPENAI_MODEL` | gpt-4o | deepseek-chat |
-| | `OLLAMA_MODEL` | llama3.1:70b | qwen3.5-98k:latest（注释） |
-| | `OLLAMA_NUM_CTX` | 8192 | —（仅知识库问答等长上下文场景；仅 Ollama provider 生效） |
 | Redis | `REDIS_URL` | redis://127.0.0.1:6380/0 | — |
 | 文档 | `UPLOAD_DIR` / `MAX_UPLOAD_SIZE_MB` | data/uploads / 50 | — |
 | | `CHUNK_SIZE` / `CHUNK_OVERLAP` | 512 / 64 | — |
@@ -212,7 +207,7 @@ PYTHONPATH=. python scripts/seed_data.py
 | 调度器 | `SCHEDULER_ENABLED` | **true** | — |
 | | `FINANCIAL_DATA_SCHEDULE` | `15 3 * * 1-5` | — |
 | | `SCREENER_SCHEDULE` | `30 16 * * 1-5` | — |
-| | `SCREENER_SCHEDULE_PRESETS` | `core`（逗号分隔 style_tag） | — |
+| | `SCREENER_SCHEDULE_PRESETS` | `financial,value`（逗号分隔 style_tag，2026-11-26 起） | — |
 | 回测 | `BACKTEST_COMMISSION_RATE` | 0.0003（单边万三） | — |
 | | `BACKTEST_STAMP_DUTY_RATE` | 0.0005（卖出） | — |
 | | `BACKTEST_SLIPPAGE_RATE` | 0.001（单边千一） | — |
@@ -222,18 +217,17 @@ PYTHONPATH=. python scripts/seed_data.py
 | | `SCREENER_MAX_PER_INDUSTRY` | 8（单行业候选上限） | — |
 | 安全 | `SECRET_KEY` | 每次启动随机生成 | — |
 
-> **默认是 Ollama，本机跑 DeepSeek**：代码里 `LLM_PROVIDER` 默认 `ollama`，本机 `.env` 设为 `openai` + DeepSeek（`deepseek-chat`，OpenAI 兼容端点 `https://api.deepseek.com/v1`）；light tier（证据分类/事实抽取）同样走云端。
+> **LLM 已退役**：`LLM_PROVIDER`/`OPENAI_*`/`OLLAMA_MODEL`/`OLLAMA_NUM_CTX`/`EVIDENCE_CLASSIFIER` 等配置已随 2026-11-25 深判退役与 2026-11-26 知识库问答退役删除；仅 embedding 走 Ollama（`OLLAMA_BASE_URL` / `OLLAMA_EMBEDDING_MODEL`）。
 > 完整变量清单见 `core/config.py`。
 
 ## AI 能力
 
 | 功能 | 所需服务 |
 |------|---------|
-| 公司/行情浏览 | 无 |
+| 行情浏览 | 无 |
 | 文档索引 | Embedding 需 Ollama（`OLLAMA_EMBEDDING_MODEL`，本机 bge-m3） |
 | 知识库搜索 | 无（纯向量 + BM25，无需 LLM） |
-| 知识库问答 | DeepSeek / Ollama / OpenAI |
-| Screener 运行链路 | 无（2026-11-25 深判退役，全程确定性） |
+| Screener 运行链路 | 无（2026-11-25 深判退役 + 2026-11-26 知识库问答退役，全系统零 LLM） |
 
 Ollama 版本过旧（<0.3.0）时 `/api/embed` 不可用，Embedding 降级为 BM25 稀疏检索 + RRF 融合，功能不受影响。
 

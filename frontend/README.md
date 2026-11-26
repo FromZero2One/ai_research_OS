@@ -16,8 +16,8 @@ Vue 3 前端。完整使用手册见根目录 [`USAGE.md`](../USAGE.md)。
 src/
 ├── main.ts            # 应用入口
 ├── App.vue            # 根组件
-├── router/            # Vue Router 路由（6 条，懒加载）
-├── views/             # 页面视图（6 个）
+├── router/            # Vue Router 路由（5 条，懒加载）
+├── views/             # 页面视图（4 个）
 ├── components/        # 共享组件
 ├── stores/api.ts      # 数据层：fetch + TanStack Query 泛型 hooks
 ├── types/             # OpenAPI 生成类型（`npm run gen` 后生成 api.ts，默认空）
@@ -42,7 +42,6 @@ npm run dev            # http://localhost:5173
 |------|------|------|
 | `/` | — | 重定向到 `/screener` |
 | `/screener` | Screener | 智能选股（首页，价值推荐清单视图） |
-| `/companies` | Companies / CompanyDetail | 公司中心（自选已并入） |
 | `/market` | Market | 市场中心 |
 | `/documents` | Documents | 文档中心 |
 | `/system` | System | 系统/调度状态 |
@@ -50,6 +49,7 @@ npm run dev            # http://localhost:5173
 > 2026-11-24 瘦身：Dashboard、Research×4、Portfolio、AICenter 视图已删除。
 > 2026-11-25 二次瘦身：Knowledge 视图已删除（知识库保留为 Screener 事实检查的证据来源与后端 API）；Screener 页收缩为价值推荐清单视图（PresetManager、ReportCharts 组件随预设只读化与报告改造删除）。
 > 2026-11-25 三次简化：Screener 明细弹窗的「自选」按钮随 `POST /runs/{id}/watchlist` 端点删除一并移除；报告视图对齐三段结构。
+> 2026-11-26 六次简化：Companies/CompanyDetail 公司页与 Sidebar/路由/命令面板入口已删除（公司中心退役）；Screener 明细删「置信度」列。
 
 ## 数据层（stores/api.ts）
 

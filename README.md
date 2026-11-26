@@ -1,6 +1,6 @@
 # AI Research OS
 
-> **Screener First, not AI First** — 数据与规则管筛选，AI 只在知识库问答里出现。
+> **Screener First, not AI First** — 数据与规则管筛选，运行链路全系统零 LLM（仅 Ollama embedding 保留）。
 
 一个个人 AI 价值投资筛选器：行情/财务数据 + 年报知识库 → 预设量化初筛 → 事实检查确定性判定 → **每日自动产出 Markdown 价值推荐清单（股票 + 理由）**。运行链路零 LLM，单轮 ≤2 分钟。
 
@@ -9,6 +9,8 @@
 > **2026-11-25 二次瘦身（价值推荐聚焦）**：删除组合构建/再平衡、推荐后表现跟踪与快照、回测交互路由（回测引擎保留为脚本 `tools/run_backtest_queue.py`）、freeform 自由文本模式（预设为唯一运行入口）、运行取消、近似命中；预设只读化；新增事实检查确定性化 `screener/fact_checks.py`（审计意见/诉讼/现金覆盖三检查器，LLM 只判叙事标准）；报告改为四段投资理由结构；新增 `GET /api/v1/screener/latest-report`；前端收缩为价值推荐清单视图。设计见 `docs/superpowers/specs/2026-11-24-slim-to-value-recommendation-design.md`。
 >
 > **2026-11-25 三次简化（深判退役）**：LLM 深判整体退役（叙事标准不再进入执行路径）、变化日报/失败告警 Webhook 全删、回测去框架化（脚本直调纯函数落 JSON）、死端点清理（CSV 导出/自选推送）、历史排查脚本归档 `backend/tools/archive/`。运行链路 = compose → 确定性初筛 + fact_checks → 三段报告 → `latest-report`，零 LLM 依赖（知识库问答除外）。设计见 `docs/superpowers/specs/2026-11-25-llm-retire-simplify-design.md`。
+>
+> **2026-11-26 六次简化**：知识库问答退役（删 `/knowledge/ask`、`/knowledge/llm/models` 与 `core/adapters/llm.py`、`core/llm_usage.py`，全系统零 LLM，仅 Ollama embedding 保留）；公司中心退役（删 CRUD/thesis/watch API 与前端公司页，仅保留 `GET /companies` 供文档中心「关联公司」下拉）；删 `market/service/news_service.py` 与 `ScreenerBacktestRun` ORM 类（表保留）；券商口径修复（cash_coverage 支持 `exempt_financial_type` 豁免）；报告新增「较上一轮」轮次对比；confidence 字段退役（列保留恒空）；8 内置预设带证据分层元数据（`PRESET_EVIDENCE`），`SCREENER_SCHEDULE_PRESETS` 默认改 `financial,value`。
 
 ## 文档
 
@@ -31,20 +33,18 @@
   ┌──────────────────────────────────────┐
   │          Application Layer           │
   ├──────────────────────────────────────┤
-  │  Company  │  Market   │  Document    │
-  │  Center   │  Center   │  Center      │
-  │           │           ├──────────────┤
-  │           │           │  Knowledge   │
-  │           │           │  Center(RAG) │
-  │           │           ├──────────────┤
-  │           │           │  Screener    │
-  │           │           │  确定性筛选   │
+  │  Market   │  Document                │
+  │  Center   │  Center                  │
+  │           │  ├───────────────────────┤
+  │           │  │  Knowledge Center(RAG)│
+  │           │  ├───────────────────────┤
+  │           │  │  Screener 确定性筛选   │
   └──────────────────────────────────────┘
                  │
   ┌──────────────────────────────────────┐
   │             Core Layer               │
   ├──────────────────────────────────────┤
-  │  DB │ Vector │ LLM │ Cache │ Scheduler│
+  │  DB │ Vector │ Embedding │ Cache │ Scheduler│
   └──────────────────────────────────────┘
 ```
 
@@ -54,29 +54,28 @@
 
 | 模块 | 职责 | Tech |
 |--------|---------------|------|
-| **Company Center** | 公司档案、行业、标签、自选（is_active） | PostgreSQL |
 | **Market Center** | 股价、财务、估值、比率层（无分析） | yfinance / AKShare |
-| **Document Center** | 上传 → 解析 → 切片 → 嵌入 → 索引（年报 PDF 表格结构化） | PyMuPDF + pdfplumber + BGE-M3 |
-| **Knowledge Center** | 混合 RAG：稠密 + 稀疏 + 重排——知识库问答与事实检查证据来源 | Qdrant + BM25 + RRF + BGE Reranker |
-| **Screener** | 42 指标 + 8 内置预设选股（预设只读、唯一运行入口）、确定性初筛 + 事实检查三检查器（审计意见/诉讼/现金覆盖）、三段报告、`latest-report` 报告指针；无 LLM、无 Webhook、无 CSV 导出 | AKShare 纯确定性 |
+| **Document Center** | 上传 → 解析 → 切片 → 嵌入 → 索引（年报 PDF 表格结构化）；仅保留 `GET /companies` 供「关联公司」下拉（Company 表与 ORM 保留，screener 数据质量统计/market search 仍读） | PyMuPDF + pdfplumber + BGE-M3 |
+| **Knowledge Center** | 混合 RAG：稠密 + 稀疏 + 重排——事实检查证据来源（知识库问答已退役） | Qdrant + BM25 + RRF + BGE Reranker |
+| **Screener** | 42 指标 + 8 内置预设选股（预设只读、唯一运行入口）、确定性初筛 + 事实检查三检查器（审计意见/诉讼/现金覆盖，券商口径豁免）、三段报告 + 轮次对比、`latest-report` 报告指针；无 LLM、无 Webhook、无 CSV 导出 | AKShare 纯确定性 |
 
 > **Screener 数据管道（2026-10-22）**：全市场快照走新浪源（东财风控应对）；财务三表（业绩/资产负债/现金流）均为市场级一次调用（~5000 只/期），不再逐只拉取；流动/速动/周转/成长率走东财 F10 主要指标（`RPT_F10_FINANCE_MAINFINADATA`）分页补采。已知缺口见 Roadmap。
 
 ## Data Flow
 
 ```text
-Company (股票池)
+Market (股票池)
   ↓
-Market + Document (数据 + 年报)
+Document (年报)
   ↓
-Knowledge (混合 RAG — 知识库问答/事实检查证据)
+Knowledge (混合 RAG — 事实检查证据)
   ↓
 Screener (量化初筛 → 事实检查确定性判定 → 报告)
   ↓
 Markdown 价值推荐清单（三段：量化筛选 / 事实检查 / 不推荐与存疑原因）
 ```
 
-> 自选列表已并入 Company Center：`is_active` 即关注状态，`priority/target_price/reason` 挂在公司上。
+> 公司中心已退役（2026-11-26）：自选/Thesis/CRUD 删除，仅保留 `GET /companies` 供文档中心「关联公司」下拉；Company 表保留（screener 数据质量统计、market search/profile/freshness、document.company_id 外键仍读）。
 
 **Dependency rule**: Dependencies go UP only. Screener can call Knowledge; Knowledge cannot call Screener.
 
@@ -119,9 +118,7 @@ npm install   # first time only
 npm run dev   # starts on http://localhost:5173
 ```
 
-> **LLM config**: 运行链路已零 LLM（2026-11-25 深判退役）；仅知识库问答（document/knowledge）仍用 LLM。
-> 仍需在 `backend/.env` 设置 `OPENAI_API_KEY` 供知识库问答使用（默认 DeepSeek V4 Flash）。
-> See [USAGE.md](USAGE.md) for alternative providers (Ollama, other OpenAI-compatible APIs).
+> **LLM config**: 全系统零 LLM（2026-11-25 深判退役 + 2026-11-26 知识库问答退役）；仅 embedding 走 Ollama（`OLLAMA_EMBEDDING_MODEL`）。无需再配置 `OPENAI_API_KEY` 等任何 LLM 变量。
 
 Visit **http://localhost:5173** — the Screener workspace（价值推荐清单视图）.
 
@@ -129,13 +126,13 @@ Visit **http://localhost:5173** — the Screener workspace（价值推荐清单�
 
 | 模块 | 完成度 | 备注 |
 |------|:---:|------|
-| 公司中心 | ~90% | CRUD/搜索/Thesis（手动）/自选（is_active）全可用 |
+| 公司中心 | 已退役 | CRUD/Thesis/自选已删除，仅 `GET /companies` 供文档「关联公司」下拉；Company 表保留 |
 | 市场中心 | ~90% | A股行情/财务/估值 akshare 直连全链路 + 数据覆盖矩阵（含量性维度）+ 比率层 + PE/PB 历史分位；美股 yfinance 备选 |
 | 文档中心 | ~90% | 后台异步索引、PDF 表格结构化、切片内容类型打标、关联公司；OCR 待 V2 |
-| 知识中心 | ~90% | 混合 RAG + Reranker + 文档问答（模型切换）+ 内容类型过滤 |
+| 知识中心 | ~90% | 混合 RAG + Reranker + 内容类型过滤（知识库问答已退役） |
 | 智能选股 | ~97% | 42 指标（TTM 估值 + 现金流质量 + 因子深度 + 银行/保险专属）+ 8 内置预设（只读）；股票池卫生 + 行业隔离/相对排名；确定性初筛 + 事实检查三检查器（`fact_checks.py`：审计意见/诉讼/现金覆盖）；报告三段结构 + `latest-report` 指针；运行链路零 LLM（单轮 ≤2 分钟）；定时筛选 + 调度状态/立即运行；财务数据工作日定时更新 |
 
-> 已删除模块（2026-11-24）：研究中心、投资组合、AI 中心（Prompt 模板）、仪表盘——数据库表保留，详见文首瘦身说明。2026-11-25 二次瘦身再删除：组合/再平衡、表现跟踪/快照、回测交互路由（引擎保留为脚本）、freeform 模式、运行取消、近似命中。三次简化再删除：LLM 深判（judge/judge_eval/eval 目录）、diff/notify/Webhook、回测 service 层（backtest_service/backtest_report）、CSV 导出与自选推送端点。
+> 已删除模块（2026-11-24）：研究中心、投资组合、AI 中心（Prompt 模板）、仪表盘——数据库表保留，详见文首瘦身说明。2026-11-25 二次瘦身再删除：组合/再平衡、表现跟踪/快照、回测交互路由（引擎保留为脚本）、freeform 模式、运行取消、近似命中。三次简化再删除：LLM 深判（judge/judge_eval/eval 目录）、diff/notify/Webhook、回测 service 层（backtest_service/backtest_report）、CSV 导出与自选推送端点。2026-11-26 六次简化再删除：知识库问答、公司中心前端与大部分 API、`news_service.py`、`ScreenerBacktestRun` ORM 类、confidence 字段。
 
 ### 智能选股评估快照（2026-10-25）
 
@@ -161,9 +158,9 @@ Visit **http://localhost:5173** — the Screener workspace（价值推荐清单�
 3. **No Trading Agents** — V2 feature, not now
 4. **Event Log** — Write-once audit trail for process traceability
 5. **Core Layer = Interfaces, not Implementations** — Protocols > concrete classes
-6. **Screener First** — 2026-11-24 瘦身后首页即智能选股；数据/规则管筛选与判定，AI 仅存在于知识库问答
-7. **AI = Capability, not Center** — LLM provider swappable (DeepSeek/Ollama/OpenAI)
-8. **自选列表并入公司中心** — watched == is_active，priority/target_price/reason 挂在公司上，消除两套列表重复
+6. **Screener First** — 2026-11-24 瘦身后首页即智能选股；数据/规则管筛选与判定，全系统零 LLM（仅 embedding 走本地模型）
+7. ~~**AI = Capability, not Center**~~ — LLM 已全面退役（2026-11-25 深判退役、2026-11-26 知识库问答退役）
+8. ~~**自选列表并入公司中心**~~ — 公司中心已退役（2026-11-26），自选/Thesis 功能随之删除
 9. **文档表格结构化** — 财报类 PDF 表格按词坐标重建为 Markdown（保留集团/母公司列组），整块入库、问答不丢列含义
 
 ## Security Boundary
@@ -192,6 +189,7 @@ Visit **http://localhost:5173** — the Screener workspace（价值推荐清单�
 | ~~项目瘦身聚焦价值筛选~~ | ✅ 2026-11-24 | 删除 research/portfolio/ai/dashboard 四模块代码，数据库表保留；文档同步更新 |
 | ~~二次瘦身：价值推荐聚焦~~ | ✅ 2026-11-25 | 删组合/再平衡、表现跟踪/快照、回测交互路由（引擎保留为脚本）、freeform 模式、运行取消、近似命中；预设只读化；新增 `fact_checks.py` 确定性事实检查、报告四段投资理由结构、`GET /screener/latest-report`；前端收缩为价值推荐清单视图 |
 | ~~三次简化：深判退役~~ | ✅ 2026-11-25 | 删 LLM 深判（judge/eval）、diff/notify/Webhook、回测 service 层、CSV 导出与自选推送端点；报告改三段（量化筛选/事实检查/不推荐与存疑原因）；运行链路零 LLM、单轮 ≤2 分钟；历史排查脚本归档 `backend/tools/archive/` |
+| ~~六次简化：问答与公司中心退役~~ | ✅ 2026-11-26 | 删知识库问答（全系统零 LLM，仅 embedding 保留）、公司中心（仅留 `GET /companies`）、`news_service.py`、`ScreenerBacktestRun` ORM 类（表保留）、confidence 字段（列保留恒空）；cash_coverage 券商口径豁免（exempt）；报告新增「较上一轮」轮次对比；预设证据分层（`PRESET_EVIDENCE`）；`SCREENER_SCHEDULE_PRESETS` 默认改 `financial,value` |
 
 收尾待办（小项）：Market.vue 覆盖网格列数动态化（当前硬编码 `repeat(5, 90px)`）；test_finalize_session 补 LLM mock（真实 LLM 调用挂起）；qualColor 硬编码色值统一 CSS 变量。
 
