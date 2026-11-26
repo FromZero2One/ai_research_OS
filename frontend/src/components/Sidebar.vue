@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Briefcase, Document, TrendCharts, Monitor, DataAnalysis } from '@element-plus/icons-vue'
+import { Document, TrendCharts, Monitor, DataAnalysis } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
 
 const navItems = [
   { label: '智能选股', route: '/screener', icon: DataAnalysis },
-  { label: '公司', route: '/companies', icon: Briefcase },
   { label: '文档', route: '/documents', icon: Document },
   { label: '行情', route: '/market', icon: TrendCharts },
   { label: '系统状态', route: '/system', icon: Monitor },

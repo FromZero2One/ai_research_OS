@@ -175,32 +175,14 @@ class ScreenerService(Protocol):
 
 @runtime_checkable
 class CompanyService(Protocol):
-    """Interface for company profile / thesis / workspace management."""
-
-    async def create(self, ticker: str, name: str, **kwargs) -> Any: ...
-
-    async def get(self, company_id: Any) -> Any: ...
-
-    async def get_by_ticker(self, ticker: str) -> Any | None: ...
+    """Interface for read-only company lookup (CRUD/thesis retired)."""
 
     async def search(
         self,
         query: str | None = None,
-        sector: str | None = None,
-        industry: str | None = None,
-        tag: str | None = None,
-        is_active: bool | None = None,
         skip: int = 0,
         limit: int = 50,
     ) -> tuple[list[Any], int]: ...
-
-    async def update(self, company_id: Any, data: dict) -> Any: ...
-
-    async def delete(self, company_id: Any) -> None: ...
-
-    async def get_thesis(self, ticker: str) -> dict | None: ...
-
-    async def get_workspace(self, ticker: str) -> dict | None: ...
 
 
 @runtime_checkable

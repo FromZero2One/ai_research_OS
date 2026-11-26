@@ -1,19 +1,17 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useHealth, useLLMUsage, useSchedulerStatus } from '@/stores/api'
+import { useHealth, useSchedulerStatus } from '@/stores/api'
 
 const { data: scheduler } = useSchedulerStatus()
-const { data: llmUsage } = useLLMUsage()
 
-const hCompanies = useHealth('/companies?limit=1')
+const hScreener = useHealth('/screener/schedule')
 const hScheduler = useHealth('/scheduler/status')
 
 const stats = computed(() => [
-  { label: 'API 状态', value: hCompanies.isSuccess.value ? '正常' : '异常' },
   { label: '调度器', value: scheduler.value?.running ? '运行中' : '已停止' },
 ])
 const healthList = computed(() => [
-  { name: '公司', isLoading: hCompanies.isLoading.value, isError: hCompanies.isError.value },
+  { name: '选股', isLoading: hScreener.isLoading.value, isError: hScreener.isError.value },
   { name: '调度器', isLoading: hScheduler.isLoading.value, isError: hScheduler.isError.value },
 ])
 </script>
@@ -41,18 +39,6 @@ const healthList = computed(() => [
         </div>
       </div>
       <el-empty v-else description="暂无调度任务" />
-    </el-card>
-
-    <el-card shadow="never">
-      <template #header><div class="flex items-center justify-between"><span>🎯 LLM Token 用量</span><span class="text-xs text-secondary">{{ llmUsage?.note }}</span></div></template>
-      <div v-if="llmUsage?.models && Object.keys(llmUsage.models).length" class="space-y-2">
-        <div v-for="(s, model) in llmUsage.models" :key="model" class="item-block">
-          <div><div class="font-medium text-sm">{{ model }}</div><div class="text-xs text-secondary mt-0.5">调用 {{ s.calls }} 次 · 最近 {{ s.last_used ? new Date(s.last_used).toLocaleString('zh-CN') : '' }}</div></div>
-          <div class="text-xs text-secondary text-right">输入 {{ s.prompt_tokens.toLocaleString() }}<br />输出 {{ s.completion_tokens.toLocaleString() }} · 共 {{ s.total_tokens.toLocaleString() }}</div>
-        </div>
-        <div class="usage-total">合计：{{ llmUsage.totals.calls }} 次调用 · {{ llmUsage.totals.total_tokens.toLocaleString() }} tokens（输入 {{ llmUsage.totals.prompt_tokens.toLocaleString() }} / 输出 {{ llmUsage.totals.completion_tokens.toLocaleString() }}）</div>
-      </div>
-      <el-empty v-else description="暂无 LLM 调用记录" />
     </el-card>
 
     <el-card shadow="never">

@@ -61,7 +61,7 @@ export function useDelete(invalidateKeys?: string[][]) {
   })
 }
 
-// ── Companies ──
+// ── Companies（仅保留只读列表：文档中心「关联公司」下拉用）──
 export interface Company {
   id: string; ticker: string; name: string
   description: string | null; sector: string | null; industry: string | null
@@ -70,43 +70,8 @@ export interface Company {
   tags: { id: string; tag: string }[]; created_at: string
 }
 
-export function useCompanies(query?: MaybeRefOrGetter<string>, opts?: { active?: boolean }) {
-  return useQuery<{ items: Company[]; total: number }>({
-    queryKey: computed(() => ['companies', toValue(query) || 'all', opts?.active ? 'active' : 'all']),
-    queryFn: () => {
-      const q = toValue(query)
-      let url = q ? `/companies?query=${encodeURIComponent(q)}` : '/companies'
-      if (opts?.active) url += `${url.includes('?') ? '&' : '?'}is_active=true`
-      return fetchApi(url)
-    },
-  })
-}
-
-export function useCompany(id: string) {
-  return useGet<Company>(['company', id], `/companies/${id}`)
-}
-
-export function useCreateCompany() {
-  return useCreate<Company>('/companies', [['companies']])
-}
-
-export function useUpdateCompany(id: MaybeRefOrGetter<string | null>) {
-  const qc = useQueryClient()
-  return useMutation<Company, Error, Record<string, unknown>>({
-    mutationFn: (data) => fetchApi(`/companies/${toValue(id) ?? ''}`, { method: 'PATCH', body: JSON.stringify(data) }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['company', id] })
-      qc.invalidateQueries({ queryKey: ['companies'] })
-    },
-  })
-}
-
-export function useDeleteCompany() {
-  const qc = useQueryClient()
-  return useMutation<void, Error, string>({
-    mutationFn: (id) => fetchApi(`/companies/${id}`, { method: 'DELETE' }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['companies'] }) },
-  })
+export function useCompanies() {
+  return useList<{ items: Company[]; total: number }>(['companies', 'all'], '/companies')
 }
 
 // ── Documents ──
@@ -161,14 +126,6 @@ export function useUpdateDocumentCompany() {
         body: JSON.stringify({ company_id: companyId }),
       }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['documents'] }) },
-  })
-}
-
-export function useWatchCompany() {
-  const qc = useQueryClient()
-  return useMutation<Company, Error, { ticker: string; name?: string; priority?: number; target_price?: number | null; reason?: string }>({
-    mutationFn: (body) => fetchApi('/companies/watch', { method: 'POST', body: JSON.stringify(body) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['companies'] }) },
   })
 }
 
@@ -292,47 +249,6 @@ export function useHealth(path: string) {
     queryKey: ['health', path],
     queryFn: () => fetchApi(path),
     retry: 0,
-  })
-}
-
-// ── AI Center ──
-export interface LLMUsageSummary {
-  models: Record<string, { calls: number; prompt_tokens: number; completion_tokens: number; total_tokens: number; first_used: string; last_used: string }>
-  totals: { calls: number; prompt_tokens: number; completion_tokens: number; total_tokens: number }
-  note: string
-}
-export function useLLMUsage() {
-  return useGet<LLMUsageSummary>(['llm-usage'], '/ai/usage', { refetchInterval: 30_000 })
-}
-
-// ── Thesis Panel ──
-export const DECISION_LABELS: Record<string, string> = {
-  buy: '买入',
-  sell: '卖出',
-  hold: '持有',
-  watch: '关注',
-  pass: '跳过',
-}
-
-// ── Screener（智能选股）──
-export interface ThesisData {
-  ticker: string; company_name: string; thesis: string | null; decision: string | null
-  confidence: number | null; source_session_id: string | null; updated_at: string | null
-  structured_thesis?: { bull_case: string[]; bear_case: string[]; key_drivers: string[]; risks: string[] } | null
-}
-
-export function useCompanyThesis(ticker: MaybeRefOrGetter<string>) {
-  return useGet<ThesisData>(
-    computed(() => ['thesis', toValue(ticker)]),
-    computed(() => (toValue(ticker) ? `/companies/by-ticker/${encodeURIComponent(toValue(ticker))}/thesis` : '')),
-  )
-}
-
-export function useUpdateThesis() {
-  const qc = useQueryClient()
-  return useMutation<any, Error, { ticker: string; thesis: string; decision?: string; confidence?: number }>({
-    mutationFn: ({ ticker, thesis, decision, confidence }) => fetchApi(`/companies/by-ticker/${encodeURIComponent(ticker)}/thesis`, { method: 'POST', body: JSON.stringify({ thesis, decision, confidence }) }),
-    onSuccess: (_, { ticker }) => { qc.invalidateQueries({ queryKey: ['thesis', ticker] }) },
   })
 }
 

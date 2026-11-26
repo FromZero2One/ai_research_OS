@@ -18,8 +18,7 @@ const selectedIndex = ref(0)
 const inputRef = ref<HTMLInputElement | null>(null)
 
 const commands: Command[] = [
-  { id: 'screener', label: '价值筛选', description: '量化初筛 + LLM 深判', icon: '🎯', route: '/screener', keywords: ['筛选', 'screener', '价值'] },
-  { id: 'companies', label: '公司', description: '浏览所有公司', icon: '🏢', route: '/companies', keywords: ['公司', '企业', 'company', 'ticker'] },
+  { id: 'screener', label: '价值筛选', description: '量化初筛 + 事实检查', icon: '🎯', route: '/screener', keywords: ['筛选', 'screener', '价值'] },
   { id: 'documents', label: '上传文档', description: '上传 PDF、报告或会议纪要', icon: '📄', route: '/documents', keywords: ['文档', '上传', 'pdf', 'document'] },
   { id: 'market', label: '行情', description: '市场行情与 K 线', icon: '📊', route: '/market', keywords: ['行情', '市场', 'k线', 'market', 'stock'] },
   { id: 'system', label: '系统状态', description: '调度器状态与执行记录', icon: '📡', route: '/system', keywords: ['系统', '状态', '调度', 'scheduler'] },
