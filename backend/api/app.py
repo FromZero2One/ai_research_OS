@@ -15,7 +15,6 @@ from core.proxy_cleanup import clean_proxy_env
 clean_proxy_env()
 # ─────────────────────────────────────────────────────────────────
 
-import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -30,9 +29,7 @@ from fastapi.responses import JSONResponse
 # so SQLAlchemy metadata and mapper configuration are always complete.
 import company.models  # noqa: F401  # 注册模型到 Base.metadata
 import core.event_log  # noqa: F401
-import core.task_manager  # noqa: F401
 import document.models  # noqa: F401
-import document.tasks  # noqa: F401
 import market.models  # noqa: F401
 import screener.models  # noqa: F401
 from company.routes import router as company_router
@@ -87,16 +84,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         except Exception as e:
             logger.debug("Embedding model lazy-load deferred: %s", e)
 
-    # Start background task worker (persistent task queue)
-    # 持久任务 handler 必须在 worker 启动前导入注册；否则只有被路由/容器
-    # 首次间接导入的 handler 生效。
-    import screener.service  # noqa: F401
-    from core.task_manager import _recover_interrupted_tasks, _task_worker_loop, stop_worker
-
-    await _recover_interrupted_tasks()
-    worker_task = asyncio.create_task(_task_worker_loop())
-    logger.info("Background task worker started")
-
     # DI container — routes use `request.app.state.container` or the
     # `get_container` dependency to resolve services.
     from core.container import create_container
@@ -128,9 +115,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     logger.info("Shutting down %s", settings.APP_NAME)
     from core.scheduler import stop_scheduler
 
-    stop_worker()  # signal task worker loop to exit
-    if "worker_task" in locals():
-        worker_task.cancel()
     stop_scheduler()
     await engine.dispose()
 

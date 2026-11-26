@@ -95,11 +95,3 @@ async def scheduled_screener_update() -> dict:
     return {"presets": results}
 
 
-async def _handle_screener_schedule(payload: dict) -> dict:
-    """持久任务 handler：手动“立即运行定时选股”走后台 worker。"""
-    return await scheduled_screener_update()
-
-
-from core.task_manager import register_handler  # noqa: E402
-
-register_handler("screener_schedule", _handle_screener_schedule)

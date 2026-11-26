@@ -8,7 +8,6 @@ from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 
 from core.container import Container
 from core.database import get_container
-from core.task_manager import run_in_background
 from document.schemas import (
     DocumentListResponse,
     DocumentResponse,
@@ -40,11 +39,10 @@ async def upload_document(
         company_id=company_uuid,
     )
     await container.session.commit()  # row must exist before the worker picks it up
-    await run_in_background(
-        "document_index",
-        str(doc.id),
-        {"document_id": str(doc.id)},
-    )
+    from core import background
+    from document.background import index_document_bg
+
+    background.spawn_bg(index_document_bg(str(doc.id)))
     return DocumentUploadResponse(
         id=doc.id,
         title=doc.title,

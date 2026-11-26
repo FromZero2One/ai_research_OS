@@ -381,14 +381,12 @@ async def trigger_run(
     db.add(run)
     await db.flush()
 
-    # 持久后台任务（worker 循环拾取；测试环境由测试直接调 run_screener_by_id）
-    # 定时任务传 enqueue=False 直接在当前 session 执行，避免与 worker 重复。
+    # 后台直跑（task_manager 退役）：spawn 协程自开 session，POST 返回后前端按 id 轮询。
+    # 定时链路不经此分支（直接调 run_screener）；测试传 enqueue=False 直调 run_screener。
     if enqueue:
-        from core.task_manager import create_task
+        from core import background
 
-        await create_task(
-            "screener_run", f"screener:{run.id}", {"run_id": str(run.id)}, db=db
-        )
+        background.spawn_bg(run_screener_by_id(str(run.id)))
 
     await EventLogger(db).record(
         source="screener",
@@ -655,14 +653,3 @@ async def run_screener_by_id(run_id: str) -> None:
     async with managed_session() as session:
         await run_screener(session, uuid.UUID(run_id))
         await session.commit()
-
-
-async def _handle_screener_run(payload: dict) -> dict | None:
-    """task_manager worker handler。"""
-    await run_screener_by_id(payload["run_id"])
-    return {"run_id": payload["run_id"]}
-
-
-from core.task_manager import register_handler  # noqa: E402
-
-register_handler("screener_run", _handle_screener_run)

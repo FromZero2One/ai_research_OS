@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends
@@ -16,6 +15,7 @@ from core.container import Container
 from core.database import get_container, get_db
 from core.exceptions import NotFoundError
 from screener.models import ScreenerJudgement, ScreenerRun
+from screener.service import ACTIVE_STATUSES
 
 router = APIRouter(tags=["Screener"])
 
@@ -254,16 +254,19 @@ async def get_schedule():
 
 @router.post("/schedule/run", status_code=202)
 async def run_schedule_now(db: AsyncSession = Depends(get_db)):
-    """把“立即运行定时选股”投递为持久后台任务，避免请求长时间阻塞。"""
-    from core.task_manager import create_task
+    """立即运行定时选股：后台协程直跑（task_manager 退役）。已有进行中的运行 → 409。"""
+    from core import background
+    from core.screener_schedule import scheduled_screener_update
 
-    key = f"screener-schedule:{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}"
-    task = await create_task("screener_schedule", key, {}, db=db)
-    if task is None:
-        return JSONResponse(
-            status_code=409, content={"error": "定时选股任务已在运行"}
+    active = (
+        await db.execute(
+            select(ScreenerRun).where(ScreenerRun.status.in_(ACTIVE_STATUSES)).limit(1)
         )
-    return {"status": "queued", "task_id": str(task.id), "task_key": key}
+    ).scalar_one_or_none()
+    if active:
+        return JSONResponse(status_code=409, content={"error": "定时选股已在运行"})
+    background.spawn_bg(scheduled_screener_update())
+    return {"status": "queued"}
 
 
 @router.get("/latest-report")

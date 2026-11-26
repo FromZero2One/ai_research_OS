@@ -206,14 +206,14 @@ def clean_env(monkeypatch: pytest.MonkeyPatch):
 def _disable_background_tasks(monkeypatch: pytest.MonkeyPatch):
     """Stub background task dispatch in tests.
 
-    Real tasks would write TaskRecords to the dev database and touch a second
-    event loop — none of which runs here (the worker isn't part of tests).
+    后台协程会自开 session 触碰数据库——测试里直接关闭协程，不真正执行。
     """
 
-    async def _noop(task_type: str, task_key: str, payload: dict | None = None) -> bool:
+    def _noop(coro) -> bool:
+        coro.close()
         return True
 
-    monkeypatch.setattr("document.routes.run_in_background", _noop)
+    monkeypatch.setattr("core.background.spawn_bg", _noop)
 
 
 @pytest.fixture(autouse=True)

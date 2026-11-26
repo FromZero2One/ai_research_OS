@@ -10,9 +10,9 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 # Import all models so Alembic can detect them
+# 注：core.task_manager 已删（task_records 表仅存在于迁移历史，不入 metadata）
 import company.models  # noqa: F401
 import core.event_log  # noqa: F401
-import core.task_manager  # noqa: F401
 import document.models  # noqa: F401
 import market.models  # noqa: F401
 import screener.models  # noqa: F401
