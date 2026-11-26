@@ -254,7 +254,7 @@ class TestDeterministicJudgement:
         j = data["judgements"][0]
         assert j["verdict"] == "reject"
         assert j["recommend"] is False
-        assert j["confidence"] == 1.0
+        assert j["confidence"] is None  # confidence 已退役，列保留恒空
         assert any(h.get("check") == "cash_coverage" for h in j["criteria_hits"])
 
     def test_historical_run_detail_still_readable(self, client: TestClient):

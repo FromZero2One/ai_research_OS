@@ -138,9 +138,9 @@ def _auto_pass_judgement(candidate: dict, fact_results: list[dict]) -> dict:
     """确定性判定生成器（零 LLM）：初筛命中 + 事实检查三态合成。
 
     verdict 规则：任一 fact fail → reject；否则任一 not_found → insufficient；
-    其余 → recommend。confidence 固定 1.0（确定性规则无需自评）。
-    criteria_hits 存事实检查条目（含 check/result/evidence/citation/detail/
-    criterion/hit 字段，report.py 按 check/result 识别）；量化命中明细在 snapshot。
+    其余 → recommend。criteria_hits 存事实检查条目（含 check/result/evidence/
+    citation/detail/criterion/hit 字段，report.py 按 check/result 识别）；
+    量化命中明细在 snapshot。
     """
     judgement = {
         "ticker": candidate["ticker"],
@@ -149,7 +149,6 @@ def _auto_pass_judgement(candidate: dict, fact_results: list[dict]) -> dict:
         "verdict": "recommend",
         "reasons": [],
         "criteria_hits": list(fact_results),
-        "confidence": 1.0,
         "snapshot": {
             k: candidate.get(k)
             for k in _JUDGE_SNAPSHOT_FIELDS

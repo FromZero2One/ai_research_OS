@@ -35,13 +35,6 @@ def _fmt_money(value) -> str:
     return f"{v:.2f}"
 
 
-def _fmt_conf(value) -> str:
-    try:
-        return f"{float(value):.2f}"
-    except (TypeError, ValueError):
-        return "-" if value is None else str(value)
-
-
 def _normalize_criterion_with_presets(text: str, preset_names: list[str]) -> str:
     """去掉 LLM 返回的预设前缀，合并「[深度价值] 现金充裕」与「深度价值 - 现金充裕」。"""
     s = str(text).strip()
@@ -177,26 +170,26 @@ def build_report(
     if not recommended:
         lines.append("本次无推荐 — 初筛候选均未通过确定性判定。")
     elif preset_mode:
-        lines.append("| 代码 | 名称 | 行业 | 现价 | 总市值 | 置信度 | 命中预设 |")
-        lines.append("|---|---|---|---|---|---|---|")
-        for j in recommended:
-            snap = j.get("snapshot") or {}
-            lines.append(
-                f"| {j['ticker']} | {j['name']} | {snap.get('industry') or '-'} | "
-                f"{_fmt_price(snap.get('price'))} | "
-                f"{_fmt_money(snap.get('market_cap'))} | {_fmt_conf(j.get('confidence'))} | "
-                f"{_preset_label(snap)} |"
-            )
-        lines.append("")
-    else:
-        lines.append("| 代码 | 名称 | 行业 | 现价 | 总市值 | 置信度 |")
+        lines.append("| 代码 | 名称 | 行业 | 现价 | 总市值 | 命中预设 |")
         lines.append("|---|---|---|---|---|---|")
         for j in recommended:
             snap = j.get("snapshot") or {}
             lines.append(
                 f"| {j['ticker']} | {j['name']} | {snap.get('industry') or '-'} | "
                 f"{_fmt_price(snap.get('price'))} | "
-                f"{_fmt_money(snap.get('market_cap'))} | {_fmt_conf(j.get('confidence'))} |"
+                f"{_fmt_money(snap.get('market_cap'))} | "
+                f"{_preset_label(snap)} |"
+            )
+        lines.append("")
+    else:
+        lines.append("| 代码 | 名称 | 行业 | 现价 | 总市值 |")
+        lines.append("|---|---|---|---|---|")
+        for j in recommended:
+            snap = j.get("snapshot") or {}
+            lines.append(
+                f"| {j['ticker']} | {j['name']} | {snap.get('industry') or '-'} | "
+                f"{_fmt_price(snap.get('price'))} | "
+                f"{_fmt_money(snap.get('market_cap'))} |"
             )
         lines.append("")
 

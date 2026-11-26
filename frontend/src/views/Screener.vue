@@ -415,9 +415,6 @@ function viewDetail(run: ScreenerRunSummary) {
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="置信度" width="75">
-          <template #default="{ row }">{{ row.confidence ?? '-' }}</template>
-        </el-table-column>
         <el-table-column label="行业" width="90">
           <template #default="{ row }">{{ row.snapshot?.industry || '-' }}</template>
         </el-table-column>

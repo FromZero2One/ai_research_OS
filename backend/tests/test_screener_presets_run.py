@@ -154,7 +154,7 @@ async def test_quant_only_preset_skips_llm(
     ).scalars().all()
     assert all(j.recommend is True for j in judgements)
     assert all(j.verdict == "recommend" for j in judgements)
-    assert all(j.confidence == 1.0 for j in judgements)
+    assert all(j.confidence is None for j in judgements)  # confidence 已退役
 
 
 async def test_presets_union_with_financials(test_session: AsyncSession, screener_env, monkeypatch):
