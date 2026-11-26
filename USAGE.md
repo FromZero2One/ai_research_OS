@@ -218,7 +218,6 @@ make dev-backend # 仅启动后端
 make dev-frontend # 仅启动前端
 make migrate     # 运行数据库迁移
 make reset-db    # 删除并重建数据库
-make lint        # 代码检查 (ruff)
 make test        # 运行测试
 make ingest-sample # 加载示例数据
 ```
