@@ -37,9 +37,6 @@ from core.interfaces import (
     PriceService as PriceServiceProtocol,
 )
 from core.interfaces import (
-    ProfileService as ProfileServiceProtocol,
-)
-from core.interfaces import (
     ScreenerService as ScreenerServiceProtocol,
 )
 from core.interfaces import (
@@ -55,7 +52,6 @@ class Container:
         # Lazily built on first access.
         self._price: PriceServiceProtocol | None = None
         self._financial: FinancialServiceProtocol | None = None
-        self._profile: ProfileServiceProtocol | None = None
         self._search: SearchServiceProtocol | None = None
         self._freshness: FreshnessService | None = None
         self._knowledge: KnowledgeServiceProtocol | None = None
@@ -78,14 +74,6 @@ class Container:
 
             self._financial = FinancialService(self.session)
         return self._financial
-
-    @property
-    def profile_service(self) -> ProfileServiceProtocol:
-        if self._profile is None:
-            from market.service.profile_service import ProfileService
-
-            self._profile = ProfileService(self.session)
-        return self._profile
 
     @property
     def search_service(self) -> SearchServiceProtocol:

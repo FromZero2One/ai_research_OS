@@ -200,7 +200,8 @@ class TestSchedule:
         assert resp.status_code == 202
         data = resp.json()
         assert data["status"] == "queued"
-        assert data["task_id"]
+        # task_manager 已退役：后台直跑协程，无持久任务 id
+        assert "task_id" not in data
 
 
 class TestDeterministicJudgement:

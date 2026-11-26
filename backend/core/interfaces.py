@@ -114,15 +114,6 @@ class FinancialService(Protocol):
 
 
 @runtime_checkable
-class ProfileService(Protocol):
-    """Interface for company profile / stock info."""
-
-    async def get_stock_info(self, ticker: str) -> dict | None: ...
-
-    async def get_stock_profile(self, ticker: str) -> dict | None: ...
-
-
-@runtime_checkable
 class SearchService(Protocol):
     """Interface for stock search and symbol listing."""
 
