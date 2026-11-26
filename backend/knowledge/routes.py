@@ -2,44 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field
 
 from core.container import Container
 from core.database import get_container
 
 router = APIRouter(prefix="/knowledge", tags=["Knowledge Center"])
-
-
-class AskRequest(BaseModel):
-    question: str = Field(..., min_length=2, max_length=500)
-    top_k: int = Field(5, ge=1, le=10)
-    provider: Literal["default", "ollama"] = "default"
-    model: str | None = Field(None, max_length=128)
-
-
-@router.post("/ask")
-async def ask(
-    data: AskRequest,
-    container: Container = Depends(get_container),
-):
-    """Document Q&A — retrieve top chunks and answer with citations."""
-    return await container.knowledge_service.ask(
-        data.question,
-        top_k=data.top_k,
-        provider=data.provider,
-        model=data.model,
-    )
-
-
-@router.get("/llm/models")
-async def llm_models(
-    container: Container = Depends(get_container),
-):
-    """List the default LLM and locally available Ollama chat models."""
-    return await container.knowledge_service.list_llm_models()
 
 
 @router.get("/search")

@@ -40,20 +40,9 @@ class Settings(BaseSettings):
     EMBEDDING_DEVICE: str = "cpu"
     EMBEDDING_PREWARM: bool = True  # pre-warm the embedding model at startup (set False in tests)
 
-    # --- LLM ---
-    LLM_PROVIDER: Literal["ollama", "openai"] = "ollama"
+    # --- Embedding (Ollama) ---
     OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
-    OLLAMA_MODEL: str = "llama3.1:70b"
     OLLAMA_EMBEDDING_MODEL: str = "nomic-embed-text"
-    # 深判 prompt（财务 + 多条年报片段 + 标准 + 输出）容易超过 Ollama 默认 4096，
-    # 截断会直接导致 JSON 输出异常或判断质量下降
-    OLLAMA_NUM_CTX: int = 8192
-    OPENAI_API_KEY: str = ""
-    OPENAI_MODEL: str = "gpt-4o"
-    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
-
-    # 证据分类器：llm=批量 LLM 分类（失败自动降级），keyword=纯关键词启发式
-    EVIDENCE_CLASSIFIER: Literal["llm", "keyword"] = "llm"
 
     # --- Redis ---
     REDIS_URL: str = "redis://127.0.0.1:6380/0"  # docker-compose exposes 6380→6379

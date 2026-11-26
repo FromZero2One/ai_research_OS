@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import json
-from typing import Any
-
 import pytest
 
 import screener.screening as screening
-from core.interfaces import LLMResponse
 
 SPOT = [
     {"ticker": "600519", "name": "贵州茅台", "price": 1500.0, "turnover": 0.3, "market_cap": 1.88e12},

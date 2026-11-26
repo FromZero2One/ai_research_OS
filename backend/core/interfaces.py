@@ -58,45 +58,6 @@ class VectorStore(Protocol):
     async def create_collection(self, collection: str, dimension: int) -> None: ...
 
 
-# ──  LLM  ────────────────────────────────────────────────────────────
-
-
-@dataclass
-class LLMMessage:
-    role: str  # "system" | "user" | "assistant"
-    content: str
-
-
-@dataclass
-class LLMResponse:
-    content: str
-    model: str
-    usage: dict | None = None
-
-
-@runtime_checkable
-class LLM(Protocol):
-    """Interface for large language models."""
-
-    @property
-    def model_name(self) -> str: ...
-
-    async def generate(
-        self,
-        messages: list[LLMMessage],
-        temperature: float = 0.7,
-        max_tokens: int = 4096,
-        stream: bool = False,
-    ) -> LLMResponse: ...
-
-    async def generate_structured(
-        self,
-        messages: list[LLMMessage],
-        schema: dict,
-        temperature: float = 0.3,
-    ) -> dict: ...
-
-
 # ──  Document Parser  ────────────────────────────────────────────────
 
 
