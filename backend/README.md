@@ -8,7 +8,7 @@ Python/FastAPI 后端。完整使用手册见根目录 [`USAGE.md`](../USAGE.md)
 - **存储**: PostgreSQL（多 schema + pgvector）+ Qdrant（向量）+ Redis（缓存）
 - **AI**: 无 LLM（全系统零 LLM，2026-11-26 起）；仅 Ollama（本地 Embedding）
 - **数据源**: akshare 子进程直连（A股/港股，Tencent/Sina/Eastmoney），yfinance（美股备选）
-- **质量**: pytest ~330 用例 + ruff + mypy + pre-commit
+- **质量**: pytest ~315 用例 + ruff + mypy + pre-commit
 
 ## 架构
 

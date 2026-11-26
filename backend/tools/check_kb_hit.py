@@ -23,7 +23,11 @@ QUERY = sys.argv[2] if len(sys.argv) > 2 else "行业渗透率 市场排名 主�
 async def main() -> None:
     async with managed_session() as session:
         container = create_container(session)
-        target = await container.company_service.get_by_ticker(TICKER)
+        target = (
+            await session.execute(
+                select(company.models.Company).where(company.models.Company.ticker == TICKER)
+            )
+        ).scalar_one_or_none()
         if target is None:
             print("公司不存在:", TICKER)
             return

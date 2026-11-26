@@ -582,7 +582,7 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
                     ScreenerRun.mode == run.mode,
                     ScreenerRun.finished_at.isnot(None),
                 )
-                .order_by(ScreenerRun.finished_at.desc())
+                .order_by(ScreenerRun.finished_at.desc(), ScreenerRun.created_at.desc())
                 .limit(1)
             )
         ).scalar_one_or_none()
@@ -596,7 +596,7 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
                 )
             ).scalars().all()
             prev_recommendations = set(prev_rows)
-            prev_finished_at = prev_row.finished_at
+            prev_finished_at = (prev_row.finished_at or "")[:10]  # ISO 串截日期，报告标题可读
 
         report = build_report(
             {"id": str(run.id), "candidate_count": run.candidate_count,

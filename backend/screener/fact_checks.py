@@ -122,6 +122,7 @@ def _check_cash_coverage_sync(check: dict, financials: dict, financial_type: str
             "citation": None,
             "detail": "不适用（该类型公司不适用此口径，已豁免）",
             "criterion": _CHECK_LABELS["cash_coverage"],
+            # hit=True 表示「已决」（有明确结论），非「有证据」——本项 exempt 不依赖检索证据
             "hit": True,
         }
     metric = check.get("metric") or "cash_ratio"

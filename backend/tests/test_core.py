@@ -71,9 +71,9 @@ class TestNotFoundHandler:
         resp = client.get("/api/v1/nonexistent")
         assert resp.status_code == 404
 
-    def test_company_not_found_structured(self, client: TestClient):
+    def test_document_not_found_structured(self, client: TestClient):
         fake_id = "00000000-0000-0000-0000-000000000000"
-        resp = client.get(f"/api/v1/companies/{fake_id}")
+        resp = client.get(f"/api/v1/documents/{fake_id}")
         assert resp.status_code == 404
         data = resp.json()
         assert "detail" in data or "error" in data
