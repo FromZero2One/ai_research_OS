@@ -35,19 +35,16 @@ from core.interfaces import (
     KnowledgeService as KnowledgeServiceProtocol,
 )
 from core.interfaces import (
-    NewsService as NewsServiceProtocol,
-)
-from core.interfaces import (
     PriceService as PriceServiceProtocol,
 )
 from core.interfaces import (
     ProfileService as ProfileServiceProtocol,
 )
 from core.interfaces import (
-    SearchService as SearchServiceProtocol,
+    ScreenerService as ScreenerServiceProtocol,
 )
 from core.interfaces import (
-    ScreenerService as ScreenerServiceProtocol,
+    SearchService as SearchServiceProtocol,
 )
 
 
@@ -58,7 +55,6 @@ class Container:
         self.session = session
         # Lazily built on first access.
         self._price: PriceServiceProtocol | None = None
-        self._news: NewsServiceProtocol | None = None
         self._financial: FinancialServiceProtocol | None = None
         self._profile: ProfileServiceProtocol | None = None
         self._search: SearchServiceProtocol | None = None
@@ -66,7 +62,7 @@ class Container:
         self._knowledge: KnowledgeServiceProtocol | None = None
         self._company: CompanyServiceProtocol | None = None
         self._document: DocumentServiceProtocol | None = None
-        self._ratio: "RatioService | None" = None
+        self._ratio: RatioService | None = None
         self._screener: ScreenerServiceProtocol | None = None
 
     @property
@@ -76,14 +72,6 @@ class Container:
 
             self._price = PriceService(self.session)
         return self._price
-
-    @property
-    def news_service(self) -> NewsServiceProtocol:
-        if self._news is None:
-            from market.service.news_service import NewsService
-
-            self._news = NewsService(self.session)
-        return self._news
 
     @property
     def financial_service(self) -> FinancialServiceProtocol:
@@ -160,7 +148,7 @@ class Container:
         return self._screener
 
     @property
-    def ratio_service(self) -> "RatioService":
+    def ratio_service(self) -> RatioService:
         if self._ratio is None:
             from market.ratio_service import RatioService
 

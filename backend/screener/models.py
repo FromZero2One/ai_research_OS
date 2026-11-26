@@ -100,20 +100,5 @@ class ScreenerJudgement(Base, UUIDMixin, TimestampMixin):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
-class ScreenerBacktestRun(Base, UUIDMixin, TimestampMixin):
-    """一次预设历史回测（状态机 pending → running → completed/failed）。
-
-    result 存 {"summary": {...}, "yearly": [...]}；报告落 screener/reports/。
-    """
-
-    __tablename__ = "backtest_runs"
-    __table_args__ = {"schema": "screener"}
-
-    preset_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    years: Mapped[int] = mapped_column(nullable=False, default=5)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
-    error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    report_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    started_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    finished_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+# ScreenerBacktestRun ORM 类已随五次简化删除（回测脚本直调纯函数，不再落库）；
+# screener.backtest_runs 表保留（删类留表模式）。

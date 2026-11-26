@@ -100,13 +100,6 @@ class PriceService(Protocol):
 
 
 @runtime_checkable
-class NewsService(Protocol):
-    """Interface for news fetching."""
-
-    async def fetch_news(self, ticker: str) -> tuple[list[dict], str]: ...
-
-
-@runtime_checkable
 class FinancialService(Protocol):
     """Interface for financial metrics queries and ingestion."""
 

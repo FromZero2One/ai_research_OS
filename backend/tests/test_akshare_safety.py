@@ -12,7 +12,7 @@ import os
 import pytest
 
 from market import akshare_executor
-from market.service import news_service, price_service
+from market.service import price_service
 
 MALICIOUS_TICKERS = [
     '600519"; print("PWNED") #',
@@ -47,7 +47,6 @@ class TestCodeTemplatesUseEnv:
     @pytest.mark.parametrize(
         "code",
         [
-            news_service._NEWS_CODE,
             price_service._AKSHARE_PRICE_CODE_HK,
             price_service._AKSHARE_PRICE_CODE_A,
         ],
@@ -58,7 +57,6 @@ class TestCodeTemplatesUseEnv:
     @pytest.mark.parametrize(
         "code",
         [
-            news_service._NEWS_CODE,
             price_service._AKSHARE_PRICE_CODE_HK,
             price_service._AKSHARE_PRICE_CODE_A,
         ],
@@ -68,54 +66,6 @@ class TestCodeTemplatesUseEnv:
         assert 'symbol="{ticker}"' not in code
         assert "symbol='{ticker}'" not in code
         assert "{ticker}" not in code
-
-
-class TestNewsServiceWiring:
-    """fetch_news must pass the ticker as env_args, not inside the code string."""
-
-    async def test_valid_ticker_passed_as_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        captured: dict = {}
-
-        def fake_run(code: str, env_args: dict | None = None) -> str:
-            captured["code"] = code
-            captured["env"] = env_args
-            return "__R__:[]\n"
-
-        async def fake_cloud(ticker: str) -> list:
-            return []
-
-        monkeypatch.setattr(news_service, "run_akshare", fake_run)
-        monkeypatch.setattr(news_service, "fetch_news_via_mcp_cloud", fake_cloud)
-
-        svc = news_service.NewsService()
-        news, source = await svc.fetch_news("600519")
-
-        assert source == "none"
-        assert captured["env"] == {"TICKER": "600519"}
-        assert '"600519"' not in captured["code"]
-        assert "600519" not in captured["code"]
-
-    async def test_malicious_ticker_never_reaches_subprocess(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        called = False
-
-        def fake_run(code: str, env_args: dict | None = None) -> str:
-            nonlocal called
-            called = True
-            return "__R__:[]\n"
-
-        async def fake_cloud(ticker: str) -> list:
-            return []
-
-        monkeypatch.setattr(news_service, "run_akshare", fake_run)
-        monkeypatch.setattr(news_service, "fetch_news_via_mcp_cloud", fake_cloud)
-
-        svc = news_service.NewsService()
-        news, source = await svc.fetch_news('600519"; print("PWNED") #')
-
-        assert source == "none"
-        assert called is False  # allowlist rejected it before any subprocess
 
 
 @pytest.mark.skipif(
