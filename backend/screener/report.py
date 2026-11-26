@@ -128,8 +128,14 @@ def build_report(
     pool_stats: dict[str, int] | None = None,
     knowledge_docs: int | None = None,
     has_qualitative: bool = False,
+    prev_recommendations: set[str] | None = None,
+    prev_finished_at: str | None = None,
 ) -> str:
-    """生成选股报告 Markdown。"""
+    """生成选股报告 Markdown。
+
+    prev_recommendations（上一轮推荐 ticker 集合）非 None 时，
+    报告尾部追加轮次对比：新增 / 移出 / 连续推荐。
+    """
     recommended = [j for j in judgements if j.get("status") == "ok" and j.get("recommend") is True]
     insufficient = [
         j for j in judgements
@@ -383,5 +389,23 @@ def build_report(
         else:
             for label, n in stats:
                 lines.append(f"- {label}：{n} 只")
+        lines.append("")
+
+    if prev_recommendations is not None:
+        now_tickers = {j["ticker"] for j in recommended if j.get("ticker")}
+        added = sorted(now_tickers - prev_recommendations)
+        removed = sorted(prev_recommendations - now_tickers)
+        kept = sorted(now_tickers & prev_recommendations)
+        prev_label = prev_finished_at or "上轮"
+        lines.append(f"## 较上一轮（{prev_label}）")
+        lines.append("")
+
+        def _names(tickers: list[str]) -> str:
+            name_of = {j.get("ticker"): j.get("name") or "" for j in judgements}
+            return "、".join(f"{t} {name_of.get(t) or ''}".strip() for t in tickers) or "无"
+
+        lines.append(f"- 新增 {len(added)} 只：{_names(added)}")
+        lines.append(f"- 移出 {len(removed)} 只：{_names(removed)}")
+        lines.append(f"- 连续推荐 {len(kept)} 只：{_names(kept)}")
         lines.append("")
     return "\n".join(lines)

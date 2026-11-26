@@ -570,7 +570,35 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
             db.add(ScreenerJudgement(run_id=run.id, **j))
         await db.flush()
 
-        # ④ 报告落盘 + 收尾
+        # ④ 报告落盘 + 收尾（附轮次对比：取同口径上一轮已完成 run 的推荐集合）
+        prev_recommendations: set[str] | None = None
+        prev_finished_at: str | None = None
+        prev_row = (
+            await db.execute(
+                select(ScreenerRun)
+                .where(
+                    ScreenerRun.id != run.id,
+                    ScreenerRun.status == "completed",
+                    ScreenerRun.criteria_hash == run.criteria_hash,
+                    ScreenerRun.mode == run.mode,
+                    ScreenerRun.finished_at.isnot(None),
+                )
+                .order_by(ScreenerRun.finished_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if prev_row is not None:
+            prev_rows = (
+                await db.execute(
+                    select(ScreenerJudgement.ticker).where(
+                        ScreenerJudgement.run_id == prev_row.id,
+                        ScreenerJudgement.recommend.is_(True),
+                    )
+                )
+            ).scalars().all()
+            prev_recommendations = set(prev_rows)
+            prev_finished_at = prev_row.finished_at
+
         report = build_report(
             {"id": str(run.id), "candidate_count": run.candidate_count,
              "result_count": sum(1 for j in judgements if j.get("recommend") is True),
@@ -581,6 +609,8 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
             pool_stats=pool_stats,
             knowledge_docs=None,
             has_qualitative=bool(fact_checks),
+            prev_recommendations=prev_recommendations,
+            prev_finished_at=prev_finished_at,
         )
         path = report_path_for(str(run.id))
         path.parent.mkdir(parents=True, exist_ok=True)

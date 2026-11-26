@@ -87,6 +87,35 @@ class TestBuildReport:
         assert "ST/*ST/退市：2 只" in report
         assert "小市值" in report and "3 只" in report
 
+
+class TestRunOverRunDiff:
+    """报告尾部轮次对比：新增/移出/连续推荐。"""
+
+    RECOMMENDED_NOW = {"600519"}  # JUDGEMENTS 中 recommend=True 的 ticker
+
+    def test_diff_section_with_prev(self):
+        report = build_report(
+            RUN, JUDGEMENTS, RUN["criteria_text"], [],
+            prev_recommendations={"600519", "000651"},
+            prev_finished_at="2026-11-25",
+        )
+        assert "较上一轮（2026-11-25）" in report
+        assert "新增 0 只" in report          # 600519 上一轮已有
+        assert "移出 1 只" in report          # 000651 上轮有、本轮无
+        assert "连续推荐 1 只" in report      # 600519
+
+    def test_diff_all_new_when_prev_empty(self):
+        report = build_report(
+            RUN, JUDGEMENTS, RUN["criteria_text"], [],
+            prev_recommendations=set(),
+            prev_finished_at="2026-11-25",
+        )
+        assert "新增 1 只" in report
+
+    def test_no_diff_section_without_prev(self):
+        report = build_report(RUN, JUDGEMENTS, RUN["criteria_text"], [])
+        assert "较上一轮" not in report
+
     def test_insufficient_section(self):
         j = {
             **JUDGEMENTS[1],
