@@ -38,15 +38,51 @@ def _run(checks, knowledge, financials=None):
     return _RESULTS
 
 
-def run_fact_checks_sync(checks, knowledge, company_id, financials):
+def run_fact_checks_sync(checks, knowledge, company_id, financials, financial_type=None):
     import asyncio
 
-    return asyncio.run(run_fact_checks(checks, knowledge, company_id, financials))
+    return asyncio.run(
+        run_fact_checks(checks, knowledge, company_id, financials, financial_type=financial_type)
+    )
 
 
 AUDIT_CHECK = {"check": "audit_opinion"}
 LITIGATION_CHECK = {"check": "litigation"}
 CASH_CHECK = {"check": "cash_coverage", "threshold": 1.0, "metric": "cash_ratio"}
+
+
+class TestCashCoverageExempt:
+    """券商/金融股口径豁免：不适用 ≠ 数据不足。"""
+
+    BROKER_CHECK = {
+        "check": "cash_coverage",
+        "metric": "first_adequacy_ratio",
+        "threshold": 10.0,
+        "exempt_financial_type": ["other"],
+    }
+
+    def test_exempt_result_for_broker(self):
+        out = run_fact_checks_sync(
+            [self.BROKER_CHECK], FakeKnowledge({}), "cid", {}, financial_type="other"
+        )
+        assert out[0]["result"] == "exempt"
+        assert out[0]["hit"] is True
+        assert "不适用" in out[0]["detail"]
+
+    def test_exempt_not_triggered_for_bank(self):
+        out = run_fact_checks_sync(
+            [self.BROKER_CHECK], FakeKnowledge({}), "cid", {}, financial_type="bank"
+        )
+        assert out[0]["result"] == "not_found"  # 银行不在豁免名单，缺指标仍数据不足
+
+    def test_no_exempt_list_unchanged(self):
+        out = run_fact_checks_sync([CASH_CHECK], FakeKnowledge({}), "cid", {}, financial_type="other")
+        assert out[0]["result"] == "not_found"
+
+    def test_exempt_verdict_is_recommend(self):
+        facts = [{"check": "cash_coverage", "result": "exempt", "criterion": "现金覆盖", "hit": True}]
+        out = apply_fact_check_verdict(facts)
+        assert out["verdict"] == "recommend"
 
 
 class TestAuditOpinion:

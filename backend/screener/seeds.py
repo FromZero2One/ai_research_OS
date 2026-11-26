@@ -193,6 +193,8 @@ BUILTIN_PRESETS: list[dict] = [
                 "type": "fact_check", "check": "cash_coverage",
                 "metric": "cash_ratio", "threshold": 1.0,
                 "label": "现金充裕（现金比率 ≥ 1.0）",
+                # 金融股不适用工业口径现金比率，豁免
+                "exempt_financial_type": ["bank", "insurance", "other"],
             },
         ],
         "suggested_pool": "all",
@@ -245,6 +247,8 @@ BUILTIN_PRESETS: list[dict] = [
                 "type": "fact_check", "check": "cash_coverage",
                 "metric": "first_adequacy_ratio", "threshold": 10.0,
                 "label": "资本充足（一级资本充足率 ≥ 10%）",
+                # 券商无该指标（口径不适用），豁免而非数据不足
+                "exempt_financial_type": ["other"],
             },
         ],
         "suggested_pool": "all",

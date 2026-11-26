@@ -555,7 +555,8 @@ async def run_screener(db: AsyncSession, run_id: uuid.UUID) -> ScreenerRun:
                 company_id = await _resolve_company_id(db, cand["ticker"])
                 fin = _latest_financials(financials.get(cand["ticker"], []))
                 fact_results = await run_fact_checks(
-                    fact_checks, knowledge, company_id, fin
+                    fact_checks, knowledge, company_id, fin,
+                    financial_type=cand.get("financial_type"),
                 )
             else:
                 fact_results = []

@@ -106,8 +106,24 @@ async def _check_litigation(knowledge, company_id: str) -> dict:
     return _not_found("litigation", "检索片段未含诉讼/处罚关键词")
 
 
-def _check_cash_coverage_sync(check: dict, financials: dict) -> dict:
-    """现金覆盖：财务数字直接计算，阈值取 check.threshold（缺数据 → not_found）。"""
+def _check_cash_coverage_sync(check: dict, financials: dict, financial_type: str | None) -> dict:
+    """现金覆盖：财务数字直接计算，阈值取 check.threshold（缺数据 → not_found）。
+
+    check.exempt_financial_type 命中候选 financial_type 时返回 exempt——
+    指标口径不适用（如券商无一级资本充足率、金融股不适用工业现金比率），
+    不算数据不足。
+    """
+    exempt_types = check.get("exempt_financial_type") or []
+    if financial_type and financial_type in exempt_types:
+        return {
+            "check": "cash_coverage",
+            "result": "exempt",
+            "evidence": "",
+            "citation": None,
+            "detail": "不适用（该类型公司不适用此口径，已豁免）",
+            "criterion": _CHECK_LABELS["cash_coverage"],
+            "hit": True,
+        }
     metric = check.get("metric") or "cash_ratio"
     threshold = float(check.get("threshold") or 1.0)
     value = financials.get(metric)
@@ -134,19 +150,21 @@ async def run_fact_checks(
     knowledge,
     company_id: str | None,
     financials: dict,
+    financial_type: str | None = None,
 ) -> list[dict]:
     """执行事实检查清单，返回顺序同输入。
 
-    每项 {check, result: pass|fail|not_found, evidence, citation, detail}。
+    每项 {check, result: pass|fail|not_found|exempt, evidence, citation, detail}。
     附带 criterion/hit 冗余字段以兼容 criteria_hits 下游消费（报告/导出/证据守卫）。
     knowledge 或 company_id 缺失 → 全部 not_found（不做跨公司检索）。
+    financial_type 用于 cash_coverage 的口径豁免（券商/金融股）。
     """
     results: list[dict] = []
     tasks: dict[int, asyncio.Task] = {}
     for idx, check in enumerate(checks):
         name = check.get("check")
         if name == "cash_coverage":
-            results.append(_check_cash_coverage_sync(check, financials or {}))
+            results.append(_check_cash_coverage_sync(check, financials or {}, financial_type))
         elif name in ("audit_opinion", "litigation") and knowledge is not None and company_id:
             fn = _check_audit_opinion if name == "audit_opinion" else _check_litigation
             tasks[idx] = asyncio.ensure_future(fn(knowledge, company_id))
@@ -166,7 +184,8 @@ async def run_fact_checks(
 
 def apply_fact_check_verdict(fact_results: list[dict]) -> dict:
     """确定性三态判定（纯函数，零 LLM）：任一 fail → reject；
-    否则任一 not_found → insufficient；全 pass（或无检查项）→ recommend。
+    否则任一 not_found → insufficient；全 pass/exempt（或无检查项）→ recommend。
+    exempt = 口径不适用已豁免，视同通过，不算数据不足。
     优先级 reject > insufficient > recommend。
     """
     fails = [r for r in fact_results if r.get("result") == "fail"]

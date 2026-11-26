@@ -236,10 +236,12 @@ def build_report(
         if not fact_entries:
             lines.append("- 无")
         else:
+            _RESULT_LABELS = {"exempt": "不适用（已豁免）"}
             for f in fact_entries:
                 cite = f"（{f['citation']}）" if f.get("citation") else ""
                 detail = f" {f.get('detail') or ''}".rstrip()
-                lines.append(f"- {f.get('criterion') or f['check']}：{f['result']}{cite}{detail}")
+                res_label = _RESULT_LABELS.get(f["result"], f["result"])
+                lines.append(f"- {f.get('criterion') or f['check']}：{res_label}{cite}{detail}")
         for reason in j.get("reasons") or []:
             lines.append(f"- {reason}")
 
