@@ -11,6 +11,8 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-11-27（实用性评估记录）**:
+  - 新增 `docs/superpowers/specs/2026-11-27-usability-assessment-next-steps.md`：实用性评分（工具 7/10 / 选股系统 4/10）、策略数量裁定（质量优先于数量）、下次优化三项候选（推荐跟踪→排雷扩容→预设自演化）；ARCHITECTURE.md §9 挂链。均为加法，下次独立立项。
 - **2026-11-27（九次简化：死代码清理）**:
   - fb25e04 后端：删 ingest_single_company 单只补采链（连锁 fetch/parse_balance_sheet_row、fetch/parse_cash_flow_row，-73 行）、knowledge 只读 search 路由 + test_knowledge.py（前端零调用，service 保留供 screener 证据检索）、零引用脚本 cleanup_vectors / reseed_builtin_presets / backfill_announcement_dates。
   - eeb155c 前端：删 api.ts 的 useDelete / useIngestFinancials 死钩子。

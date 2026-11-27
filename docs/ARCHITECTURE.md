@@ -1,6 +1,6 @@
 # AI Research OS 架构文档
 
-> 更新日期：2026-11-26（六次简化完成后）。历史决策：二次瘦身 `2026-11-24-slim-to-value-recommendation-design.md`、三次简化 `2026-11-25-llm-retire-simplify-design.md`、六次简化 `2026-11-26-deadweight-clear-analysis-quality-design.md`。
+> 更新日期：2026-11-27（九次简化完成后）。历史决策：二次瘦身 `2026-11-24-slim-to-value-recommendation-design.md`、三次简化 `2026-11-25-llm-retire-simplify-design.md`、六次简化 `2026-11-26-deadweight-clear-analysis-quality-design.md`、七/八/九次简化 `2026-11-26-infra-deadlink-cleanup-design.md` / `2026-11-27-eighth-simplify-residual-design.md` / `2026-11-27-ninth-simplify-deadcode-design.md`。
 
 ## 1. 系统定位
 
@@ -14,34 +14,45 @@
 
 ## 2. 总体架构
 
-```text
-                 User
-                  │
-          Screener Workspace
-          (Vue 3 SPA, :5173)
-                  │
-                  ▼
-           API Gateway (FastAPI, :8000)
-                  │
-  ┌───────────────────────────────────────────┐
-  │             Application Layer             │
-  ├───────────────────────────────────────────┤
-  │  Company  │  Market   │  Document         │
-  │  (只读列表)│ (数字源)  │ (年报PDF→切片)      │
-  │           │           ├───────────────────┤
-  │           │           │  Knowledge (RAG)  │
-  │           │           │  混合检索（零问答）  │
-  │           │           ├───────────────────┤
-  │           │           │  Screener         │
-  │           │           │  筛选/事实检查/报告 │
-  └───────────────────────────────────────────┘
-                  │
-  ┌───────────────────────────────────────────┐
-  │               Core Layer                  │
-  ├───────────────────────────────────────────┤
-  │ DB │ Vector │ Embedding │ Scheduler       │
-  │    (Qdrant)│ (Ollama)   │ (APScheduler)   │
-  └───────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    U[用户] --> FE["前端 SPA (Vue 3 :5173)<br/>Screener / Market / Documents"]
+
+    FE -->|"/api/v1 + TanStack Query"| GW["FastAPI (:8000)<br/>core/container.py DI"]
+
+    subgraph APP["应用层（5 模块）"]
+        CO["company<br/>只读列表"]
+        MK["market<br/>数字唯一事实源"]
+        DO["document<br/>年报 PDF→切片→索引"]
+        KN["knowledge<br/>混合检索（内部用）"]
+        SC["screener ★核心<br/>量化筛选→事实检查→报告"]
+    end
+
+    GW --> CO & MK & DO & SC
+    SC -->|证据检索| KN
+    KN -->|"document 表 + Qdrant"| DO
+    CO --> MK
+
+    subgraph CORE["core 基础设施（地基，无业务语义）"]
+        SCH["scheduler（3 个 job）<br/>行情 18:00 / 财务 3:15 / 选股 16:30"]
+        BG["spawn_bg 后台协程<br/>（任务队列已退役）"]
+        EVT["event_log 只写审计"]
+        ADP["adapters: embedding / reranker<br/>vector_store / pdf_parser"]
+    end
+
+    APP --> CORE
+
+    subgraph STORE["存储"]
+        PG[("PostgreSQL 16<br/>company/market/document/core/screener<br/>每模块一 schema")]
+        QD[("Qdrant<br/>稠密 + BM25 混合检索")]
+        RD[("Redis :6380 缓存")]
+    end
+
+    CORE --> PG & QD & RD
+    MK -->|akshare 子进程| AK["数据源<br/>Tencent / Sina / Eastmoney"]
+
+    LLM["全系统零 LLM（已全部退役）<br/>仅嵌入 BGE-M3 (Ollama)"]
+    APP -.-> LLM
 ```
 
 ### 2.1 技术栈
@@ -73,9 +84,9 @@ company → market / document → knowledge → screener
 | 模块 | 职责 | 关键文件 |
 |---|---|---|
 | `company` | **只读列表**（`GET /companies`，供文档关联下拉）；Company 表保留供 screener 数据质量统计、market search、document 外键读 | models / service / routes |
-| `market` | 行情、财务三表、比率层、估值分位、行业分类——**数字唯一事实源** | `service/` + `routes/` 子目录 + akshare_executor |
+| `market` | 行情、财务三表、行业分类、数据保鲜——**数字唯一事实源** | `service/` + `routes/` 子目录 + akshare_executor |
 | `document` | 年报 PDF 上传→解析（表格按词坐标重建 Markdown）→切片打标（mda/risk/notes/announcement）→嵌入→索引 | content_classifier / table_extractor |
-| `knowledge` | 混合 RAG（Qdrant 稠密 + BM25 稀疏 + RRF + Reranker）、检索服务（问答已退役） | service / routes |
+| `knowledge` | 混合 RAG（Qdrant 稠密 + BM25 稀疏 + RRF + Reranker）；仅内部检索（screener 证据），查询路由已随九次简化删除 | service |
 | `screener` | 价值筛选全链：量化初筛、事实检查、三段报告（见 §4，18 个文件） | compose / screening / fact_checks / report |
 | `core` | 配置、DB、调度、事件审计、embedding 适配 | 见下 |
 
@@ -99,7 +110,16 @@ company → market / document → knowledge → screener
 
 ### 4.1 筛选流水线（零 LLM）
 
+```mermaid
+flowchart LR
+    A["① 规则组装<br/>compose.py: 8 套内置预设<br/>quant/qualitative/fact 三通道"] --> B["② 股票池卫生<br/>ST/退市/停牌/低换手/小市值"]
+    B --> C["③ 量化初筛<br/>52 指标 × 预设评估<br/>行业隔离 + 单行业上限"]
+    C --> D["④ 事实检查（确定性）<br/>audit_opinion / litigation / cash_coverage<br/>fail→reject / not_found→insufficient"]
+    D --> E["⑤ 判定落库<br/>确定性 ScreenerJudgement<br/>逐只幂等"]
+    E --> F["⑥ 三段报告（Markdown）<br/>筛选→事实检查→不推荐原因<br/>+较上一轮对比 + 回测徽标"]
 ```
+
+```text
 POST /api/v1/screener/runs（mode 必须为 presets）
   │
   ├─① 规则组装     compose.py：8 套只读内置预设 → quant_rules / qualitative / fact_checks 三通道（纯函数，零 LLM）
@@ -150,7 +170,7 @@ POST /api/v1/screener/runs（mode 必须为 presets）
 | `document` | documents, document_chunks（content_type 打标） | 活跃 |
 | `core` | event_log（只写审计；task_records 表为退役队列残留） | 部分活跃 |
 | `screener` | screener_runs, screener_judgements（confidence 列保留恒空）, screener_metric_defs, screener_presets 活跃；screener_rules, screener_portfolios, performance_snapshots, backtest_runs **表保留代码已删** | 部分活跃 |
-| `research` / `portfolio` / `ai` | 旧表 | **代码已删，表保留** |
+| `research` / `portfolio` / `ai` | 旧表（含 ai.prompt_templates 残留记录） | **代码已删，表保留** |
 
 迁移：Alembic 线性链 ~30 版本；向量不进 PG（Qdrant 独立 collection）。
 
@@ -203,12 +223,16 @@ src/
 | 2026-11-25 三次简化 | **LLM 深判整体退役**（judge/judge_eval/eval/证据守卫）、变化日报+Webhook、回测 service 层（状态机+任务 handler）、CSV 导出/自选推送端点、15 个排查脚本归档 | 5fc43f3..7f6494d |
 | 2026-11-26 六次简化 | **知识库问答退役（全系统零 LLM：adapters/llm.py、llm_usage.py、LLM 协议与配置）**、公司中心退役（删 CRUD/thesis/自选，只留 GET /companies）、news_service 删除、ScreenerBacktestRun ORM 删除（表保留）；**券商 cash_coverage 豁免修复**（exempt 态）、报告轮次对比、confidence 退役、预设证据分层（grade 徽标 + 定时默认改 financial,value） | 4105dd4..abc90c4 |
 | 2026-11-26 七次简化 | **task_manager 持久任务队列退役**（后台协程直跑，删 tasks/retry 端点）、事件查询/清理 API 删除（event_log 只写保留）、比率层+估值分位整链删除（ratio_service/routes/前端 hook）、profile 摄取链删除（3 端点+service）、company_tags 空壳+openapi.json+generate_openapi.py 删除、Makefile 坏目标清理、**测试假向量化解耦 Ollama**（4 个环境豁免转绿） | a6ae52f..5812914 |
+| 2026-11-27 八次简化 | 复活文件 core/event_routes.py、shared_queries 零引用模块、ValuationRepository 孤儿类、SECRET_KEY 等无用配置删除；运维工具去 task_records 段；EventLogger 收缩为只写（-95 行） | c2db045..1fbe308 |
+| 2026-11-27 九次简化 | ingest_single_company 单只报表补采链删除（连锁 4 个 fetch/parse 死函数）、knowledge 只读查询路由删除（service 保留供内部检索）、3 个零引用脚本删除、前端 useDelete/useIngestFinancials 死钩子删除 | fb25e04..e698c57 |
 
-> 七次简化设计：`2026-11-26-infra-deadlink-cleanup-design.md`（S1.3 DI getter 勘察结论：10/10 均有消费方，无可删）。
+> 七次简化设计：`2026-11-26-infra-deadlink-cleanup-design.md`（S1.3 DI getter 勘察结论：10/10 均有消费方，无可删）。八/九次：`2026-11-27-eighth-simplify-residual-design.md`、`2026-11-27-ninth-simplify-deadcode-design.md`。
 
 回捡方式：`git revert` 对应提交；DB 表全部保留。
 
 ## 9. 已知架构级缺口 / 下一步
+
+> 完整评估与候选方向见 `docs/superpowers/specs/2026-11-27-usability-assessment-next-steps.md`（九次简化后记录）。摘要：实用性 7/10（工具）/ 4/10（选股系统）；下次优先级 = ①推荐结果长期跟踪（vs 沪深300）→ ②排雷面扩容（商誉/质押/减持三项确定性检查）→ ③预设自演化。均为加法，独立立项。
 
 1. **估值规则分位数化**：硬编码绝对阈值（pe<25）改为行业分位数（industry_ranking 数据已有）
 2. 回测市值用「当前总股本 × 历史价」近似，频繁再融资公司有偏差
