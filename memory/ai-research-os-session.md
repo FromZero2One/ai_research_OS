@@ -11,6 +11,14 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-11-27（八次简化：评审漏网残留清理）**:
+  - c2db045 核心死代码：删 core/event_routes.py（S1.2 漏网复活的 4 个只读事件端点）、core/shared_queries.py（零调用方）、ValuationRepository 孤儿类（ValuationHistory ORM/表保留）、config SECRET_KEY/ACCESS_TOKEN_EXPIRE_MINUTES（security 早已删，字段零消费）。
+  - b31de0a 运维工具适配队列退役：reset_stuck_runs/index_pending_parallel 去掉 task_records 操作段；tools/README 去 reindex_pending_docs 条目。
+  - d578555 事件服务收缩为只写：删 EventLogger 4 个只读查询方法 + to_dict（评审 Minor 顺手清）。
+  - 整分支评审：**Ready，0 Critical / 0 Major**；3 Minor 全部处理或核实排除（docstring 无矛盾、README task_records 表述正确）。
+  - 验证：pytest core/market/screener_api 32+27 passed；app import OK；ruff 绿。
+  - **裁定留档**：`/scheduler/run/{job_name}` 保留（运维手动触发唯一入口）；valuation_history/task_records/prompt_templates 表按删类留表约定不动。
+  - main 领先远端 4 个提交，待用户说推再推。
 - **2026-11-27（七次简化全部收尾）**:
   - S4 提交（5812914 测试与本地环境解耦）：conftest 新增 `_fake_embedding` autouse fixture（确定性 8 维假向量），**4 个 Ollama 环境豁免转绿**，豁免清单收窄至 4 个日期依赖/历史遗留；删 run_dev.sh；.env.example AKSHARE_MCP_DIR 改 Windows 示例。
   - Task F 提交（a37a94e 文档同步）：README/USAGE/backend+frontend README/ARCHITECTURE/AGENTS 全面更新七次简化口径（后台直跑、已删端点清单、豁免清单、瘦身记录补行）。
