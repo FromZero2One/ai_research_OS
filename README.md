@@ -183,13 +183,14 @@ Visit **http://localhost:5173** — the Screener workspace（价值推荐清单�
 | 方向 | 状态 | 内容 |
 |---|---|---|
 | ~~数据质量看板~~ | ✅ | 覆盖矩阵 `GET /market/freshness/coverage` + Market 页卡片 |
-| ~~比率层 + 历史分位~~ | ✅ 2026-10-15 | `market/ratio_service.py` 派生毛利率/净利率+透出 ROE/负债率/周转率等；`market.valuation_history` 表（akshare `stock_a_indicator_lg` 全序列入 PG）算 PE/PB 历史分位；API `/market/ratios/{ticker}[/valuation-percentile]`；报告区块 + CompanyDetail 卡片 |
+| ~~比率层 + 历史分位~~ | ⚰️ 2026-11-26 退役 | 曾经：`market/ratio_service.py` 派生比率 + PE/PB 历史分位（`/market/ratios*`）。整链零消费（CompanyDetail 卡片随公司中心退役），已随七次简化删除；`valuation_history` 表保留 |
 | ~~覆盖矩阵定性维度~~ | ✅ 2026-10-15 | 矩阵新增定性列：已索引文档含 mda/risk 切片 → ok；仅已索引 → partial；无 → missing；纳入 worst_health |
 | ~~预设标准库（Screener v1.5）~~ | ✅ 2026-10-24 | 42 指标（TTM 估值 + 现金流质量 + 因子深度 + 银行/保险专属）+ 8 内置预设（含银行/保险价值）+ 组合模式；股票池卫生；申万行业分类与金融行业隔离；回测风险指标（Sharpe/Sortino/Calmar/年化超额） |
 | ~~项目瘦身聚焦价值筛选~~ | ✅ 2026-11-24 | 删除 research/portfolio/ai/dashboard 四模块代码，数据库表保留；文档同步更新 |
 | ~~二次瘦身：价值推荐聚焦~~ | ✅ 2026-11-25 | 删组合/再平衡、表现跟踪/快照、回测交互路由（引擎保留为脚本）、freeform 模式、运行取消、近似命中；预设只读化；新增 `fact_checks.py` 确定性事实检查、报告四段投资理由结构、`GET /screener/latest-report`；前端收缩为价值推荐清单视图 |
 | ~~三次简化：深判退役~~ | ✅ 2026-11-25 | 删 LLM 深判（judge/eval）、diff/notify/Webhook、回测 service 层、CSV 导出与自选推送端点；报告改三段（量化筛选/事实检查/不推荐与存疑原因）；运行链路零 LLM、单轮 ≤2 分钟；历史排查脚本归档 `backend/tools/archive/` |
 | ~~六次简化：问答与公司中心退役~~ | ✅ 2026-11-26 | 删知识库问答（全系统零 LLM，仅 embedding 保留）、公司中心（仅留 `GET /companies`）、`news_service.py`、`ScreenerBacktestRun` ORM 类（表保留）、confidence 字段（列保留恒空）；cash_coverage 券商口径豁免（exempt）；报告新增「较上一轮」轮次对比；预设证据分层（`PRESET_EVIDENCE`）；`SCREENER_SCHEDULE_PRESETS` 默认改 `financial,value` |
+| ~~七次简化：infra 退役与死链清理~~ | ✅ 2026-11-26 | 删 task_manager 持久任务队列（后台协程直跑）、事件查询/清理 API、比率层+估值分位整链、profile 摄取链、company_tags 空壳、openapi.json 生成链、Makefile 坏目标；测试假向量化解耦 Ollama（豁免清单收窄至 4 个日期依赖类） |
 
 收尾待办（小项）：Market.vue 覆盖网格列数动态化（当前硬编码 `repeat(5, 90px)`）；test_finalize_session 补 LLM mock（真实 LLM 调用挂起）；qualColor 硬编码色值统一 CSS 变量。
 

@@ -143,11 +143,11 @@ PostgreSQL 用 schema 做模块隔离，初始化 SQL 见 `docker/init.sql`：
 
 | Schema | 表 |
 |--------|-----|
-| `company` | companies, company_tags |
+| `company` | companies（company_tags 表保留，ORM 已删） |
 | `market` | stock_prices, financial_metrics（含 announcement_date，PIT）, valuation_history（估值历史，PE/PB 分位源）, stock_industry（申万/新浪行业）, data_freshness |
 | `document` | documents, document_chunks（含 content_type：mda/risk/notes/announcement/other） |
 | `research` / `portfolio` / `ai` | **代码已删除（2026-11-24），表保留未清理** |
-| `core` | event_log, task_records（observations 表为已删观测引擎残留） |
+| `core` | event_log（只写审计；task_records/observations 表为已删模块残留） |
 | `screener` | screener_rules*（代码已删，表保留）, screener_runs, screener_judgements, screener_metric_defs, screener_presets, screener_portfolios*（代码已删，表保留）, performance_snapshots*（同上） |
 
 - `knowledge` 无独立 schema：复用 document 表 + Qdrant 向量
@@ -180,7 +180,6 @@ PYTHONPATH=. python scripts/seed_data.py
 - 异常统一走 `core/exceptions.py` → `api/app.py` 集中 handler，返回结构化 JSON：404 / 422 / 409 / 401 / 403 / 502 / 500
 - 接口速查：直接看各模块 `routes.py`，或根目录 `USAGE.md`「功能模块详解」
 - Screener 报告指针：`GET /api/v1/screener/latest-report` 返回最近一次 completed 运行的报告路径/内容（无报告时 404，前端优雅降级）
-- 比率层端点：`GET /api/v1/market/ratios/{ticker}`（财务比率）、`GET /api/v1/market/ratios/{ticker}/valuation-percentile`（PE/PB 历史分位）
 - 时间戳：数据库/API 统一使用 UTC（ISO 8601 带 `+00:00`）；前端展示转浏览器本地时区，报告内时间标注本地偏移
 
 ## 配置与环境变量
@@ -247,13 +246,13 @@ cd backend
 
 ## 后台任务
 
-`core/task_manager.py`：PostgreSQL 持久化 `core.task_records` + worker 循环 + 自动重试 + `(type,key)` 去重 + 启动恢复。
+后台执行为进程内直跑协程（`core/background.py` 的 `spawn_bg`，fire-and-forget）：选股触发、文档上传索引均经此路径；task_manager 持久任务队列已随七次简化退役（2026-11-26），幂等由 `screener_runs` 唯一索引与索引天然幂等兜底。
 
-APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工作日 2:00）、`financial_data_update`（工作日 3:15，全市场财务三表刷新，三类数据源 SAVEPOINT 隔离）、`screener_schedule`（工作日 16:30，定时选股）、`event_log_cleanup`（周一 3:00）。状态见 `GET /api/v1/scheduler/status`。（`performance_snapshot` 任务已随表现跟踪删除；变化日报与失败告警 Webhook 已随三次简化删除，2026-11-25。）
+APScheduler 定时任务（`core/scheduler.py`）：`market_data_update`（工作日 2:00）、`financial_data_update`（工作日 3:15，全市场财务三表刷新，三类数据源 SAVEPOINT 隔离）、`screener_schedule`（工作日 16:30，定时选股）。状态见 `GET /api/v1/scheduler/status`。（`event_log_cleanup` 清理任务已随事件查询 API 退役删除，event_log 只写保留。）
 
 ## 测试
 
 ```bash
 make test        # pytest，专用 airesearch_test 库 + 隔离 Qdrant 集合
 ```
-2026-11-24 一次瘦身删除 research/portfolio/ai 用例；2026-11-25 二次瘦身删除组合/表现/取消/近似命中/freeform 用例（新增 `test_fact_checks.py`）；三次简化删除 judge/judge_eval/diff/notify/backtest service/actions 用例（当前 ~330 用例水平）。既有失败豁免：`test_announcement_date_filters_future_data`、`test_presets_union_with_financials`（日期依赖）、`test_snippet_hit_with_citation_kept`（'SnippetKnowledge' 无 session 属性）、`test_skips_when_metric_present` 及 document/knowledge 4 个 Ollama 环境失败。
+2026-11-24 一次瘦身删除 research/portfolio/ai 用例；2026-11-25 二次瘦身删除组合/表现/取消/近似命中/freeform 用例（新增 `test_fact_checks.py`）；三次简化删除 judge/judge_eval/diff/notify/backtest service/actions 用例；七次简化测试改用确定性假向量，不再依赖 Ollama（2026-11-26，当前 ~330 用例水平）。既有失败豁免：`test_announcement_date_filters_future_data`、`test_presets_union_with_financials`、`test_snippet_hit_with_citation_kept`、`test_skips_when_metric_present`（日期依赖/历史遗留 4 个）。

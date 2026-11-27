@@ -64,13 +64,9 @@ npm run dev            # http://localhost:5173
 | `CommandPalette.vue` | ⌘K 全局命令面板 |
 | `Sidebar.vue` | 侧边栏导航 |
 
-## 类型生成（按需）
+## 类型生成（已移除）
 
-前端当前使用 `stores/api.ts` 手写接口；OpenAPI 类型生成管线保留为按需工具：
-
-```bash
-npm run gen            # 后端生成 openapi.json → src/types/api.ts
-```
+前端使用 `stores/api.ts` 手写接口；OpenAPI 类型生成管线已随七次简化删除（openapi.json 过时且无消费方，2026-11-26）。
 
 ## 后端文档
 

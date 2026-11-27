@@ -275,13 +275,11 @@ GET  /api/v1/market/prices/AAPL                            # 查询采集的数�
 GET /api/v1/market/prices/600519       # 日K线数据（PG 缓存 → akshare 直连）
 GET /api/v1/market/search?query=茅台    # 搜索公司（PG Companies 表）
 GET /api/v1/market/financials/600519   # 财务指标(EPS/营收/ROE等, 财务摘要直连)
-GET /api/v1/market/info/600519         # 估值(PE/PB/总市值) + 最新价
 GET /api/v1/market/freshness/coverage  # 数据覆盖矩阵（关注公司 × 数据类型，含定性覆盖维度：是否已索引年报正文 mda/risk）
-GET /api/v1/market/ratios/600519       # 财务比率（毛利率/净利率等，最近3期）
-GET /api/v1/market/ratios/600519/valuation-percentile  # A股 PE/PB 历史分位
 ```
 
 > 行情/财务采集链：PG 缓存优先，未命中走 akshare 子进程（Tencent/Sina/Eastmoney），可配云端 MCP 兜底（`AKSHARE_CLOUD_MCP_URL`）。
+> 比率与估值分位端点、`/market/info`、`/market/profile/*` 已随七次简化删除（零消费死链，2026-11-26）。
 
 ---
 
@@ -341,13 +339,7 @@ GET /api/v1/knowledge/search/document/{document_id}?query=...  # 只搜索指定
 
 ### 类型系统
 
-前端视图当前使用 `src/stores/api.ts` 中手写的 TypeScript 接口；OpenAPI 类型生成管线保留为按需工具（当前视图未引用生成的类型文件）：
-
-```bash
-# 从后端 OpenAPI 模式按需生成前端类型
-cd frontend && npm run gen
-# 生成: backend/scripts/generate_openapi.py → openapi.json → src/types/api.ts
-```
+前端视图使用 `src/stores/api.ts` 中手写的 TypeScript 接口。OpenAPI 类型生成管线已随七次简化删除（`openapi.json` 过时且无消费方，2026-11-26）。
 
 ---
 
@@ -397,11 +389,12 @@ GET  /api/v1/screener/runs/{id}            # 运行详情（含逐只确定性�
 GET  /api/v1/screener/latest-report        # 最近一次 completed 运行的报告指针（404 优雅降级）
 GET  /api/v1/screener/runs/{id}/report     # Markdown 报告
 GET  /api/v1/screener/schedule              # 定时快照（cron/预设/下次运行）
-POST /api/v1/screener/schedule/run          # 后台立即运行一轮定时选股
+POST /api/v1/screener/schedule/run          # 后台立即运行一轮定时选股（协程直跑，已在运行时 409）
 GET  /api/v1/screener/data-quality          # 财务期/指标覆盖/行情覆盖/知识库状态与告警
 ```
 
 > **2026-11-25 已删除的端点**：`POST /runs/{id}/cancel`（运行取消）、`/runs/{id}/portfolio*` 与 `/portfolios/*`（组合/再平衡）、`/runs/{id}/performance*`（表现跟踪/快照）、`/backtests*`（回测交互路由——回测脚本 `backend/tools/run_backtest_queue.py` 直调纯函数）、`GET /runs/{id}/diff`（变化日报）、`GET /runs/{id}/export`（CSV 导出）、`POST /runs/{id}/watchlist`（自选推送）。
+> **2026-11-26 七次简化已删除**：`GET /scheduler/tasks` 与 `POST /scheduler/tasks/{id}/retry`（持久任务队列退役，后台改协程直跑）；`GET /events*`（事件查询 API）；`POST /market/profile/{ticker}/ingest`、`GET /market/info/{ticker}`、`GET /market/stock-profile/{ticker}`（概况摄取链）；`GET /market/ratios*`（比率与估值分位）。
 
 > 全流程约 ≤2 分钟（全市场快照 + 财务补采 + 事实检查确定性判定，无 LLM 调用）。报告落 `backend/screener/reports/`。
 >
@@ -542,11 +535,11 @@ ai_research_os/
 │   │   ├── interfaces.py      # Protocol 接口(Embedding/VectorStore/LLM/服务协议)
 │   │   ├── exceptions.py      # 统一异常体系
 │   │   ├── logging.py         # structlog配置
-│   │   ├── scheduler.py       # APScheduler调度器(market_data/cleanup)
-│   │   ├── scheduler_routes.py# 调度 API 路由
+│   │   ├── scheduler.py       # APScheduler调度器(market_data/financial/screener)
+│   │   ├── scheduler_routes.py# 调度 API 路由(状态+手动触发)
+│   │   ├── background.py      # 进程内后台协程(spawn_bg, task_manager 退役后直跑)
 │   │   ├── market_sync.py     # 市场数据定时采集
-│   │   ├── event_service.py / event_log.py / event_routes.py / event_cleanup.py
-│   │   ├── task_manager.py    # 持久任务队列(Postgres+worker)
+│   │   ├── event_service.py / event_log.py   # 事件写入审计(只写,查询API已删)
 │   │   ├── security.py        # JWT工具(V1未启用,有意保留)
 │   │   └── adapters/          # 外部服务适配器
 │   │       ├── embedding.py   # BGE-M3嵌入(Ollama API)

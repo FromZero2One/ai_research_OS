@@ -87,9 +87,9 @@ company → market / document → knowledge → screener
 | `database.py` | 异步引擎 + `get_db` / `managed_session` |
 | `container.py` | DI 容器（懒加载单例） |
 | `scheduler.py` | APScheduler：market_data_update（工作日 18:00）、financial_data_update（3:15）、screener_schedule（16:30）——仅此三个 job |
+| `background.py` | 进程内后台协程 `spawn_bg`（fire-and-forget，强引用防 GC）——选股触发/文档索引的统一后台执行路径 |
 | `event_log.py` | `core.event_log` 只写审计（never update/delete），记录 screener.triggered/completed/failed |
-| `event_service.py` / `event_routes.py` / `event_cleanup.py` | 事件查询/清理 API（**四次简化候选删除项**） |
-| `task_manager.py` | PG 持久任务队列（**四次简化候选退役项**，已立项未执行） |
+| `event_service.py` | EventLogger 写入（查询/清理 API 已随七次简化删除） |
 | `financial_sync.py` / `market_sync.py` | 定时数据采集（SAVEPOINT 隔离） |
 | `screener_schedule.py` | 定时选股（默认跑 financial,value；失败仅 logger.error，无推送） |
 | `adapters/` | embedding（BGE-M3）、reranker、vector_store、cache、pdf_parser |
@@ -145,10 +145,10 @@ POST /api/v1/screener/runs（mode 必须为 presets）
 
 | Schema | 表 | 状态 |
 |---|---|---|
-| `company` | companies, company_tags | 活跃（写入口已删，仅读 + profile ingest 写） |
-| `market` | stock_prices, financial_metrics（PIT 公告日）, valuation_history, stock_industry, data_freshness | 活跃 |
+| `company` | companies（company_tags 表保留，ORM 已删） | 活跃（写入口已删，仅读；写入仅剩 seed_data.py） |
+| `market` | stock_prices, financial_metrics（PIT 公告日）, valuation_history（无喂数入口，表保留）, stock_industry, data_freshness | 活跃 |
 | `document` | documents, document_chunks（content_type 打标） | 活跃 |
-| `core` | event_log（只写）, task_records | 活跃 |
+| `core` | event_log（只写审计；task_records 表为退役队列残留） | 部分活跃 |
 | `screener` | screener_runs, screener_judgements（confidence 列保留恒空）, screener_metric_defs, screener_presets 活跃；screener_rules, screener_portfolios, performance_snapshots, backtest_runs **表保留代码已删** | 部分活跃 |
 | `research` / `portfolio` / `ai` | 旧表 | **代码已删，表保留** |
 
@@ -190,9 +190,9 @@ src/
 | 异常 | `core/exceptions.py` 统一 handler → 结构化 JSON |
 | 时间 | 全链 UTC ISO-8601 |
 | 审计 | `core.event_log` 只写（screener 触发/完成/失败等） |
-| 任务 | HTTP 触发的筛选经 task_manager 持久队列 |
+| 任务 | HTTP 触发的筛选/文档索引经 `core/background.py` 协程直跑（task_manager 持久队列已退役）；幂等靠 screener_runs 唯一索引 |
 | 可观测 | structlog；`/scheduler/status`；数据覆盖 `GET /market/freshness/coverage` |
-| 测试 | pytest ~315 用例（conftest 自动建 `airesearch_test` 库，拒绝连开发库）；ruff 仅改动文件；**测试与实盘运行严禁并发**（pytest 会清 dev 库 screener 表） |
+| 测试 | pytest ~330 用例（conftest 自动建 `airesearch_test` 库，拒绝连开发库；embedding 用确定性假向量，不依赖 Ollama）；ruff 仅改动文件；**测试与实盘运行严禁并发**（pytest 会清 dev 库 screener 表） |
 
 ## 8. 已裁剪模块（瘦身全记录）
 
@@ -202,8 +202,9 @@ src/
 | 2026-11-25 二次瘦身 | 组合/再平衡、表现跟踪与快照、回测交互路由（引擎保留）、freeform 模式、运行取消、近似命中；预设只读化；fact_checks 建立；报告四段化；前端收缩 | b0a2bed..210946a |
 | 2026-11-25 三次简化 | **LLM 深判整体退役**（judge/judge_eval/eval/证据守卫）、变化日报+Webhook、回测 service 层（状态机+任务 handler）、CSV 导出/自选推送端点、15 个排查脚本归档 | 5fc43f3..7f6494d |
 | 2026-11-26 六次简化 | **知识库问答退役（全系统零 LLM：adapters/llm.py、llm_usage.py、LLM 协议与配置）**、公司中心退役（删 CRUD/thesis/自选，只留 GET /companies）、news_service 删除、ScreenerBacktestRun ORM 删除（表保留）；**券商 cash_coverage 豁免修复**（exempt 态）、报告轮次对比、confidence 退役、预设证据分层（grade 徽标 + 定时默认改 financial,value） | 4105dd4..abc90c4 |
+| 2026-11-26 七次简化 | **task_manager 持久任务队列退役**（后台协程直跑，删 tasks/retry 端点）、事件查询/清理 API 删除（event_log 只写保留）、比率层+估值分位整链删除（ratio_service/routes/前端 hook）、profile 摄取链删除（3 端点+service）、company_tags 空壳+openapi.json+generate_openapi.py 删除、Makefile 坏目标清理、**测试假向量化解耦 Ollama**（4 个环境豁免转绿） | a6ae52f..5812914 |
 
-> 立项未执行：四次简化（task_manager 退役、事件查询/清理 API 删除、DI 闲置 getter 清理）——`2026-11-26-infra-retire-simplify-design.md`。
+> 七次简化设计：`2026-11-26-infra-deadlink-cleanup-design.md`（S1.3 DI getter 勘察结论：10/10 均有消费方，无可删）。
 
 回捡方式：`git revert` 对应提交；DB 表全部保留。
 
@@ -212,4 +213,3 @@ src/
 1. **估值规则分位数化**：硬编码绝对阈值（pe<25）改为行业分位数（industry_ranking 数据已有）
 2. 回测市值用「当前总股本 × 历史价」近似，频繁再融资公司有偏差
 3. 数据源单点：财务依赖东财
-4. `frontend/openapi.json` 已过时（可选重生成：`npm run gen`）
