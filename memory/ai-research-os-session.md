@@ -11,6 +11,11 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-11-27（九次简化：死代码清理）**:
+  - fb25e04 后端：删 ingest_single_company 单只补采链（连锁 fetch/parse_balance_sheet_row、fetch/parse_cash_flow_row，-73 行）、knowledge 只读 search 路由 + test_knowledge.py（前端零调用，service 保留供 screener 证据检索）、零引用脚本 cleanup_vectors / reseed_builtin_presets / backfill_announcement_dates。
+  - eeb155c 前端：删 api.ts 的 useDelete / useIngestFinancials 死钩子。
+  - 验证：全量 pytest 295 passed（3 失败均为既定豁免清单）、npm build 过、ruff 绿。
+  - main 领先远端 3 个提交，待用户说推再推。
 - **2026-11-27（八次简化：评审漏网残留清理）**:
   - c2db045 核心死代码：删 core/event_routes.py（S1.2 漏网复活的 4 个只读事件端点）、core/shared_queries.py（零调用方）、ValuationRepository 孤儿类（ValuationHistory ORM/表保留）、config SECRET_KEY/ACCESS_TOKEN_EXPIRE_MINUTES（security 早已删，字段零消费）。
   - b31de0a 运维工具适配队列退役：reset_stuck_runs/index_pending_parallel 去掉 task_records 操作段；tools/README 去 reindex_pending_docs 条目。
