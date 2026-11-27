@@ -215,6 +215,34 @@ def _disable_background_tasks(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture(autouse=True)
+def _fake_embedding(monkeypatch: pytest.MonkeyPatch):
+    """Replace the embedding model with a deterministic fake.
+
+    Tests must never depend on a real Ollama/sentence-transformers install:
+    document indexing and knowledge search only need consistent vectors
+    (same text → same vector) for storage + retrieval.
+    """
+
+    class _FakeEmbedding:
+        @property
+        def dimension(self) -> int:
+            return 8
+
+        async def embed(self, texts: list[str]) -> list[list[float]]:
+            return [[float((len(t) * (i + 1)) % 100) / 100 for i in range(8)] for t in texts]
+
+        async def embed_query(self, text: str) -> list[float]:
+            return (await self.embed([text]))[0]
+
+    def _factory() -> _FakeEmbedding:
+        return _FakeEmbedding()
+
+    monkeypatch.setattr("core.adapters.embedding.create_embedding", _factory)
+    monkeypatch.setattr("document.service.create_embedding", _factory)
+    monkeypatch.setattr("knowledge.service.create_embedding", _factory)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_screener_spot_cache(monkeypatch: pytest.MonkeyPatch):
     """Don't write test snapshots into the shared dev Redis cache.
 

@@ -128,18 +128,14 @@ Company → Market + Document → Knowledge(RAG) → Screener(确定性筛选)
 ## 启动
 
 ```bash
-# 方式一：开发脚本（推荐，内置代理清理）
-./backend/run_dev.sh
-# 等价于: cd backend && ALL_PROXY= all_proxy= no_proxy=... PYTHONPATH=. uvicorn api.app:app --reload --host 0.0.0.0 --port 8000
-
-# 方式二：Makefile
+# 方式一：Makefile
 make dev-backend
 
-# 方式三：直接 uvicorn（必须先进入 backend/ 目录）
+# 方式二：直接 uvicorn（必须先进入 backend/ 目录）
 cd backend && ALL_PROXY= all_proxy= PYTHONPATH=. uvicorn api.app:app --reload --host 0.0.0.0 --port 8000
 ```
 
-> **注意**：`run_dev.sh` 内含硬编码绝对路径（`/home/wsm/codes/ai_research_OS/backend`），换机器需改。必须从 `backend/` 目录启动（`UPLOAD_DIR=data/uploads` 为相对路径）。代理环境变量会干扰 httpx，需 `ALL_PROXY= all_proxy=` 前缀。
+> **注意**：必须从 `backend/` 目录启动（`UPLOAD_DIR=data/uploads` 为相对路径）。代理环境变量会干扰 httpx，需 `ALL_PROXY= all_proxy=` 前缀。Windows 一键启动用仓库根目录 `start-dev.cmd`。
 
 ## 数据库（8 个 Schema）
 

@@ -11,6 +11,12 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-11-26（七次简化 S1~S3 完成，S4 待收尾）**:
+  - 六个提交已落地（main 领先远端 8 个，未推送）：a6ae52f 任务队列退役（后台改直跑协程，删 task_manager/document.tasks/reindex_pending_docs，`core.task_records` 删类留表；幂等靠 screener_runs 唯一索引）、d2c0ba4 事件查询/清理接口退役（event_log 写审计保留）、60f840c 估值分位与比率层死链清理（ratio_service 整模块+路由+前端 hook，`valuation_history` 表保留）、57e5223 公司概况摄取链退役（profile_routes/profile_service/协议/getter；Company 写入仅剩 seed_data）、407dd22 company_tags 空壳+openapi.json+generate_openapi.py 删除（顺手修复 seed_data 坏的 svc.create 调用）、012ff8b Makefile 5 个坏目标清理。
+  - S1.3 Ruling：DI 10 个 getter 全有消费方，无可删。
+  - **S4 代码已改未提交**（工作区 4 文件）：tests/conftest.py 新增 `_fake_embedding` autouse fixture（确定性 8 维假向量，monkeypatch create_embedding 三处导入点）——document+knowledge 21 用例全绿，**4 个 Ollama 环境豁免转绿**；删 backend/run_dev.sh（硬编码旧机器路径）；.env.example AKSHARE_MCP_DIR 改 Windows 示例；backend/README 启动章节同步。
+  - **明天继续（见 SDD 台账 `​.superpowers/sdd/2026-11-26-infra-deadlink-cleanup/progress.md`）**：①启动 Docker Desktop + compose up（收工时 Docker 已关）②无并发跑关键五文件回归（core/screener_api/document/knowledge/freshness_coverage）③过目提交信息提交 S4 ④Task F：文档同步（README×3/USAGE/ARCHITECTURE/memory）+ 整分支评审 + 推送（用户说推才推）。
+  - **运维教训**：全量 pytest 后台运行期间又起本地 pytest 会互踩 DB 锁（LockNotAvailable 错误潮）；S4 验证必须无并发。
 - **2026-11-26（六次简化完成）**:
   - ①知识库问答退役：删 `POST /knowledge/ask`、`GET /knowledge/llm/models`；删 `core/adapters/llm.py`、`core/llm_usage.py`；删配置 `LLM_PROVIDER`/`OPENAI_API_KEY`/`OPENAI_MODEL`/`OPENAI_BASE_URL`/`OLLAMA_MODEL`/`OLLAMA_NUM_CTX`/`EVIDENCE_CLASSIFIER`。全系统零 LLM（仅 Ollama embedding 保留）。
   - ②公司中心退役：删公司 CRUD/thesis/watch API 与前端 Companies.vue、CompanyDetail.vue、Sidebar/路由/命令面板入口；仅保留 `GET /companies`（文档中心「关联公司」下拉用）。Company 表与 ORM 模型保留（screener 数据质量统计、market search/profile/freshness、document.company_id 外键仍读）。
