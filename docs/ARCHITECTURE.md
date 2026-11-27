@@ -72,7 +72,7 @@ company → market / document → knowledge → screener
 
 | 模块 | 职责 | 关键文件 |
 |---|---|---|
-| `company` | **只读列表**（`GET /companies`，供文档关联下拉）；Company 表保留供 screener 数据质量统计、market search/profile、document 外键读 | models / service / routes |
+| `company` | **只读列表**（`GET /companies`，供文档关联下拉）；Company 表保留供 screener 数据质量统计、market search、document 外键读 | models / service / routes |
 | `market` | 行情、财务三表、比率层、估值分位、行业分类——**数字唯一事实源** | `service/` + `routes/` 子目录 + akshare_executor |
 | `document` | 年报 PDF 上传→解析（表格按词坐标重建 Markdown）→切片打标（mda/risk/notes/announcement）→嵌入→索引 | content_classifier / table_extractor |
 | `knowledge` | 混合 RAG（Qdrant 稠密 + BM25 稀疏 + RRF + Reranker）、检索服务（问答已退役） | service / routes |

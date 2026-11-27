@@ -75,7 +75,7 @@ Screener (量化初筛 → 事实检查确定性判定 → 报告)
 Markdown 价值推荐清单（三段：量化筛选 / 事实检查 / 不推荐与存疑原因）
 ```
 
-> 公司中心已退役（2026-11-26）：自选/Thesis/CRUD 删除，仅保留 `GET /companies` 供文档中心「关联公司」下拉；Company 表保留（screener 数据质量统计、market search/profile/freshness、document.company_id 外键仍读）。
+> 公司中心已退役（2026-11-26）：自选/Thesis/CRUD 删除，仅保留 `GET /companies` 供文档中心「关联公司」下拉；Company 表保留（screener 数据质量统计、market search/freshness、document.company_id 外键仍读）。
 
 **Dependency rule**: Dependencies go UP only. Screener can call Knowledge; Knowledge cannot call Screener.
 

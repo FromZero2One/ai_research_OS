@@ -1,1 +1,1 @@
-"""Company Center — company profiles, industry classification, tags, and links."""
+"""Company Center — read-only company list (document association picker)."""

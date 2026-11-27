@@ -23,10 +23,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 # ── Register all ORM models ────────────────────────────────────────────
-# Routers resolve services lazily via the DI container, so model
-# registration can no longer rely on route modules importing services
-# transitively. Import every model explicitly (same list as alembic/env.py)
-# so SQLAlchemy metadata and mapper configuration are always complete.
+# Routers resolve services lazily via the DI container. company/market/screener
+# models are imported explicitly here; core.event_log / document.models reach
+# Base.metadata via transitive imports (routes → container → services) — the
+# test suite's create_all verifies the set is complete. Keep the explicit list
+# in sync with alembic/env.py when adding modules.
 import company.models  # noqa: F401  # 注册模型到 Base.metadata
 import market.models  # noqa: F401
 import screener.models  # noqa: F401

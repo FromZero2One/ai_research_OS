@@ -52,10 +52,12 @@ async def seed() -> None:
         for data in SAMPLE_COMPANIES:
             try:
                 session.add(Company(**data, is_active=True))
+                await session.flush()  # 立即触发 unique 约束，重复 ticker 逐行跳过（幂等）
                 logger.info("  Created: %s (%s)", data["ticker"], data["name"])
                 created += 1
             except Exception as e:
                 logger.warning("  Skip %s: %s", data["ticker"], e)
+                await session.rollback()
 
         await session.commit()
         logger.info("Seeding complete: %d companies", created)

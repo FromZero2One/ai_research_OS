@@ -307,34 +307,3 @@ async def test_session() -> AsyncGenerator[AsyncSession, None]:
     async for session in _get_test_db():
         yield session
 
-
-# ── Sample data helpers ───────────────────────────────────────────────
-
-SAMPLE_COMPANY = {
-    "ticker": "TEST",
-    "name": "Test Corp",
-    "description": "A test company for unit testing",
-    "sector": "Technology",
-    "industry": "Software",
-    "headquarters": "Testville, TX",
-    "founded_year": 2020,
-    "employees": 100,
-    "website": "https://testcorp.example",
-    "tags": ["tech", "test"],
-}
-
-SAMPLE_RESEARCH = {
-    "title": "Test Research Session",
-    "question": "Is this a good test?",
-    "context": "Testing the research workflow",
-    "auto_plan": False,
-}
-
-SAMPLE_PROMPT_TEMPLATE = {
-    "name": "test-summarizer",
-    "description": "Test template",
-    "system_prompt": "You are a test assistant.",
-    "user_prompt_template": "Summarize: {text}",
-    "temperature": 0.3,
-    "max_tokens": 500,
-}

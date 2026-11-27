@@ -41,6 +41,6 @@ Personal AI investment-research assistant. FastAPI backend in `backend/` (Python
 
 - **No auth by design** — single-user local tool; `core/security.py` exists but is intentionally unused. Don't add JWT or expose the API publicly. CORS allows `http://localhost:5173` only.
 - API prefix is always `/api/v1`; FastAPI docs at http://localhost:8000/docs.
-- Frontend data access goes through `src/stores/api.ts` (TanStack Query hooks) — views don't call `fetch` directly. `npm install` depends on `legacy-peer-deps=true` in `frontend/.npmrc` — don't delete it. Typecheck via `npm run build` (`vue-tsc -b` runs first). OpenAPI type gen (`npm run gen`) is optional; the app uses hand-written calls.
-- Commits: conventional commits (`feat:`, `docs:`, `fix:`, `chore:`), straight to `main`. **No CI** — local ruff/mypy/pytest is the only verification gate.
-- Root-level scripts (`check_pg*.py`, `ingest_*.py`, `get_main_board.py`, ...) are one-off data-ingestion/DB-inspection scratch files, not part of the app.
+- Frontend data access goes through `src/stores/api.ts` (TanStack Query hooks) — views don't call `fetch` directly. `npm install` depends on `legacy-peer-deps=true` in `frontend/.npmrc` — don't delete it. Typecheck via `npm run build` (`vue-tsc -b` runs first).（OpenAPI 类型生成管线已随七次简化删除，api.ts 为手写接口。）
+- Commits: 「主题 + 冒号」风格，正文按件事编号（全局提交规范优先，不写 Conventional Commits），straight to `main`. **No CI** — local ruff/mypy/pytest is the only verification gate.
+- Root-level scripts are all archived under `backend/tools/archive/`（七次简化后根目录无一次性脚本）— not part of the app.

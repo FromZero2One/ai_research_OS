@@ -252,7 +252,7 @@ make ingest-sample # 加载示例数据
 
 公司中心 API 与前端页面已删除：CRUD、标签、Thesis、自选（watch/`is_active`）均不再可用，前端 Companies/CompanyDetail 页面与 Sidebar/路由/命令面板入口已移除。
 
-**保留**：`GET /api/v1/companies` 仅供文档中心「关联公司」下拉使用。Company 表与 ORM 模型保留（screener 数据质量统计、market search/profile/freshness、document.company_id 外键仍读）。
+**保留**：`GET /api/v1/companies` 仅供文档中心「关联公司」下拉使用。Company 表与 ORM 模型保留（screener 数据质量统计、market search/freshness、document.company_id 外键仍读）。
 
 ---
 
