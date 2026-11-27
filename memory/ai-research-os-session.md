@@ -11,6 +11,12 @@ metadata:
 `E:\Project\ai_research_OS\`（Windows；旧机器路径 /home/wsm/codes/... 已废弃）
 
 ## 变更日志
+- **2026-11-27（七次简化全部收尾）**:
+  - S4 提交（5812914 测试与本地环境解耦）：conftest 新增 `_fake_embedding` autouse fixture（确定性 8 维假向量），**4 个 Ollama 环境豁免转绿**，豁免清单收窄至 4 个日期依赖/历史遗留；删 run_dev.sh；.env.example AKSHARE_MCP_DIR 改 Windows 示例。
+  - Task F 提交（a37a94e 文档同步）：README/USAGE/backend+frontend README/ARCHITECTURE/AGENTS 全面更新七次简化口径（后台直跑、已删端点清单、豁免清单、瘦身记录补行）。
+  - 整分支评审（a6ae52f..a37a94e）：**Ready，0 Critical**；2 Major（M1 event_cleanup.py 孤儿模块、M2 seed_data 幂等回归）+ 4 Minor + nits 全部修复（2c6cb65 评审修复）。m2（/schedule/run TOCTOU）裁定可接受不修。
+  - 验证：pytest 五关键文件 53 passed / 0 failed；core+market 18 passed；npm build 绿。
+  - **main 领先远端 2 个提交（5812914 + a37a94e + 2c6cb65 = 3 个），待用户说推再推。**
 - **2026-11-26（七次简化 S1~S3 完成，S4 待收尾）**:
   - 六个提交已落地（main 领先远端 8 个，未推送）：a6ae52f 任务队列退役（后台改直跑协程，删 task_manager/document.tasks/reindex_pending_docs，`core.task_records` 删类留表；幂等靠 screener_runs 唯一索引）、d2c0ba4 事件查询/清理接口退役（event_log 写审计保留）、60f840c 估值分位与比率层死链清理（ratio_service 整模块+路由+前端 hook，`valuation_history` 表保留）、57e5223 公司概况摄取链退役（profile_routes/profile_service/协议/getter；Company 写入仅剩 seed_data）、407dd22 company_tags 空壳+openapi.json+generate_openapi.py 删除（顺手修复 seed_data 坏的 svc.create 调用）、012ff8b Makefile 5 个坏目标清理。
   - S1.3 Ruling：DI 10 个 getter 全有消费方，无可删。
