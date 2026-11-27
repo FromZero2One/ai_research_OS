@@ -13,7 +13,6 @@ from screener.ingest import (
     ingest_marketwide_bs_cf,
     ingest_marketwide_main_finance,
     ingest_marketwide_yjbb,
-    ingest_single_company,
 )
 
 
@@ -102,44 +101,6 @@ class TestIngestMarketwideMainFinance:
         assert by_metric["eps"] == 35.57
         assert by_metric["revenue_growth"] == 1.30
         assert by_metric["net_income_growth"] == -1.95
-
-
-class TestIngestSingleCompany:
-    async def test_bs_and_cf(self, test_session: AsyncSession, monkeypatch):
-        async def fake_bs(ticker):
-            return {
-                "REPORT_DATE": "2024-06-30 00:00:00",
-                "TOTAL_ASSETS": 3000.0, "TOTAL_LIABILITIES": 1000.0, "TOTAL_EQUITY": 2000.0,
-                "CURRENT_ASSET_BALANCE": 1500.0, "CURRENT_LIAB_BALANCE": 1000.0,
-            }
-
-        async def fake_cf(ticker):
-            return {"REPORT_DATE": "2024-06-30 00:00:00", "NETCASH_OPERATE": 5.0e10}
-
-        monkeypatch.setattr("screener.ingest.fetch_balance_sheet_raw", fake_bs)
-        monkeypatch.setattr("screener.ingest.fetch_cash_flow_raw", fake_cf)
-
-        n = await ingest_single_company(test_session, "600519")
-        await test_session.flush()
-
-        rows = (await test_session.execute(select(FinancialMetric).where(FinancialMetric.ticker == "600519"))).scalars().all()
-        names = {r.metric_name for r in rows}
-        assert n == 5  # total_assets / total_liabilities / debt_to_equity / current_ratio / operating_cash_flow
-        assert {"total_assets", "total_liabilities", "debt_to_equity", "current_ratio", "operating_cash_flow"} <= names
-
-    async def test_bs_failure_isolated(self, test_session: AsyncSession, monkeypatch):
-        """bs 拉取失败不阻塞 cf。"""
-        async def boom_bs(ticker):
-            raise RuntimeError("bs 接口挂了")
-
-        async def ok_cf(ticker):
-            return {"REPORT_DATE": "2024-06-30 00:00:00", "NETCASH_OPERATE": 5.0e10}
-
-        monkeypatch.setattr("screener.ingest.fetch_balance_sheet_raw", boom_bs)
-        monkeypatch.setattr("screener.ingest.fetch_cash_flow_raw", ok_cf)
-
-        n = await ingest_single_company(test_session, "600519")
-        assert n == 1  # 只有 operating_cash_flow
 
 
 class TestParseZcfzRow:

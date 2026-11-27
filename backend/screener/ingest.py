@@ -170,43 +170,6 @@ def _parse_one_yjbb(
     return entries
 
 
-def parse_balance_sheet_row(row: dict) -> list[FinancialMetricEntry]:
-    """资产负债表单行（最新期）→ 规模 + 偿债比率 entries。"""
-    year, period = _fiscal(row.get("REPORT_DATE", ""))
-    entries: list[FinancialMetricEntry] = []
-
-    def _add(metric: str, value: float | None) -> None:
-        if value is not None:
-            entries.append(
-                FinancialMetricEntry(fiscal_year=year, fiscal_period=period, metric_name=metric, metric_value=value)
-            )
-
-    total_assets = _num(row.get("TOTAL_ASSETS"))
-    total_liab = _num(row.get("TOTAL_LIABILITIES"))
-    total_equity = _num(row.get("TOTAL_EQUITY"))
-    _add("total_assets", total_assets)
-    _add("total_liabilities", total_liab)
-    if total_liab is not None and total_equity:
-        _add("debt_to_equity", total_liab / total_equity * 100)
-    # 银行/保险等 CURRENT_ASSET_BALANCE 恒为 0 → 流动比率无意义，跳过走缺数据路径
-    current_asset = _num(row.get("CURRENT_ASSET_BALANCE"))
-    current_liab = _num(row.get("CURRENT_LIAB_BALANCE"))
-    if current_asset and current_liab:
-        _add("current_ratio", current_asset / current_liab)
-    return entries
-
-
-def parse_cash_flow_row(row: dict) -> list[FinancialMetricEntry]:
-    """现金流量表单行（最新期）→ operating_cash_flow entry。"""
-    year, period = _fiscal(row.get("REPORT_DATE", ""))
-    v = _num(row.get("NETCASH_OPERATE"))
-    if v is None:
-        return []
-    return [
-        FinancialMetricEntry(fiscal_year=year, fiscal_period=period, metric_name="operating_cash_flow", metric_value=v)
-    ]
-
-
 # 东财 F10 主要指标（RPT_F10_FINANCE_MAINFINADATA）字段 → 指标键。
 # 注意：该接口的流动比率字段是 LD（不是 CURRENT_RATIO），速动比率是 SD；
 # stock_zcfz_em 原始表并没有 CURRENT_RATIO 列，故 current_ratio 只能从这里补。
@@ -391,20 +354,6 @@ def _child_single(ticker: str, fn: str) -> dict:
     return out if isinstance(out, dict) else {}
 
 
-async def fetch_balance_sheet_raw(ticker: str) -> dict:
-    """单只最新一期资产负债表原始行。"""
-    import asyncio
-
-    return await asyncio.to_thread(_child_single, ticker, "stock_balance_sheet_by_report_em")
-
-
-async def fetch_cash_flow_raw(ticker: str) -> dict:
-    """单只最新一期现金流量表原始行。"""
-    import asyncio
-
-    return await asyncio.to_thread(_child_single, ticker, "stock_cash_flow_sheet_by_report_em")
-
-
 # ── 编排层 ───────────────────────────────────────────────────────
 
 
@@ -431,28 +380,6 @@ async def ingest_marketwide_yjbb(db, date: str) -> int:
             logger.warning("yjbb 行入库失败 %s: %s", ticker, e)
     logger.info("全市场业绩报表入库: %d/%d 家", ok, len(raw))
     return ok
-
-
-async def ingest_single_company(db, ticker: str) -> int:
-    """单只补采资产负债表 + 现金流量表（初筛候选深判前调用）。
-
-    bs/cf 相互隔离：一边失败不影响另一边。返回写入指标数。
-    """
-    from core.logging import logger
-
-    total = 0
-    for fetch, parse in (
-        (fetch_balance_sheet_raw, parse_balance_sheet_row),
-        (fetch_cash_flow_raw, parse_cash_flow_row),
-    ):
-        try:
-            raw = await fetch(ticker)
-            entries = parse(raw)
-            if entries:
-                total += await upsert_metrics(db, ticker, entries)
-        except Exception as e:  # noqa: BLE001 — bs/cf 隔离
-            logger.warning("单只报表拉取失败 %s (%s): %s", ticker, fetch.__name__, e)
-    return total
 
 
 def _latest_report_date(today: _date | None = None) -> str:

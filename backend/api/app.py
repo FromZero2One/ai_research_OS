@@ -46,7 +46,7 @@ from core.exceptions import (
 from core.logging import configure_logging, logger
 from core.scheduler_routes import router as scheduler_router
 from document.routes import router as document_router
-from knowledge.routes import router as knowledge_router
+
 from market.routes.financial_routes import router as market_financial_router
 from market.routes.freshness_routes import router as market_freshness_router
 from market.routes.price_routes import router as market_price_router
@@ -225,7 +225,6 @@ def create_app() -> FastAPI:
     app.include_router(market_search_router, prefix="/api/v1")
     app.include_router(market_freshness_router, prefix="/api/v1")
     app.include_router(document_router, prefix="/api/v1")
-    app.include_router(knowledge_router, prefix="/api/v1")
     app.include_router(scheduler_router, prefix="/api/v1")
     app.include_router(screener_router, prefix="/api/v1")
 
