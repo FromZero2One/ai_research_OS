@@ -11,13 +11,12 @@
 | `prefill_periods.py` | 预补全回测所需报告期的财务数据（yjbb + 资产负债表 + 现金流 + F10），并验证完整性 |
 | `fetch_cninfo_reports.py` | **从巨潮资讯网批量下载年度报告 PDF**（按选股候选/指定运行） |
 | `upload_reports.py` | 把下载的年报批量上传到文档中心并等待索引（自动关联公司） |
-| `index_pending_parallel.py` | **并行索引所有未完成文档**（6 并发，绕过单线程任务队列；批量导入年报时用这个） |
-| `reindex_pending_docs.py` | 把未索引文档重新排进任务队列（单线程，任务丢失时用） |
+| `index_pending_parallel.py` | **并行索引所有未完成文档**（6 并发直调索引服务；批量导入年报时用这个） |
 | `check_kb_hit.py` | 检查某只票在知识库的检索命中（排查事实检查证据） |
 | `run_presets_live.py` | 按预设排队跑**实时选股**（规避 409，轮询并打印判定分布与推荐） |
 | `list_presets.py` | 列出全部预设的量化规则与定性标准（排查标准可验证性） |
 | `run_status.py` | 最近选股运行状态（直连 PG） |
-| `reset_stuck_runs.py` | 复位崩溃残留的 running 运行（`--apply`；同时把任务置 failed，避免重启自动重跑） |
+| `reset_stuck_runs.py` | 复位崩溃残留的 running 运行（`--apply`；任务队列已退役，仅复位运行行） |
 | `main_board_stocks.csv` | 全市场主板股票列表（2,111 只，含沪市主板 1,700 只 + 深市主板 411 只） |
 
 > 历史排查脚本已归档到 `archive/` 子目录，含：行情覆盖统计 `check_coverage.py`、报告期财务完整性 `check_period_completeness.py`、任务队列状态 `check_tasks.py`、PG 活动/锁诊断 `check_pg_activity.py`、票池检查 `check_universe.py`、未索引文档 `check_pending_docs.py`、知识库总览 `kb_status.py`，以及深判置信度分布、回测汇总、自选入库等（`confidence_dist.py`、`final_report.py`、`show_judgement.py`、`ingest_recommended.py` 等）；`_db.py` 为公共连接模块，保留在 `tools/` 根目录（archive/ 内有一份副本供归档脚本使用）。

@@ -7,8 +7,6 @@
 import asyncio
 import uuid
 
-import psycopg2
-
 from _db import connect
 
 # 独立进程需要显式导入所有模型，否则 SQLAlchemy 无法解析跨 schema 外键
@@ -25,19 +23,13 @@ CONCURRENCY = 6
 def pending() -> list[tuple[str, str]]:
     conn = connect()
     cur = conn.cursor()
-    # 清掉单线程队列里的待办，避免重复索引
-    cur.execute(
-        "DELETE FROM core.task_records "
-        "WHERE task_type='document_index' AND status='pending'"
-    )
-    deleted = cur.rowcount
-    conn.commit()
+    # 注：任务队列已退役，无待办任务行需要清理
     cur.execute(
         "SELECT id, title FROM document.documents WHERE NOT is_indexed ORDER BY created_at"
     )
     rows = [(str(r[0]), r[1]) for r in cur.fetchall()]
     conn.close()
-    print(f"已清理待办任务 {deleted} 个；待索引 {len(rows)} 份")
+    print(f"待索引 {len(rows)} 份")
     return rows
 
 
