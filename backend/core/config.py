@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from secrets import token_hex
 from typing import Literal
 
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -47,14 +45,6 @@ class Settings(BaseSettings):
     # --- Redis ---
     REDIS_URL: str = "redis://127.0.0.1:6380/0"  # docker-compose exposes 6380→6379
     REDIS_TTL: int = 3600
-
-    # --- Security ---
-    # Single-user local tool by default: no auth is enforced on routes.
-    # Default secret is random per boot so a forgotten deployment never
-    # ships with a known key. Set SECRET_KEY explicitly if you persist
-    # tokens across restarts or expose the service.
-    SECRET_KEY: str = Field(default_factory=lambda: token_hex(32))
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
 
     # --- Document ---
     UPLOAD_DIR: str = "data/uploads"

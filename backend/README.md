@@ -210,7 +210,6 @@ PYTHONPATH=. python scripts/seed_data.py
 | 选股 | `SCREENER_MIN_TURNOVER` | 0.05（%） | — |
 | | `SCREENER_MIN_MARKET_CAP` | 1e9（元） | — |
 | | `SCREENER_MAX_PER_INDUSTRY` | 8（单行业候选上限） | — |
-| 安全 | `SECRET_KEY` | 每次启动随机生成 | — |
 
 > **LLM 已退役**：`LLM_PROVIDER`/`OPENAI_*`/`OLLAMA_MODEL`/`OLLAMA_NUM_CTX`/`EVIDENCE_CLASSIFIER` 等配置已随 2026-11-25 深判退役与 2026-11-26 知识库问答退役删除；仅 embedding 走 Ollama（`OLLAMA_BASE_URL` / `OLLAMA_EMBEDDING_MODEL`）。
 > 完整变量清单见 `core/config.py`。
