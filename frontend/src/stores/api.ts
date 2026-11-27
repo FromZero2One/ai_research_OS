@@ -53,14 +53,6 @@ export function useUpdate<TResult, TBody = any>(url: string, invalidateKeys?: st
   })
 }
 
-export function useDelete(invalidateKeys?: string[][]) {
-  const qc = useQueryClient()
-  return useMutation<void, Error, string>({
-    mutationFn: (url) => fetchApi<void>(url, { method: 'DELETE' }),
-    onSuccess: () => { invalidateKeys?.forEach((key) => qc.invalidateQueries({ queryKey: key })) },
-  })
-}
-
 // ── Companies（仅保留只读列表：文档中心「关联公司」下拉用）──
 export interface Company {
   id: string; ticker: string; name: string
@@ -169,14 +161,6 @@ export function useIngestPrices() {
   return useMutation<unknown, Error, string>({
     mutationFn: (ticker) => fetchApi(`/market/prices/${ticker}/ingest`, { method: 'POST' }),
     onSuccess: (_, ticker) => { qc.invalidateQueries({ queryKey: ['market', ticker] }) },
-  })
-}
-
-export function useIngestFinancials() {
-  const qc = useQueryClient()
-  return useMutation<unknown, Error, string>({
-    mutationFn: (ticker) => fetchApi(`/market/financials/${ticker}/ingest`, { method: 'POST' }),
-    onSuccess: (_, ticker) => { qc.invalidateQueries({ queryKey: ['financials', ticker] }) },
   })
 }
 
